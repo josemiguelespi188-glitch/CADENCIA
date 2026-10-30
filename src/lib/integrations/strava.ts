@@ -121,12 +121,14 @@ export interface StravaSummaryActivity {
 
 /**
  * Fetches every activity in the last `days` days (default 30 — per
- * explicit product decision, no deep history for now: "no necesito lo
- * histórico, solamente el último mes"). Paginates through Strava's own
- * `page`/`per_page` until a page comes back older than the window or
- * empty, capped at `maxPages` as a hard safety limit (200/page *
- * 10 pages = 2,000 activities, far more than a month could realistically
- * hold even training twice a day).
+ * explicit product decision, no deep per-activity history for the main
+ * sync: "no necesito lo histórico, solamente el último mes"). Paginates
+ * through Strava's own `page`/`per_page` until a page comes back older
+ * than the window or empty, capped at `maxPages` as a hard safety limit.
+ * Also reused with a longer `days` for the separate, lightweight
+ * daily-training-load history fetch in the sync route (summary fields
+ * only — no extra detail is stored from that call) — see CLAUDE.md's
+ * "Fitness/Fatigue/Form" note.
  */
 export async function fetchRecentStravaActivities(
   accessToken: string,

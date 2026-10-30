@@ -5,6 +5,7 @@ import { useLocale } from "@/lib/i18n/context";
 import { Card } from "@/components/ui/card";
 import { ZoneTables } from "@/components/ZoneTables";
 import { StravaTotals } from "@/components/StravaTotals";
+import { FitnessPanel } from "@/components/FitnessPanel";
 import { ActivityDetailDialog } from "@/components/ActivityDetailDialog";
 import type { WorkoutWithSlug } from "@/components/WorkoutDialog";
 import { ATHLETES, SPORTS, type ActivityWithSlug, type Athlete, type Who } from "@/lib/types";
@@ -161,6 +162,9 @@ export function DashboardPanel({
         <>
           <h2 className="mt-8 mb-3 text-sm uppercase tracking-widest text-ink-3">{t("zones_h")}</h2>
           <ZoneTables athlete={soloAthlete} />
+          <div className="mt-4">
+            <FitnessPanel athleteId={soloAthlete.id} />
+          </div>
           <div className="mt-4">
             <StravaTotals athlete={soloAthlete} />
           </div>

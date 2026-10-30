@@ -526,7 +526,10 @@ flagged to the user instead of guessed at:**
    decision documented above. Not started until that tension is
    resolved one way or the other (extend history — even a lightweight
    daily-stress-only fetch further back, not full per-activity detail —
-   or accept an understated/cold-start value for a while).
+   or accept an understated/cold-start value for a while). **Resolved
+   Oct 2026 — see "Fitness/Fatigue/Form (CTL/ATL/TSB), extended
+   history" below**: history was extended (a separate lightweight
+   90-day fetch), not skipped.
 2. **The full "Analyze 360" view** (GPS route map, HR/cadence/pace
    graphs over time, time-in-zone distribution, laps) — needs Strava's
    `/activities/{id}/streams` endpoint (a new per-activity call, should
@@ -538,6 +541,59 @@ flagged to the user instead of guessed at:**
    uses in the reference screenshot, needs one). The single largest
    remaining piece from "quiero tener todas las métricas de Strava" —
    needs its own go-ahead before starting, not a silent build.
+
+## Fitness/Fatigue/Form (CTL/ATL/TSB), extended history (Oct 2026)
+
+Resolves the first of the two items flagged as explicitly NOT built in
+the "Planned vs Completed, RPE, and gear" section above — asked
+directly ("¿quieres que extienda el historial?"), answered "extiende el
+historial," so the 30-days-only decision was narrowed rather than
+reversed.
+
+- **A second, lightweight sync pass, separate from the existing 30-day
+  detailed one.** `/api/strava/sync` already fetches the last 30 days
+  of activities in full (gear, matching, AI description write-back —
+  unchanged). It now also calls the same `fetchRecentStravaActivities()`
+  a second time with `days=90` (`FITNESS_HISTORY_DAYS` in
+  `app/api/strava/sync/route.ts`) purely to read each activity's own
+  `suffer_score` (Relative Effort) — no other field, no per-activity
+  detail stored. Those are summed per local day and upserted into a new
+  `strava_daily_load` table (migration `012_training_load_history.sql`,
+  mirrored in `schema.sql` — **needs this migration run in the Supabase
+  SQL editor**), RLS-open-to-anon same as `strava_activities`, written
+  only by the service-role sync route.
+- **Why 90 days, not more or less**: the CTL EWMA has a 42-day time
+  constant; 90 days gives it meaningful room to converge without
+  fetching years of history nobody asked for. It's still not "fully"
+  converged in the strict EWMA sense (that takes ~3x the time
+  constant) — this is a deliberate, honest middle ground, not a claim
+  of a perfect number.
+- **`lib/fitnessForm.ts`**: `computeFitnessForm()` implements the
+  Banister impulse-response model exactly as TrainingPeaks' own
+  Fitness/Fatigue/Form popularized it — CTL = 42-day EWMA of daily
+  stress, ATL = 7-day EWMA, TSB = yesterday's CTL − yesterday's ATL. A
+  real, published formula (Banister), not reverse-engineered from any
+  proprietary source. Zero-fills any rest day with no activity between
+  the earliest and latest known date, so a sparse history still walks
+  day by day correctly. Returns a `warmedUp` flag (true once there's a
+  full 42 days of history) — **never hides the cold-start problem**:
+  `components/FitnessPanel.tsx` shows an explicit "still warming up"
+  note with the real day count whenever `warmedUp` is false, instead of
+  presenting an understated number as if it were trustworthy.
+- **`FitnessPanel.tsx`** (new, rendered in `DashboardPanel.tsx` right
+  after `ZoneTables`, solo-athlete-only — same gating as every other
+  Strava-derived panel there) reads `strava_daily_load` directly
+  client-side and computes the model on the fly — no caching beyond the
+  daily-load rows themselves, so it's always current as of the last
+  sync. Shows the three current numbers plus a small 8-week line chart
+  (CTL solid, ATL translucent in `--error`, TSB dashed in `--ink-3` —
+  deliberately not using a sport accent color, since this isn't
+  sport-specific) — labeled "estimated · from Relative Effort" in the
+  header, consistent with how every other derived/computed number in
+  this app (zones, race predictor) is labeled relative to a real one.
+- This still doesn't attempt the full "Analyze 360" view (GPS map,
+  streams, laps) — that's the second, separate item still flagged as
+  not built in the section above, unaffected by this change.
 
 ## Default locale, default single-athlete view, Generate page, merged dashboard, athlete profile (Oct 2026)
 

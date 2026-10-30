@@ -13,6 +13,12 @@ import { mapStravaSportType } from "@/lib/sport";
 import { generateActivityDescription } from "@/lib/integrations/claude";
 import type { StravaActivity, Workout } from "@/lib/types";
 
+/** How far back the lightweight daily-load history fetch reaches — see the
+ * call below. 90 days gives the 42-day CTL EWMA room to meaningfully
+ * converge (still not "fully" — see lib/fitnessForm.ts's `warmedUp` flag)
+ * without pulling years of history nobody asked for. */
+const FITNESS_HISTORY_DAYS = 90;
+
 /**
  * Pulls the named athlete's recent Strava activities, upserts them into
  * `strava_activities`, then runs auto-complete + the AI description
@@ -57,6 +63,32 @@ export async function POST(req: NextRequest) {
   }
 
   const activities = await fetchRecentStravaActivities(accessToken, 30);
+
+  // Lightweight, summary-only history further back than the 30-day window
+  // above — purely to feed the CTL/ATL/TSB (Fitness/Fatigue/Form) model,
+  // which needs meaningfully more than 30 days to converge (see CLAUDE.md's
+  // "Fitness/Fatigue/Form" note). No per-activity detail is stored from
+  // this call, just each day's summed Relative Effort.
+  try {
+    const history = await fetchRecentStravaActivities(accessToken, FITNESS_HISTORY_DAYS, 15);
+    const byDate = new Map<string, number>();
+    for (const a of history) {
+      if (typeof a.suffer_score !== "number") continue;
+      const d = a.start_date_local.slice(0, 10);
+      byDate.set(d, (byDate.get(d) ?? 0) + a.suffer_score);
+    }
+    const loadRows = Array.from(byDate.entries()).map(([date, relative_effort]) => ({
+      athlete_id: athlete.id,
+      date,
+      relative_effort,
+      updated_at: new Date().toISOString(),
+    }));
+    if (loadRows.length) {
+      await db.from("strava_daily_load").upsert(loadRows, { onConflict: "athlete_id,date" });
+    }
+  } catch (e) {
+    console.error("Failed to sync Strava daily training load history", e);
+  }
 
   const rows = activities.map((a) => ({
     id: String(a.id),

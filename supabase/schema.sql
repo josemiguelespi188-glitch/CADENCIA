@@ -140,6 +140,22 @@ create table if not exists strava_activities (
 create index if not exists strava_activities_athlete_date_idx on strava_activities (athlete_id, start_date desc);
 create index if not exists strava_activities_local_date_idx on strava_activities (athlete_id, local_date);
 
+-- ─── strava_daily_load ────────────────────────────────────────────────────
+-- Lightweight, summary-only training-load history (date + summed Relative
+-- Effort) used only to compute CTL/ATL/TSB (Fitness/Fatigue/Form) — see
+-- migration 012 and lib/fitnessForm.ts. Deliberately NOT full per-activity
+-- detail like strava_activities above; a separate, further-back sync pass
+-- pulls just enough to feed the Banister EWMA model.
+create table if not exists strava_daily_load (
+  athlete_id uuid not null references athletes(id) on delete cascade,
+  date date not null,
+  relative_effort numeric not null default 0,
+  updated_at timestamptz not null default now(),
+  primary key (athlete_id, date)
+);
+
+create index if not exists strava_daily_load_athlete_date_idx on strava_daily_load (athlete_id, date);
+
 -- workouts.strava_activity_id references strava_activities(id) — added as a
 -- separate statement so creation order doesn't matter on a fresh run.
 do $$
@@ -227,3 +243,9 @@ create policy strava_activities_select_public on strava_activities
 
 alter table strava_connections enable row level security;
 -- Deliberately no policies at all — service-role only, with or without auth.
+
+alter table strava_daily_load enable row level security;
+drop policy if exists strava_daily_load_select_public on strava_daily_load;
+create policy strava_daily_load_select_public on strava_daily_load
+  for select to anon, authenticated using (true);
+-- No insert/update/delete policy — written only by the service-role sync route.
