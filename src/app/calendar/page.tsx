@@ -8,6 +8,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { Button } from "@/components/ui/button";
 import { WorkoutDialog, type WorkoutFormValue, type WorkoutWithSlug } from "@/components/WorkoutDialog";
 import { ActivityDetailDialog } from "@/components/ActivityDetailDialog";
+import { PlanImportPanel } from "@/components/PlanImportPanel";
 import {
   ATHLETES,
   SPORTS,
@@ -96,10 +97,12 @@ export default function CalendarPage() {
       date: value.date,
       sport: value.sport,
       title: value.title || t(value.sport),
+      workout_type: value.workoutType,
       start: value.start || null,
       minutes: value.minutes,
       km: value.km,
       notes: value.notes,
+      strava_comment: value.stravaComment,
       done: value.done,
     };
     if (existingId) {
@@ -135,6 +138,7 @@ export default function CalendarPage() {
             <p className="text-ink-3">{t("loading")}</p>
           ) : (
             <>
+              <PlanImportPanel onImported={load} />
               <Toolbar
                 view={view}
                 setView={setView}

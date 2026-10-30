@@ -108,6 +108,13 @@ export interface StravaSummaryActivity {
   average_cadence?: number;
   average_speed?: number;
   average_heartrate?: number;
+  /** Strava's own "Relative Effort" score — their proprietary intensity metric, not computed by us. */
+  suffer_score?: number;
+  total_elevation_gain?: number;
+  max_heartrate?: number;
+  average_watts?: number;
+  /** Energy, rides only — converted to calories at ~4.184 kJ/kcal when stored. */
+  kilojoules?: number;
 }
 
 /**

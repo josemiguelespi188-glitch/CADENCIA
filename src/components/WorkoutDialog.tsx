@@ -13,10 +13,12 @@ export interface WorkoutFormValue {
   date: string;
   sport: Sport;
   title: string;
+  workoutType: string;
   start: string;
   minutes: number;
   km: number;
   notes: string;
+  stravaComment: string;
   done: boolean;
 }
 
@@ -34,10 +36,12 @@ const EMPTY: WorkoutFormValue = {
   date: ymd(today()),
   sport: "run",
   title: "",
+  workoutType: "",
   start: "",
   minutes: 0,
   km: 0,
   notes: "",
+  stravaComment: "",
   done: false,
 };
 
@@ -65,10 +69,12 @@ export function WorkoutDialog({ editing, templates, onClose, onSave, onDelete }:
             date: r.date,
             sport: r.sport,
             title: r.title,
+            workoutType: r.workout_type,
             start: r.start ?? "",
             minutes: r.minutes,
             km: r.km,
             notes: r.notes,
+            stravaComment: r.strava_comment,
             done: r.done,
           }
         : {
@@ -179,6 +185,16 @@ export function WorkoutDialog({ editing, templates, onClose, onSave, onDelete }:
               className="h-10 rounded-xl border border-line bg-bg px-3 text-sm"
             />
           </Field>
+          <Field label={t("workout_type")} full>
+            <input
+              type="text"
+              maxLength={60}
+              placeholder="Tempo, Series, Rodaje suave..."
+              value={value.workoutType}
+              onChange={(e) => setValue((v) => ({ ...v, workoutType: e.target.value }))}
+              className="h-10 rounded-xl border border-line bg-bg px-3 text-sm"
+            />
+          </Field>
           <Field label={t("min")}>
             <input
               type="number"
@@ -208,6 +224,15 @@ export function WorkoutDialog({ editing, templates, onClose, onSave, onDelete }:
               onChange={(e) => setValue((v) => ({ ...v, notes: e.target.value }))}
               className="min-h-24 resize-y rounded-xl border border-line bg-bg px-3 py-2 text-sm"
             />
+          </Field>
+          <Field label={t("strava_comment")} full>
+            <textarea
+              maxLength={1000}
+              value={value.stravaComment}
+              onChange={(e) => setValue((v) => ({ ...v, stravaComment: e.target.value }))}
+              className="min-h-16 resize-y rounded-xl border border-line bg-bg px-3 py-2 text-sm"
+            />
+            <p className="text-xs text-ink-3">{t("strava_comment_hint")}</p>
           </Field>
           <div className="col-span-2 flex items-center gap-2">
             <input

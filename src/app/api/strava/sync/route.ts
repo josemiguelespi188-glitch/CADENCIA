@@ -43,6 +43,11 @@ export async function POST(req: NextRequest) {
     average_cadence: a.average_cadence ?? null,
     average_speed: a.average_speed ?? null,
     average_heart_rate: a.average_heartrate ?? null,
+    relative_effort: a.suffer_score ?? null,
+    total_elevation_gain_m: a.total_elevation_gain ?? null,
+    max_heart_rate: a.max_heartrate ?? null,
+    average_watts: a.average_watts ?? null,
+    calories: a.kilojoules ? Math.round(a.kilojoules / 4.184) : null,
     raw: a,
     synced_at: new Date().toISOString(),
   }));
@@ -118,9 +123,14 @@ export async function POST(req: NextRequest) {
       matched++;
     }
 
-    // Best-effort: never blocks marking this activity as processed, same
-    // as every other optional AI/notification step in this codebase.
-    const description = await generateActivityDescription(act, matchedWorkout).catch(() => null);
+    // A human-written strava_comment on the matched workout wins verbatim
+    // over the AI-generated description — per explicit instruction, it's
+    // the planned summary meant to go to Strava, not just an "objective"
+    // for the AI to paraphrase. Best-effort either way: never blocks
+    // marking this activity as processed.
+    const description = matchedWorkout?.strava_comment
+      ? matchedWorkout.strava_comment
+      : await generateActivityDescription(act, matchedWorkout).catch(() => null);
     if (description) {
       try {
         await updateStravaActivityDescription(accessToken, act.id, description);

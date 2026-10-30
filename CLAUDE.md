@@ -375,6 +375,86 @@ reference) led to several changes:
   that a real `/athlete/zones` response renders correctly and that
   average_heartrate actually arrives for activities that recorded it.
 
+### Excel weekly-plan import (Oct 2026)
+
+A "Plan semanal (Excel)" panel at the top of `/calendar` — download a
+template, fill it out (any number of workouts, any week), upload it
+back, every row becomes a real `workouts` row immediately. Built per
+explicit, detailed spec ("tiene que contar con absolutamente todo...
+las horas... las notas... el comentario que va a ir en Strava...").
+
+- **`exceljs`** generates and parses the `.xlsx` — deliberately **not**
+  done in the browser: it pulls in Node built-ins, which broke the
+  client bundle the same way `lib/integrations/strava.ts` did for
+  `mapStravaSportType()` (see that note above). Both the template
+  download (`GET /api/plan/template`) and the import
+  (`POST /api/plan/import`) are server routes;
+  `src/lib/excelPlan.ts` (the actual build/parse logic) is never
+  imported from a `"use client"` file.
+- **Template columns**: Atleta, Fecha, Deporte, Hora inicio, Hora fin,
+  Minutos (used only if no times), Título, Tipo de entreno, Distancia,
+  Notas, Comentario para Strava, Hecho — Atleta/Deporte/Hecho get real
+  Excel dropdown data validation (rows 2-200) so typos can't slip past
+  the import's matching logic. A second "Notas"/"Notes" sheet explains
+  each column in plain language. **The example row has to be added
+  BEFORE the data-validation loop runs** — found live (a round-trip
+  test caught it before shipping): setting `dataValidation` on a cell
+  materializes that row even with no value, so adding the example row
+  afterward pushed it to row 201 instead of row 2.
+- **Start/End time wins over Minutes when both are given** — `minutes`
+  is computed from the time difference; the Minutes column exists for
+  workouts with no fixed clock time (e.g. gym). Time-of-day cells are
+  read defensively (`cellToTimeStr` in `excelPlan.ts`) since Excel may
+  hand back a `Date` object (epoch 1899-12-30, read via UTC getters —
+  the standard exceljs gotcha), a bare numeric day-fraction, or a plain
+  "HH:MM" string depending on how the cell was typed/formatted.
+- **Athlete and sport names are matched case-insensitively against
+  either the display label or the internal slug/key** (`matchAthlete`/
+  `matchSport`), so "Juan", "juan", "José Miguel", or "jose" all
+  resolve the same way — doesn't assume the dropdown was actually used.
+- **Every invalid row is reported with its exact row number and reason,
+  never silently dropped or guessed** — unrecognized athlete/sport,
+  bad date format, missing title. Valid rows still import even when
+  other rows in the same file have errors; `PlanImportPanel.tsx` shows
+  the count imported plus a list of what failed and why.
+- **Import always INSERTs, never updates/matches existing rows** — the
+  simplest behavior that fits "load a week once." Re-uploading the same
+  file twice creates duplicate workouts; no dedup logic was built for
+  this pass. Fine for the intended use; revisit only if re-uploading
+  turns out to be a common need.
+- `workouts` gained two columns to support this (migration 007,
+  needed for both the Excel import and the dialog form below):
+  **`strava_comment`** (a human-written summary meant to go verbatim
+  onto the matched Strava activity, taking priority over the
+  AI-generated one — `/api/strava/sync` now checks this before calling
+  Claude at all) and **`workout_type`** (free-text, e.g. "Tempo",
+  "Series" — purely descriptive, not a controlled vocabulary). Both are
+  also editable directly from `WorkoutDialog.tsx` for a single workout,
+  not just via bulk Excel import.
+
+### What else Strava gives us (Oct 2026)
+
+Per explicit question ("qué métricas falta que me dé Strava... quiero
+tener todas"), two tiers:
+
+- **Already captured in `raw jsonb` on every synced activity, just not
+  previously surfaced as their own columns** — added for free, no new
+  API call (migration 008): **Relative Effort** (`raw.suffer_score` →
+  `relative_effort` — Strava's own proprietary intensity/effort score,
+  genuinely useful as the "intensity" signal without this codebase
+  inventing one), total elevation gain, max heart rate, average power
+  (rides with a power meter), and calories (from `raw.kilojoules`).
+  Shown in `ActivityDetailDialog.tsx` (when present on that activity)
+  and as a new "Relative Effort" column in the dashboard's Recent
+  Activities table.
+- **Would need a new API call, not built yet** — flagged to the user,
+  not started without confirmation: `GET /athletes/{id}/stats` (4-week/
+  year-to-date/all-time totals per sport — a real "Totals" dashboard
+  panel), `GET /athlete` (profile: weight, unit preference — relevant
+  if power zones should ever be computed relative to real body weight),
+  and the GPS route/map (`map.summary_polyline` on each activity —
+  would need a mapping library, the largest of the three).
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as

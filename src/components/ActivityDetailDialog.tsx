@@ -46,7 +46,12 @@ export function ActivityDetailDialog({ activity, onClose }: { activity: StravaAc
             {sport === "run" && pace && <Stat label={isEn ? "Pace" : "Ritmo"} value={paceLabel(pace)} />}
             {activity.average_speed ? <Stat label={isEn ? "Avg speed" : "Vel. prom."} value={`${(activity.average_speed * 3.6).toFixed(1)} km/h`} /> : null}
             {activity.average_heart_rate ? <Stat label={isEn ? "Avg HR" : "FC prom."} value={`${Math.round(activity.average_heart_rate)} bpm`} /> : null}
+            {activity.max_heart_rate ? <Stat label={isEn ? "Max HR" : "FC máx."} value={`${Math.round(activity.max_heart_rate)} bpm`} /> : null}
             {activity.average_cadence ? <Stat label={isEn ? "Cadence" : "Cadencia"} value={String(Math.round(activity.average_cadence))} /> : null}
+            {activity.average_watts ? <Stat label={isEn ? "Avg power" : "Potencia prom."} value={`${Math.round(activity.average_watts)} W`} /> : null}
+            {activity.total_elevation_gain_m ? <Stat label={isEn ? "Elevation" : "Elevación"} value={`${Math.round(activity.total_elevation_gain_m)} m`} /> : null}
+            {activity.calories ? <Stat label={isEn ? "Calories" : "Calorías"} value={`${Math.round(activity.calories)} kcal`} /> : null}
+            {activity.relative_effort ? <Stat label="Relative Effort" value={String(Math.round(activity.relative_effort))} /> : null}
           </div>
 
           <div className="flex justify-end gap-2">

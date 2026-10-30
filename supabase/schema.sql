@@ -54,6 +54,11 @@ create table if not exists workouts (
   notes text not null default '',
   done boolean not null default false,
   strava_activity_id text,
+  -- Human-written summary used verbatim as the Strava description when
+  -- matched (takes priority over the AI-generated one), and a free-text
+  -- workout type/structure label. See migration 007.
+  strava_comment text not null default '',
+  workout_type text not null default '',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -92,7 +97,14 @@ create table if not exists strava_activities (
   -- against a planned workouts row by day, since start_date is UTC and
   -- can land on the wrong day. See migration 004 for the full rationale.
   local_date date,
-  description_written_at timestamptz
+  description_written_at timestamptz,
+  -- Extra metrics, all extracted from `raw` at sync time — no extra API
+  -- call needed. See migration 008.
+  relative_effort integer,
+  total_elevation_gain_m numeric(7,1),
+  max_heart_rate numeric(5,1),
+  average_watts numeric(6,1),
+  calories numeric(7,1)
 );
 
 create index if not exists strava_activities_athlete_date_idx on strava_activities (athlete_id, start_date desc);

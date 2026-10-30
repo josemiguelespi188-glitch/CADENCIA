@@ -231,7 +231,8 @@ export default function DashboardPage() {
                         <th className="px-2 py-3 text-right font-semibold">{isEn ? "Duration" : "Duración"}</th>
                         <th className="px-2 py-3 text-right font-semibold">{isEn ? "Distance" : "Distancia"}</th>
                         <th className="px-2 py-3 text-right font-semibold">{isEn ? "Avg HR" : "FC prom."}</th>
-                        <th className="px-4 py-3 text-right font-semibold">{isEn ? "Cadence" : "Cadencia"}</th>
+                        <th className="px-2 py-3 text-right font-semibold">{isEn ? "Cadence" : "Cadencia"}</th>
+                        <th className="px-4 py-3 text-right font-semibold">Relative Effort</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -251,7 +252,8 @@ export default function DashboardPage() {
                             <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums">
                               {a.average_heart_rate ? `${Math.round(a.average_heart_rate)} bpm${pctThreshold ? ` (${pctThreshold}%)` : ""}` : "—"}
                             </td>
-                            <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums">{a.average_cadence ? Math.round(a.average_cadence) : "—"}</td>
+                            <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums">{a.average_cadence ? Math.round(a.average_cadence) : "—"}</td>
+                            <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums">{a.relative_effort ?? "—"}</td>
                           </tr>
                         );
                       })}

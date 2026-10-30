@@ -42,6 +42,10 @@ export interface Workout {
   notes: string;
   done: boolean;
   strava_activity_id: string | null;
+  /** Human-written summary used verbatim as the Strava description when matched — takes priority over the AI-generated one. */
+  strava_comment: string;
+  /** Free-text workout type/structure (e.g. "Tempo", "Series"). */
+  workout_type: string;
   created_at: string;
   updated_at: string;
 }
@@ -79,4 +83,10 @@ export interface StravaActivity {
   average_heart_rate: number | null;
   synced_at: string;
   description_written_at: string | null;
+  /** Strava's own "Relative Effort" score (raw.suffer_score) — their proprietary intensity metric. */
+  relative_effort: number | null;
+  total_elevation_gain_m: number | null;
+  max_heart_rate: number | null;
+  average_watts: number | null;
+  calories: number | null;
 }
