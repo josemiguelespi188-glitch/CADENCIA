@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { SiteHeader } from "@/components/SiteHeader";
 import { Button } from "@/components/ui/button";
 import { WorkoutDialog, type WorkoutFormValue, type WorkoutWithSlug } from "@/components/WorkoutDialog";
+import { ActivityDetailDialog } from "@/components/ActivityDetailDialog";
 import {
   ATHLETES,
   SPORTS,
@@ -37,6 +38,7 @@ export default function CalendarPage() {
   const [view, setView] = useState<"week" | "month">("week");
   const [anchor, setAnchor] = useState(() => today());
   const [editing, setEditing] = useState<EditingState>(null);
+  const [openActivity, setOpenActivity] = useState<ActivityWithSlug | null>(null);
 
   const load = useCallback(async () => {
     const supabase = createClient();
@@ -155,6 +157,7 @@ export default function CalendarPage() {
                   onAdd={openAdd}
                   onToggle={toggleDone}
                   onEdit={(w) => setEditing({ record: w })}
+                  onOpenActivity={setOpenActivity}
                 />
               ) : (
                 <MonthView
@@ -180,6 +183,7 @@ export default function CalendarPage() {
         onSave={saveWorkout}
         onDelete={deleteWorkout}
       />
+      <ActivityDetailDialog activity={openActivity} onClose={() => setOpenActivity(null)} />
     </div>
   );
 }
@@ -299,6 +303,7 @@ function WeekView({
   onAdd,
   onToggle,
   onEdit,
+  onOpenActivity,
 }: {
   anchor: Date;
   visible: WorkoutWithSlug[];
@@ -309,6 +314,7 @@ function WeekView({
   onAdd: (date: string) => void;
   onToggle: (w: WorkoutWithSlug) => void;
   onEdit: (w: WorkoutWithSlug) => void;
+  onOpenActivity: (a: ActivityWithSlug) => void;
 }) {
   const start = monday(anchor);
   const td = today();
@@ -363,7 +369,7 @@ function WeekView({
                   <WorkoutChip key={w.id} w={w} locale={locale} t={t} onToggle={onToggle} onEdit={onEdit} />
                 ))}
                 {dayActivities.map((a) => (
-                  <ActivityChip key={a.id} a={a} who={who} locale={locale} />
+                  <ActivityChip key={a.id} a={a} who={who} locale={locale} onOpen={onOpenActivity} />
                 ))}
               </>
             ) : (
@@ -380,15 +386,27 @@ function WeekView({
  * CLAUDE.md's "Calendar shows real Strava activity" note. Dashed border
  * (vs. the planned chip's solid soft background) is the visual cue that
  * this happened but wasn't planned. */
-function ActivityChip({ a, who, locale }: { a: ActivityWithSlug; who: Who; locale: string }) {
+function ActivityChip({
+  a,
+  who,
+  locale,
+  onOpen,
+}: {
+  a: ActivityWithSlug;
+  who: Who;
+  locale: string;
+  onOpen: (a: ActivityWithSlug) => void;
+}) {
   const sport = mapStravaSportType(a.sport_type);
   const metaParts = [
     a.moving_time_s ? hm(a.moving_time_s / 60, locale as "es" | "en") : "",
     a.distance_m ? `${(a.distance_m / 1000).toFixed(1)} km` : "",
   ].filter(Boolean);
   return (
-    <div
-      className={cn(sport ? "s-" + sport : "", "flex items-start gap-1.5 rounded-lg border border-dashed p-1.5")}
+    <button
+      type="button"
+      onClick={() => onOpen(a)}
+      className={cn(sport ? "s-" + sport : "", "flex w-full items-start gap-1.5 rounded-lg border border-dashed p-1.5 text-left hover:bg-surface-2")}
       style={{ borderColor: sport ? "var(--c)" : "var(--line)" }}
     >
       <div className="min-w-0 flex-1">
@@ -402,7 +420,7 @@ function ActivityChip({ a, who, locale }: { a: ActivityWithSlug; who: Who; local
         <p className="text-sm font-medium break-words">{a.name}</p>
         {metaParts.length > 0 && <p className="text-xs text-ink-3">{metaParts.join(" · ")}</p>}
       </div>
-    </div>
+    </button>
   );
 }
 

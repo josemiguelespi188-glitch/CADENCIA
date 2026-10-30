@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { SiteHeader } from "@/components/SiteHeader";
 import { Card } from "@/components/ui/card";
 import { ZoneTables } from "@/components/ZoneTables";
+import { ActivityDetailDialog } from "@/components/ActivityDetailDialog";
 import { ATHLETES, SPORTS, type Athlete, type AthleteSlug, type StravaActivity, type Workout } from "@/lib/types";
 import { addDays, dayDiff, fmt, hm, hrs, monday, paceLabel, parseYmd, today, ymd } from "@/lib/dates";
 import { computeBestEfforts } from "@/lib/bestEfforts";
@@ -24,6 +25,7 @@ export default function DashboardPage() {
   const [athletes, setAthletes] = useState<Athlete[]>([]);
   const [workouts, setWorkouts] = useState<WorkoutWithSlug[]>([]);
   const [activities, setActivities] = useState<ActivityWithSlug[]>([]);
+  const [openActivity, setOpenActivity] = useState<ActivityWithSlug | null>(null);
 
   const load = useCallback(async () => {
     const supabase = createClient();
@@ -236,7 +238,11 @@ export default function DashboardPage() {
                       {visibleActivities.slice(0, 20).map((a) => {
                         const pctThreshold = a.average_heart_rate && thresholdHr ? Math.round((a.average_heart_rate / thresholdHr) * 100) : null;
                         return (
-                          <tr key={a.id} className="border-b border-line last:border-0">
+                          <tr
+                            key={a.id}
+                            onClick={() => setOpenActivity(a)}
+                            className="cursor-pointer border-b border-line last:border-0 hover:bg-surface-2"
+                          >
                             <td className="whitespace-nowrap px-4 py-2.5 text-ink-3">{fmt(new Date(a.start_date), locale, { day: "numeric", month: "short" })}</td>
                             {who === "both" && <td className="px-2 py-2.5 font-medium">{ATHLETES[a.athleteSlug].initials}</td>}
                             <td className="max-w-[220px] truncate px-2 py-2.5">{a.name}</td>
@@ -257,6 +263,7 @@ export default function DashboardPage() {
           )}
         </div>
       </main>
+      <ActivityDetailDialog activity={openActivity} onClose={() => setOpenActivity(null)} />
     </div>
   );
 }
