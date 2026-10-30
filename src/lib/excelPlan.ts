@@ -1,5 +1,8 @@
 import ExcelJS from "exceljs";
-import { ATHLETES, SPORTS, type AthleteSlug, type Sport } from "@/lib/types";
+import { ATHLETES, SPORTS, type AthleteSlug, type PersonalBest, type Sport } from "@/lib/types";
+import { durationLabel } from "@/lib/dates";
+import { predictRaceTimes } from "@/lib/racePredictor";
+import { computeHrZones, computePaceZones, computePowerZones, type ZoneKey } from "@/lib/zones";
 
 /**
  * The weekly-plan Excel template — download it, fill it out (any number
@@ -20,6 +23,46 @@ const SPORT_LABEL: Record<Sport, { es: string; en: string }> = {
 };
 
 type Locale = "es" | "en";
+
+const ZONE_LABEL: Record<ZoneKey, { es: string; en: string }> = {
+  recovery: { es: "Recuperación", en: "Recovery" },
+  endurance: { es: "Resistencia", en: "Endurance" },
+  tempo: { es: "Tempo", en: "Tempo" },
+  threshold: { es: "Umbral", en: "Threshold" },
+  vo2max: { es: "VO2max", en: "VO2max" },
+  anaerobic: { es: "Anaeróbico", en: "Anaerobic" },
+  neuromuscular: { es: "Neuromuscular", en: "Neuromuscular" },
+};
+
+/**
+ * Everything from an athlete's /settings profile, shaped for export —
+ * passed in by the template route (which reads it from Supabase
+ * server-side) rather than queried here, keeping this file DB-free like
+ * the rest of it. See CLAUDE.md's "Athlete profile in the Weekly Plan
+ * Excel" note: per explicit instruction, the single downloadable Excel
+ * carries BOTH athletes' full profile (not just the week's workouts), so
+ * handing the whole file to an AI agent gives it everything it needs to
+ * reason about either triathlete.
+ */
+export interface AthleteProfileExport {
+  slug: AthleteSlug;
+  name: string;
+  birthDate: string | null;
+  sex: string | null;
+  heightCm: number | null;
+  weightKg: number | null;
+  restingHr: number | null;
+  maxHr: number | null;
+  thresholdHr: number | null;
+  thresholdPaceSecPerKm: number | null;
+  ftpWatts: number | null;
+  vo2max: number | null;
+  goalRaceName: string | null;
+  goalRaceDate: string | null;
+  goalDistance: string | null;
+  goalNotes: string | null;
+  personalBests: PersonalBest[];
+}
 
 const COLS = (locale: Locale) =>
   locale === "en"
@@ -52,7 +95,7 @@ const COLS = (locale: Locale) =>
         "Hecho (Sí/No)",
       ];
 
-export async function buildPlanTemplate(locale: Locale = "es"): Promise<Buffer> {
+export async function buildPlanTemplate(locale: Locale = "es", athletes: AthleteProfileExport[] = []): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet(locale === "en" ? "Plan" : "Plan");
   const cols = COLS(locale);
@@ -113,8 +156,113 @@ export async function buildPlanTemplate(locale: Locale = "es"): Promise<Buffer> 
   lines.forEach((l) => notes.addRow([l]));
   notes.getColumn(1).alignment = { wrapText: true };
 
+  if (athletes.length) {
+    addAthleteProfileSheets(wb, locale, athletes);
+  }
+
   const buf = await wb.xlsx.writeBuffer();
   return Buffer.from(buf);
+}
+
+/**
+ * Three extra sheets carrying every /settings profile field for both
+ * athletes — personal info/goal/HR on one row each, personal bests and
+ * zone ranges as their own tables (variable-length, so they can't fit a
+ * fixed-width profile row). Per explicit instruction: the Weekly Plan
+ * Excel is the single file handed to an AI agent, so it has to carry the
+ * full triathlete profile alongside the week's workouts, not just a
+ * separate export.
+ */
+function addAthleteProfileSheets(wb: ExcelJS.Workbook, locale: Locale, athletes: AthleteProfileExport[]) {
+  const isEn = locale === "en";
+
+  const profile = wb.addWorksheet(isEn ? "Athlete Profile" : "Perfil del Atleta");
+  const profileCols = isEn
+    ? [
+        "Athlete", "Birth date", "Sex", "Height (cm)", "Weight (kg)", "Resting HR (bpm)", "Max HR (bpm)",
+        "LTHR (bpm)", "Threshold pace (min/km)", "FTP (W)", "VO2max",
+        "Goal race", "Goal race date", "Goal distance", "Goal / target time",
+        "Predicted 5K", "Predicted 10K", "Predicted Half Marathon", "Predicted Marathon",
+      ]
+    : [
+        "Atleta", "Fecha de nacimiento", "Sexo", "Estatura (cm)", "Peso (kg)", "FC en reposo (bpm)", "FC máxima (bpm)",
+        "LTHR (bpm)", "Pace umbral (min/km)", "FTP (W)", "VO2max",
+        "Carrera objetivo", "Fecha de la carrera", "Distancia objetivo", "Objetivo / tiempo meta",
+        "5K estimado", "10K estimado", "Media Maratón estimado", "Maratón estimado",
+      ];
+  profile.columns = profileCols.map((header) => ({ header, width: Math.max(14, header.length + 2) }));
+  profile.getRow(1).font = { bold: true };
+  profile.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE9E9E6" } };
+
+  for (const a of athletes) {
+    const predicted = predictRaceTimes(a.personalBests);
+    const predictedFor = (key: string) => {
+      const p = predicted?.find((x) => x.key === key);
+      return p ? durationLabel(p.predictedSec) + (p.fromActual ? ` (${isEn ? "actual" : "real"})` : "") : "";
+    };
+    profile.addRow([
+      a.name,
+      a.birthDate ?? "",
+      a.sex ?? "",
+      a.heightCm ?? "",
+      a.weightKg ?? "",
+      a.restingHr ?? "",
+      a.maxHr ?? "",
+      a.thresholdHr ?? "",
+      a.thresholdPaceSecPerKm ? `${Math.floor(a.thresholdPaceSecPerKm / 60)}:${String(a.thresholdPaceSecPerKm % 60).padStart(2, "0")}` : "",
+      a.ftpWatts ?? "",
+      a.vo2max ?? "",
+      a.goalRaceName ?? "",
+      a.goalRaceDate ?? "",
+      a.goalDistance ?? "",
+      a.goalNotes ?? "",
+      predictedFor("5k"),
+      predictedFor("10k"),
+      predictedFor("half"),
+      predictedFor("marathon"),
+    ]);
+  }
+
+  const bests = wb.addWorksheet(isEn ? "Personal Bests" : "Mejores Tiempos");
+  const bestsCols = isEn
+    ? ["Athlete", "Sport", "Distance", "Time", "Date", "Race"]
+    : ["Atleta", "Deporte", "Distancia", "Tiempo", "Fecha", "Carrera"];
+  bests.columns = bestsCols.map((header) => ({ header, width: Math.max(14, header.length + 2) }));
+  bests.getRow(1).font = { bold: true };
+  bests.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE9E9E6" } };
+  for (const a of athletes) {
+    for (const pb of a.personalBests) {
+      bests.addRow([a.name, SPORT_LABEL[pb.sport]?.[locale] ?? pb.sport, pb.distanceLabel, durationLabel(pb.timeSec), pb.date, pb.raceName]);
+    }
+  }
+
+  const zones = wb.addWorksheet(isEn ? "Training Zones" : "Zonas de Entrenamiento");
+  const zonesCols = isEn
+    ? ["Athlete", "Zone system", "Zone", "Range"]
+    : ["Atleta", "Sistema de zonas", "Zona", "Rango"];
+  zones.columns = zonesCols.map((header) => ({ header, width: Math.max(14, header.length + 2) }));
+  zones.getRow(1).font = { bold: true };
+  zones.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE9E9E6" } };
+  for (const a of athletes) {
+    if (a.thresholdHr) {
+      for (const z of computeHrZones(a.thresholdHr)) {
+        zones.addRow([a.name, "HR", ZONE_LABEL[z.key][locale], `${z.min}${z.max ? `-${z.max}` : "+"} bpm`]);
+      }
+    }
+    if (a.thresholdPaceSecPerKm) {
+      for (const z of computePaceZones(a.thresholdPaceSecPerKm)) {
+        const fast = z.fastSecPerKm ? `${Math.floor(z.fastSecPerKm / 60)}:${String(z.fastSecPerKm % 60).padStart(2, "0")}` : null;
+        const slow = z.slowSecPerKm ? `${Math.floor(z.slowSecPerKm / 60)}:${String(z.slowSecPerKm % 60).padStart(2, "0")}` : null;
+        const range = fast && slow ? `${fast}-${slow} min/km` : fast ? `< ${fast} min/km` : slow ? `> ${slow} min/km` : "";
+        zones.addRow([a.name, isEn ? "Pace" : "Pace", ZONE_LABEL[z.key][locale], range]);
+      }
+    }
+    if (a.ftpWatts) {
+      for (const z of computePowerZones(a.ftpWatts)) {
+        zones.addRow([a.name, "Power", ZONE_LABEL[z.key][locale], `${z.min}${z.max ? `-${z.max}` : "+"} W`]);
+      }
+    }
+  }
 }
 
 export interface ParsedPlanRow {

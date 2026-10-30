@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import type { StravaActivity, Workout } from "@/lib/types";
 import { fmt, hm, paceLabel } from "@/lib/dates";
 import { mapStravaSportType } from "@/lib/sport";
+import { ActivityMap } from "@/components/ActivityMap";
 
 /**
  * We only store a handful of summary fields per synced activity (see
@@ -73,6 +74,8 @@ export function ActivityDetailDialog({ activity, onClose }: { activity: StravaAc
             {activity.relative_effort ? <Stat label="Relative Effort" value={String(Math.round(activity.relative_effort))} /> : null}
             {activity.gear_name ? <Stat label={t("gear")} value={activity.gear_name} /> : null}
           </div>
+
+          <ActivityMap polyline={activity.raw?.map?.summary_polyline} />
 
           <div>
             <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-ink-3">{t("planned_vs_completed")}</p>

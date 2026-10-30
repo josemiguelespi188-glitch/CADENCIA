@@ -717,6 +717,147 @@ about who he was even looking at, plus a push toward the bigger
   from any reference screenshot** shown during this phase; every new
   field here is a blank input the athlete fills in themselves.
 
+## Simple activity map, zones in the profile card, full athlete profile in the Weekly Plan Excel (Oct 2026)
+
+Three more direct requests from the same conversation, built together.
+
+- **Activity route map, the cheap version** (direct quote: "mapa simple
+  con el polyline que ya tenemos guardado"). Confirmed by reading the
+  actual sync code: `/api/strava/sync` already stores each activity's
+  full raw object verbatim (`raw: a`), and Strava's activity-list
+  endpoint (what that sync call already uses) includes a
+  `map.summary_polyline` on every activity — so a simplified route was
+  already sitting unused in `strava_activities.raw` for every synced
+  activity, no new Strava call needed. `StravaActivity.raw` (previously
+  undeclared on the TS type, even though the DB column always existed)
+  now exposes `map.summary_polyline`. `lib/polyline.ts` decodes Google's
+  standard encoded-polyline format (a small, published algorithm, not
+  Strava-specific). `components/ActivityMap.tsx` draws it with Leaflet +
+  OpenStreetMap tiles (no account needed, unlike Mapbox) — `leaflet`
+  dynamically imported inside a `useEffect` specifically because it
+  touches `window`/`document` at init time, which would otherwise throw
+  during Next's server-side pre-render of this "use client" component.
+  Rendered in `ActivityDetailDialog.tsx`, between the stat grid and the
+  Planned vs Completed table; renders nothing when an activity has no
+  polyline. This is deliberately NOT the full "Analyze 360" view (high-
+  res streams, graphs, laps) still flagged as not built above — just the
+  cheap win available from data already on hand.
+- **Zone tables inside the Settings profile card too** (direct quote:
+  "sería bueno que salga las zonas cardíacas, tanto por pace como por
+  heart rate, también ahí en perfil"). `AthleteProfileCard.tsx` now also
+  renders `<ZoneTables athlete={athlete} />` (read-only, same component
+  `/dashboard`'s panel and the dedicated Training Zones card already
+  use) right after the Resting/Max HR section — sourced from the same
+  `athlete` row already loaded in that component's own state, no extra
+  fetch. The actual threshold numbers (LTHR/pace/FTP) are still only
+  editable from the separate Training Zones card below it, which this
+  new block explicitly says in its own caption, to avoid implying
+  there's a second, different set of thresholds.
+- **The Weekly Plan Excel now carries the full athlete profile for both
+  athletes, not just the week's workouts** (direct quotes: "tiene que
+  el template tener toda la información... para que una vez que se
+  mande a la gente de Cloud, este pueda analizar al atleta" / "tiene
+  que estar ahí en el Weekly Plan Excel"). `GET /api/plan/template` now
+  reads every `athletes` row server-side (service-role, same pattern as
+  every other server-side Supabase read in this codebase) and passes it
+  into `buildPlanTemplate()`, which gained three more sheets when
+  profile data is present: **Athlete Profile** (one row per athlete —
+  personal info, goal race, resting/max HR, LTHR/pace/FTP/VO2max, and
+  the race predictor's 5K/10K/Half/Marathon estimates, each labeled
+  "(actual)" when it's a real PB rather than a Riegel projection),
+  **Personal Bests** (one row per PB entry), and **Training Zones** (one
+  row per HR/pace/power zone, computed with the same `lib/zones.ts`
+  functions `/settings` already uses — skipped per zone-system when that
+  threshold isn't set, never a guessed range). All three reuse the
+  existing pure `lib/racePredictor.ts` / `lib/zones.ts` functions
+  unmodified — no new computation logic, just new sheets presenting data
+  that already exists elsewhere in the app. Verified with an actual
+  round-trip test (generate with fake multi-athlete data, re-parse with
+  `exceljs`, confirm every sheet/row/value) before shipping, same
+  discipline as the original Excel import's own row-ordering bug catch.
+  `parsePlanWorkbook()` (the import side) only ever reads
+  `wb.worksheets[0]` ("Plan"), so these extra sheets can't interfere
+  with importing workouts back in. One combined file was chosen over a
+  separate per-athlete export, since the Weekly Plan Excel already spans
+  both athletes via its own Athlete column, and the user's own wording
+  left either shape open ("puede ser otro Excel aparte, pero tiene que
+  estar ahí") — bundling it into the same download avoids managing two
+  files staying in sync with each other.
+
+## COROS / Garmin structured-workout push — researched, not built (Oct 2026)
+
+Asked directly to investigate feasibility/complexity of pushing
+structured workouts (with real intervals) to COROS and/or Garmin, and
+report back — **explicitly research, not a build request**, so nothing
+below is implemented yet. This sandbox's egress proxy blocks both
+`dropbox.com` (the COROS API Reference Guide the user linked) and
+`docs.tryterra.co`, so the findings below come from `WebSearch` results
+only, not a direct read of either platform's real documentation — flagged
+accordingly, and **should be re-verified against the real docs once
+COROS responds to the application already submitted** (see the "COROS
+API Application" work elsewhere in this conversation's history).
+
+- **COROS does have an official structured-workout push endpoint**
+  (`tp/list/push`, plus `tp/workout/deleteById`) as part of its gated
+  **Partner API** — access requires being an established/registered
+  company and agreeing to their API Terms, applied for via
+  `api@coros.com` (the same application the user already submitted
+  covers exactly this — "Structured Workouts and Training Plans Sync"
+  was one of its checkboxes). A forum mention (unconfirmed firsthand)
+  says pushed plans are limited to **7 days at a time**, and a
+  third-party sync tool notes COROS **does not support nested repeat
+  blocks** — an interval set (e.g. 6x400m) has to be sent as flattened
+  individual steps, not a single "repeat 6 times" block.
+- **COROS also has a lighter, self-service path**: "Build on COROS"
+  with OAuth 2.0, no partner application needed — good for smaller
+  projects per COROS's own framing, which fits Cadencia (2 users) far
+  better than the Partner API's "established company" bar. **Not
+  confirmed from here whether this self-service tier includes
+  structured-workout push or just read access** (activity/health data)
+  — worth asking directly once in touch with COROS, since it could make
+  the whole Partner-API application unnecessary.
+- **Garmin requires a completely separate application** — its own
+  Developer Program / Training API, gated independently of COROS, with
+  no publicly confirmed JSON schema outside approved partners (every
+  schema found via search was reverse-engineered by third parties, not
+  official). Two separate approval processes, not one.
+- **A third-party aggregator (Terra, tryterra.co) can push to both
+  Garmin AND COROS through one unified API**, without separate partner
+  approval for either — its "Planned Workouts API" (labeled
+  **pre-release**) models a workout as `step_blocks` → `steps`, each
+  with an `intensity_type` (warmup/interval/recovery/cooldown) and a
+  `completion_condition` (time/distance/calories/reps/open), targets
+  given as absolute values (pace/HR/power/cadence/RPE) or relative to
+  the athlete's own FTP/threshold HR/max HR/threshold pace — closest
+  thing found to a real, concrete, portable interval-workout model.
+  Caveats found alongside it: **Garmin only accepts a specific target-
+  type set** (an unsupported target gets rejected, surfaced as a warning
+  rather than a hard failure), it's a **paid add-on** to a Terra
+  subscription (no pricing figure found), and it's pre-release — worth
+  checking current status/pricing directly before counting on it, not
+  assuming the search summary above is still accurate.
+- **There is no single portable "file" to hand either platform for a
+  live automatic push** — unlike the `.ics` calendar export this app
+  already builds, a structured-workout push is a JSON API call (one of
+  the schemas above), not a downloadable file the athlete imports by
+  hand. A file-based route (e.g. a FIT workout file manually imported
+  into the COROS/Garmin app) wasn't confirmed as actually supported by
+  either platform's regular consumer app from the search results
+  gathered — not asserted here either way.
+- **The actual biggest gap found isn't COROS or Garmin at all — it's
+  Cadencia's own data model.** `workouts.notes`/`workout_type` are
+  plain free text; there is no structured representation anywhere in
+  this schema of "6x400m @ 5K pace, 90s recovery between reps, 10min
+  warmup/cooldown" as actual steps/targets/repeats. Every platform
+  above (COROS's `tp/list/push`, Garmin's Training API, Terra's
+  `step_blocks`) needs that structure as input — so even once a partner
+  approval comes through, there's nothing to push yet without first
+  building a structured-workout editor in Cadencia itself. That's
+  realistically the larger piece of this whole feature, independent of
+  which platform(s) end up being the destination, and isn't gated by
+  anyone's approval — it could start now if wanted, before COROS/Garmin
+  access exists at all.
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as

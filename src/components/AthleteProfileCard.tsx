@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { ATHLETES, SPORTS, type Athlete, type AthleteSlug, type PersonalBest, type Sport } from "@/lib/types";
 import { durationLabel, parseDuration } from "@/lib/dates";
 import { DISTANCE_PRESETS, predictRaceTimes } from "@/lib/racePredictor";
+import { ZoneTables } from "@/components/ZoneTables";
 
 function newId() {
   return typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
@@ -159,6 +160,18 @@ export function AthleteProfileCard({ slug }: { slug: AthleteSlug }) {
             </Field>
           </div>
         </section>
+
+        {athlete && (athlete.threshold_hr || athlete.threshold_pace_sec_per_km || athlete.ftp_watts || athlete.strava_hr_zones) && (
+          <section>
+            <h4 className="mb-2 text-xs font-semibold uppercase tracking-widest text-ink-3">{t("zones_h")}</h4>
+            <p className="mb-2 text-xs text-ink-3">
+              {isEn
+                ? "Heart rate and pace zones computed from the thresholds set below in Training Zones."
+                : "Zonas de frecuencia cardíaca y pace calculadas a partir de los umbrales de la tarjeta Zonas de Entrenamiento más abajo."}
+            </p>
+            <ZoneTables athlete={athlete} />
+          </section>
+        )}
 
         <section>
           <h4 className="mb-2 text-xs font-semibold uppercase tracking-widest text-ink-3">

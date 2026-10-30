@@ -142,6 +142,11 @@ export interface StravaActivity {
   calories: number | null;
   /** Shoe or bike name used, resolved from Strava's gear list at sync time. */
   gear_name: string | null;
+  /** The full raw activity object Strava's list endpoint returned, stored
+   * verbatim at sync time (see app/api/strava/sync/route.ts) — includes
+   * fields never extracted into their own column, notably `map.summary_polyline`
+   * (an encoded route), decoded and drawn by components/ActivityMap.tsx. */
+  raw: { map?: { summary_polyline?: string | null } | null } | null;
 }
 
 export type ActivityWithSlug = StravaActivity & { athleteSlug: AthleteSlug };
