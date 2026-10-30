@@ -65,9 +65,12 @@ export interface StravaActivity {
   name: string;
   sport_type: string;
   start_date: string;
+  /** Local calendar date (YYYY-MM-DD), from Strava's start_date_local. */
+  local_date: string | null;
   moving_time_s: number;
   distance_m: number;
   average_cadence: number | null;
   average_speed: number | null;
   synced_at: string;
+  description_written_at: string | null;
 }

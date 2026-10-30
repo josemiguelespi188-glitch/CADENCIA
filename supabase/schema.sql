@@ -79,10 +79,16 @@ create table if not exists strava_activities (
   average_cadence numeric(6,2),
   average_speed numeric(6,3),
   raw jsonb,
-  synced_at timestamptz not null default now()
+  synced_at timestamptz not null default now(),
+  -- Local calendar date (from Strava's start_date_local) — used to match
+  -- against a planned workouts row by day, since start_date is UTC and
+  -- can land on the wrong day. See migration 004 for the full rationale.
+  local_date date,
+  description_written_at timestamptz
 );
 
 create index if not exists strava_activities_athlete_date_idx on strava_activities (athlete_id, start_date desc);
+create index if not exists strava_activities_local_date_idx on strava_activities (athlete_id, local_date);
 
 -- workouts.strava_activity_id references strava_activities(id) — added as a
 -- separate statement so creation order doesn't matter on a fresh run.

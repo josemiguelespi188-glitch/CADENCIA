@@ -80,19 +80,56 @@ concretely:
   stops Juan from clicking "Connect" on José's card by hand, which is
   fine only because this app isn't exposed beyond the two of them.
 - `/api/strava/sync` pulls that athlete's most recent 50 activities and
-  upserts them into `strava_activities`. **It does not attempt to
-  auto-match a synced activity to a specific planned `workouts` row** —
-  matching by date+sport alone is guesswork (two easy runs logged the same
-  day, a workout done a day late, etc.). V1 shows real Strava activity
-  alongside the plan (dashboard's "Strava" section) rather than merging
-  them; auto-linking (and marking a workout "done" from a matching
-  activity) is a reasonable next step if it's wanted, but was deliberately
-  left out rather than guessed at.
+  upserts them into `strava_activities`.
 - Sync is manual (a "Sync now" button on `/settings`) — there's no
   scheduled/webhook sync in this first pass. Strava does support
   subscription webhooks (`POST /push_subscriptions`) the same way ClickUp's
   webhook is registered in the Operations Hub codebase; add that later if
   manual sync turns out to be too much friction.
+
+### Auto-complete + AI description write-back (built, Oct 2026)
+
+Step 2 of the confirmed build order (see "Roadmap" below). Every sync now
+also processes any `strava_activities` row with `description_written_at
+is null` — not just the ones just fetched, so a prior failed attempt
+(e.g. Claude briefly down) gets retried on the next sync too:
+
+- **Auto-complete is deliberately conservative.** The original V1 note
+  above ("matching by date+sport alone is guesswork") is still true, so
+  the match only fires when there is **exactly one** un-linked planned
+  `workouts` row for that athlete on the same **local** calendar day
+  (`strava_activities.local_date`, from Strava's `start_date_local` —
+  NOT `start_date`, which is UTC and can land on the wrong day) and the
+  same mapped sport. Zero or multiple candidates are left alone for
+  manual review rather than guessed at. A match sets `done = true` and
+  `strava_activity_id` on the matched `workouts` row.
+- **The AI write-back always runs**, independent of whether a match was
+  found — per the earlier confirmed decision ("qué lo haga automático
+  apenas sincroniza"), fully automatic, no draft/approve step.
+  `src/lib/integrations/claude.ts`'s `generateActivityDescription()`
+  calls the Claude API directly (`ANTHROPIC_API_KEY`, model pinned to
+  `claude-sonnet-5-5` in that file) with the activity's own data, plus
+  the matched workout's `notes` (its stated objective) when there is one
+  — same best-effort pattern as every other optional AI/notification
+  step in this codebase (Communications' approval emails, Support
+  Inquiry's AI explain): missing key or a failed call just skips the
+  write silently (`console.error`'d), never blocks sync or
+  auto-complete. The result is written back onto the real Strava
+  activity via `updateStravaActivityDescription()` (`PUT
+  /activities/{id}`, requires the `activity:write` scope — added to the
+  OAuth authorize URL in this same pass; safe to widen without
+  re-auth since nobody had connected yet when this scope changed).
+- `description_written_at` is set after every attempt, success or
+  failure — so a permanent failure (e.g. no `ANTHROPIC_API_KEY` set at
+  all) doesn't get retried forever, same tradeoff as everywhere else in
+  this codebase that uses a "processed at" timestamp for a best-effort
+  step.
+- Not yet tested against real Strava data (no athlete has connected
+  Strava from this sandbox) — confirm once deployed: that the OAuth
+  consent screen actually shows the write permission, that a same-day
+  same-sport match correctly flips a workout to done, and that the
+  written-back description actually shows up on the real Strava
+  activity page.
 
 ## Manual setup steps
 
@@ -170,14 +207,15 @@ building the wrong integration entirely:
    human-in-the-loop review screen.
 4. **Build order, explicitly confirmed**: (1) the weekly `.ics` export
    pipeline first — **done**, see below; (2) Strava auto-complete
-   (marking a planned workout "done" from a matching synced activity —
-   deliberately left out of the original sync route, see "Strava
-   integration" above) plus the auto-write-back description; (3) the
+   (marking a planned workout "done" from a matching synced activity)
+   plus the auto-write-back description — **done**, see "Auto-complete +
+   AI description write-back" under "Strava integration" above; (3) the
    TrainingPeaks-style dashboard (effectiveness, effort rating, AI
-   insights) last, since it needs real synced data flowing first to be
-   meaningful rather than a shell with no numbers behind it. Don't jump
-   ahead to (2) or (3) without this file saying they're done being
-   built, or without a fresh explicit instruction to reprioritize.
+   insights) is next, since it needs real synced data flowing first to be
+   meaningful rather than a shell with no numbers behind it — now that
+   (2) is in place, this is the one still-undone piece of the original
+   three. The AI-generated-plans and virtual-coach-agent items further
+   below are separate, later work, not part of this three-item order.
 
 ### Weekly `.ics` export (built)
 

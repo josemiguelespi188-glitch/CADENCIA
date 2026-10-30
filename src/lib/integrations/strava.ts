@@ -19,7 +19,7 @@ export function buildStravaAuthorizeUrl(athleteId: string) {
     redirect_uri: `${getSiteBaseUrl()}/api/strava/callback`,
     response_type: "code",
     approval_prompt: "auto",
-    scope: "read,activity:read_all",
+    scope: "read,activity:read_all,activity:write",
     state: athleteId,
   });
   return `${STRAVA_AUTHORIZE_URL}?${params.toString()}`;
@@ -98,6 +98,11 @@ export interface StravaSummaryActivity {
   name: string;
   sport_type: string;
   start_date: string;
+  /** Same instant as start_date, but formatted in the athlete's own local
+   * time (Strava's own distinction) — used to decide which calendar day
+   * the activity belongs to, since start_date is UTC and can land on the
+   * wrong day for matching against a planned workout. */
+  start_date_local: string;
   moving_time: number;
   distance: number;
   average_cadence?: number;
@@ -115,6 +120,20 @@ export async function fetchRecentStravaActivities(
   });
   if (!res.ok) throw new Error(`Strava activities fetch failed: ${res.status} ${await res.text()}`);
   return res.json();
+}
+
+/** Writes a new description onto a Strava activity (requires the `activity:write` scope). */
+export async function updateStravaActivityDescription(
+  accessToken: string,
+  activityId: string,
+  description: string
+): Promise<void> {
+  const res = await fetch(`${STRAVA_API_BASE}/activities/${activityId}`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ description }),
+  });
+  if (!res.ok) throw new Error(`Strava activity update failed: ${res.status} ${await res.text()}`);
 }
 
 /** Maps a sport-shaped Cadencia value from Strava's own `sport_type` string. */

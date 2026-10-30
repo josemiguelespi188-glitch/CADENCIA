@@ -93,7 +93,13 @@ function AthleteStravaCard({ slug }: { slug: AthleteSlug }) {
         body: JSON.stringify({ athleteSlug: slug }),
       });
       const data = await res.json();
-      setMessage(res.ok ? (isEn ? `Synced ${data.synced} activities.` : `Se sincronizaron ${data.synced} actividades.`) : data.error);
+      setMessage(
+        res.ok
+          ? isEn
+            ? `Synced ${data.synced} activities · ${data.matched} auto-completed · ${data.described} descriptions written.`
+            : `${data.synced} actividades sincronizadas · ${data.matched} auto-completados · ${data.described} descripciones escritas.`
+          : data.error
+      );
       await loadStatus();
     } finally {
       setBusy(false);
