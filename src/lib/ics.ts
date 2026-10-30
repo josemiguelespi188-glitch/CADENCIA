@@ -1,5 +1,5 @@
 import type { WorkoutWithSlug } from "@/components/WorkoutDialog";
-import { ATHLETES, type Who } from "@/lib/types";
+import type { Athlete } from "@/lib/types";
 import { addDays, parseYmd, pad } from "@/lib/dates";
 
 function icsEscape(s: string) {
@@ -33,7 +33,12 @@ function stamp(d: Date, time?: { h: number; m: number }) {
  * updates the existing calendar event on re-import instead of duplicating
  * it (see CLAUDE.md's "Weekly .ics export" section for the full rationale).
  */
-export function buildWeekIcs(workouts: WorkoutWithSlug[], who: Who, sportLabel: (sport: string) => string): string {
+export function buildWeekIcs(
+  workouts: WorkoutWithSlug[],
+  athleteBySlug: Record<string, Athlete>,
+  isMultiple: boolean,
+  sportLabel: (sport: string) => string
+): string {
   const now = new Date();
   const dtstamp = `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}T${pad(
     now.getUTCHours()
@@ -55,7 +60,7 @@ export function buildWeekIcs(workouts: WorkoutWithSlug[], who: Who, sportLabel: 
       lines.push(`DTSTART;VALUE=DATE:${stamp(d)}`, `DTEND;VALUE=DATE:${stamp(addDays(d, 1))}`);
     }
 
-    const prefix = who === "both" ? `[${ATHLETES[w.athleteSlug].initials}] ` : "";
+    const prefix = isMultiple ? `[${athleteBySlug[w.athleteSlug]?.initials ?? "?"}] ` : "";
     lines.push(`SUMMARY:${icsEscape(`${prefix}${sportLabel(w.sport)}: ${w.title}`)}`);
 
     const descParts = [w.notes, w.km ? `${w.km} km` : ""].filter(Boolean);

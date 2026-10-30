@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocale } from "@/lib/i18n/context";
-import { useAthleteView } from "@/lib/athlete-view-context";
+import { useAuth } from "@/lib/auth-context";
 import { createClient } from "@/lib/supabase/client";
 import { SiteHeader } from "@/components/SiteHeader";
 import { Button } from "@/components/ui/button";
@@ -10,14 +10,12 @@ import { WorkoutDialog, type WorkoutFormValue, type WorkoutWithSlug } from "@/co
 import { ActivityDetailDialog } from "@/components/ActivityDetailDialog";
 import { DashboardPanel } from "@/components/DashboardPanel";
 import {
-  ATHLETES,
   SPORTS,
   type ActivityWithSlug,
   type AthleteSlug,
   type Athlete,
   type StravaActivity,
   type Template,
-  type Who,
   type Workout,
 } from "@/lib/types";
 import { addDays, fmt, hm, monday, parseYmd, today, ymd } from "@/lib/dates";
@@ -29,9 +27,8 @@ type EditingState = { record: WorkoutWithSlug | null; defaultDate?: string; defa
 
 export default function CalendarPage() {
   const { t, locale } = useLocale();
-  const { who, lastSingle } = useAthleteView();
+  const { me, athletes, athleteBySlug, viewing, isMultiple } = useAuth();
 
-  const [athletes, setAthletes] = useState<Athlete[]>([]);
   const [workouts, setWorkouts] = useState<WorkoutWithSlug[]>([]);
   const [activities, setActivities] = useState<ActivityWithSlug[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -43,8 +40,7 @@ export default function CalendarPage() {
 
   const load = useCallback(async () => {
     const supabase = createClient();
-    const [{ data: ath }, { data: w }, { data: tpl }, { data: acts }] = await Promise.all([
-      supabase.from("athletes").select("*"),
+    const [{ data: w }, { data: tpl }, { data: acts }] = await Promise.all([
       supabase.from("workouts").select("*").order("date", { ascending: true }),
       supabase.from("templates").select("*"),
       // Last 30 days only — "no necesito lo histórico, solamente el
@@ -56,19 +52,19 @@ export default function CalendarPage() {
         .gte("local_date", ymd(addDays(today(), -30)))
         .order("local_date", { ascending: true }),
     ]);
-    const athleteList = (ath as Athlete[]) ?? [];
-    setAthletes(athleteList);
-    const byId = new Map(athleteList.map((a) => [a.id, a.slug]));
-    const workoutRows = ((w as Workout[]) ?? []).map((row) => ({ ...row, athleteSlug: byId.get(row.athlete_id) ?? "juan" }));
+    // `athletes` (the roster) comes from AuthProvider now, not a separate
+    // fetch here — it already loads it once, reactively.
+    const byId = new Map(athletes.map((a) => [a.id, a.slug]));
+    const workoutRows = ((w as Workout[]) ?? []).map((row) => ({ ...row, athleteSlug: byId.get(row.athlete_id) ?? "" }));
     setWorkouts(workoutRows);
     // Kept unfiltered here (every last-30-days activity, linked or not) —
     // the merged-in DashboardPanel below needs the full set for Recent
     // Activities/Best Efforts/totals; the calendar grid itself filters out
     // already-linked activities separately, see `visibleActivities` below.
-    setActivities(((acts as StravaActivity[]) ?? []).map((row) => ({ ...row, athleteSlug: byId.get(row.athlete_id) ?? "juan" })));
+    setActivities(((acts as StravaActivity[]) ?? []).map((row) => ({ ...row, athleteSlug: byId.get(row.athlete_id) ?? "" })));
     setTemplates((tpl as Template[]) ?? []);
     setLoading(false);
-  }, []);
+  }, [athletes]);
 
   useEffect(() => {
     // Initial data fetch on mount — synchronizing with Supabase, the
@@ -79,8 +75,8 @@ export default function CalendarPage() {
   }, [load]);
 
   const visible = useMemo(
-    () => (who === "both" ? workouts : workouts.filter((w) => w.athleteSlug === who)),
-    [workouts, who]
+    () => workouts.filter((w) => viewing.includes(w.athleteSlug)),
+    [workouts, viewing]
   );
   const linkedActivityIds = useMemo(
     () => new Set(workouts.map((w) => w.strava_activity_id).filter(Boolean)),
@@ -89,11 +85,8 @@ export default function CalendarPage() {
   /** Unlinked activities only, for the week/month chips — see
    * CLAUDE.md's "Calendar shows real Strava activity" note. */
   const visibleActivities = useMemo(
-    () =>
-      activities.filter(
-        (a) => !linkedActivityIds.has(a.id) && (who === "both" || a.athleteSlug === who)
-      ),
-    [activities, linkedActivityIds, who]
+    () => activities.filter((a) => !linkedActivityIds.has(a.id) && viewing.includes(a.athleteSlug)),
+    [activities, linkedActivityIds, viewing]
   );
 
   async function saveWorkout(value: WorkoutFormValue, existingId: string | null) {
@@ -135,7 +128,7 @@ export default function CalendarPage() {
   }
 
   function openAdd(date: string) {
-    setEditing({ record: null, defaultDate: date, defaultAthlete: who === "both" ? lastSingle : who });
+    setEditing({ record: null, defaultDate: date, defaultAthlete: me?.slug });
   }
 
   return (
@@ -153,7 +146,8 @@ export default function CalendarPage() {
                 anchor={anchor}
                 setAnchor={setAnchor}
                 visible={visible}
-                who={who}
+                athleteBySlug={athleteBySlug}
+                isMultiple={isMultiple}
                 locale={locale}
                 t={t}
                 onAdd={() => openAdd(ymd(anchor >= today() || view === "month" ? anchor : today()))}
@@ -163,7 +157,8 @@ export default function CalendarPage() {
                   anchor={anchor}
                   visible={visible}
                   activities={visibleActivities}
-                  who={who}
+                  athleteBySlug={athleteBySlug}
+                  isMultiple={isMultiple}
                   locale={locale}
                   t={t}
                   onAdd={openAdd}
@@ -183,7 +178,7 @@ export default function CalendarPage() {
                   }}
                 />
               )}
-              <DashboardPanel who={who} athletes={athletes} workouts={workouts} activities={activities} />
+              <DashboardPanel viewing={viewing} athletes={athletes} workouts={workouts} activities={activities} />
             </>
           )}
         </div>
@@ -192,6 +187,7 @@ export default function CalendarPage() {
       <WorkoutDialog
         editing={editing}
         templates={templates}
+        athletes={athletes}
         onClose={() => setEditing(null)}
         onSave={saveWorkout}
         onDelete={deleteWorkout}
@@ -209,7 +205,8 @@ function Toolbar({
   anchor,
   setAnchor,
   visible,
-  who,
+  athleteBySlug,
+  isMultiple,
   locale,
   t,
   onAdd,
@@ -219,7 +216,8 @@ function Toolbar({
   anchor: Date;
   setAnchor: (d: Date) => void;
   visible: WorkoutWithSlug[];
-  who: Who;
+  athleteBySlug: Record<string, Athlete>;
+  isMultiple: boolean;
   locale: string;
   t: (k: string) => string;
   onAdd: () => void;
@@ -249,8 +247,8 @@ function Toolbar({
   }
 
   function downloadWeek() {
-    const ics = buildWeekIcs(items, who, t);
-    downloadIcs(`cadencia-${who}-${ymd(start)}.ics`, ics);
+    const ics = buildWeekIcs(items, athleteBySlug, isMultiple, t);
+    downloadIcs(`cadencia-week-${ymd(start)}.ics`, ics);
   }
 
   return (
@@ -310,7 +308,8 @@ function WeekView({
   anchor,
   visible,
   activities,
-  who,
+  athleteBySlug,
+  isMultiple,
   locale,
   t,
   onAdd,
@@ -321,7 +320,8 @@ function WeekView({
   anchor: Date;
   visible: WorkoutWithSlug[];
   activities: ActivityWithSlug[];
-  who: Who;
+  athleteBySlug: Record<string, Athlete>;
+  isMultiple: boolean;
   locale: string;
   t: (k: string) => string;
   onAdd: (date: string) => void;
@@ -379,10 +379,10 @@ function WeekView({
             {items.length || dayActivities.length ? (
               <>
                 {items.map((w) => (
-                  <WorkoutChip key={w.id} w={w} locale={locale} t={t} onToggle={onToggle} onEdit={onEdit} />
+                  <WorkoutChip key={w.id} w={w} athleteBySlug={athleteBySlug} locale={locale} t={t} onToggle={onToggle} onEdit={onEdit} />
                 ))}
                 {dayActivities.map((a) => (
-                  <ActivityChip key={a.id} a={a} who={who} locale={locale} onOpen={onOpenActivity} />
+                  <ActivityChip key={a.id} a={a} athleteBySlug={athleteBySlug} isMultiple={isMultiple} locale={locale} onOpen={onOpenActivity} />
                 ))}
               </>
             ) : (
@@ -401,12 +401,14 @@ function WeekView({
  * this happened but wasn't planned. */
 function ActivityChip({
   a,
-  who,
+  athleteBySlug,
+  isMultiple,
   locale,
   onOpen,
 }: {
   a: ActivityWithSlug;
-  who: Who;
+  athleteBySlug: Record<string, Athlete>;
+  isMultiple: boolean;
   locale: string;
   onOpen: (a: ActivityWithSlug) => void;
 }) {
@@ -426,8 +428,10 @@ function ActivityChip({
         <div className="flex items-center gap-1.5">
           <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: sport ? "var(--c)" : "var(--ink-3)" }} />
           <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">Strava</span>
-          {who === "both" && (
-            <span className="ml-auto rounded border border-line bg-surface px-1 text-[10px] font-bold">{ATHLETES[a.athleteSlug].initials}</span>
+          {isMultiple && (
+            <span className="ml-auto rounded border border-line bg-surface px-1 text-[10px] font-bold">
+              {athleteBySlug[a.athleteSlug]?.initials ?? "?"}
+            </span>
           )}
         </div>
         <p className="text-sm font-medium break-words">{a.name}</p>
@@ -439,12 +443,14 @@ function ActivityChip({
 
 function WorkoutChip({
   w,
+  athleteBySlug,
   locale,
   t,
   onToggle,
   onEdit,
 }: {
   w: WorkoutWithSlug;
+  athleteBySlug: Record<string, Athlete>;
   locale: string;
   t: (k: string) => string;
   onToggle: (w: WorkoutWithSlug) => void;
@@ -472,7 +478,9 @@ function WorkoutChip({
           <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--c)" }}>
             {t(w.sport)}
           </span>
-          <span className="ml-auto rounded border border-line bg-surface px-1 text-[10px] font-bold">{ATHLETES[w.athleteSlug].initials}</span>
+          <span className="ml-auto rounded border border-line bg-surface px-1 text-[10px] font-bold">
+            {athleteBySlug[w.athleteSlug]?.initials ?? "?"}
+          </span>
         </div>
         <p className={cn("text-sm font-medium break-words", w.done && "line-through opacity-60")}>{w.title}</p>
         {metaParts.length > 0 && <p className="text-xs text-ink-3">{metaParts.join(" · ")}</p>}

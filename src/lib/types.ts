@@ -1,13 +1,14 @@
-export type AthleteSlug = "juan" | "jose";
-export type Who = AthleteSlug | "both";
+/**
+ * A loose alias now, not a two-value union — the roster stopped being a
+ * fixed Juan/José pair once /admin's invite flow could add anyone (see
+ * CLAUDE.md's "Real auth + admin" section). Kept as its own name (rather
+ * than inlining `string` everywhere) purely so call sites that are really
+ * about athlete identity stay self-documenting.
+ */
+export type AthleteSlug = string;
 export type Sport = "swim" | "bike" | "run" | "gym" | "race";
 
 export const SPORTS: Sport[] = ["swim", "bike", "run", "gym", "race"];
-
-export const ATHLETES: Record<AthleteSlug, { name: string; initials: string }> = {
-  juan: { name: "Juan", initials: "JB" },
-  jose: { name: "José Miguel", initials: "JE" },
-};
 
 export interface Athlete {
   id: string;
@@ -15,6 +16,9 @@ export interface Athlete {
   name: string;
   initials: string;
   auth_user_id: string | null;
+  email: string | null;
+  /** Can reach /admin — only ever set server-side, see CLAUDE.md. */
+  is_admin: boolean;
   /** Lactate threshold heart rate, in bpm. */
   threshold_hr: number | null;
   /** Running threshold pace ("race predictor"), in seconds per km. */

@@ -30,34 +30,32 @@ stays identical on purpose so the two apps read as one family.
 
 ## Data model & auth
 
-**Auth is deliberately switched off for now** (explicit product decision,
-Oct 2026 — "quita el tema de la autenticacion por el momento, no
-necesitamos claves ahorita"). The app has no sign-in page; every page loads
-straight in. This was a real reversal, not the original design — see the
-RLS note in `supabase/schema.sql` for the full rationale, the exact
-tradeoff being accepted, and how to revert it later. What changed
-concretely:
+**Auth is back on** (reversed Oct 2026 — see "Real auth + admin" below
+for the full story; it was briefly off, Oct 2026, per "quita el tema de
+la autenticacion por el momento"). Every page requires a real,
+signed-in account; there's no self sign-up, only admin-sent invites.
 
-- `athletes` — still a fixed roster of exactly two rows (`juan`, `jose`),
-  seeded by `supabase/schema.sql`. `auth_user_id` still exists and is
-  already linked for José (from when auth was on), but **nothing in the
-  app reads it anymore** — it's inert until auth is turned back on.
-- `workouts`, `templates`, `strava_activities` (select) — RLS policies
-  grant `anon` the same access as `authenticated` (see `schema.sql` /
-  `supabase/migrations/002_disable_auth_rls_gate.sql`), so every page works
-  with nobody signed in. This means **anyone with the deployed URL can read
-  and write every workout/template** — accepted only because this app
-  isn't publicly shared or indexed. The "Juan / José / Both" switch in the
-  header (`src/lib/athlete-view-context.tsx`) was always a view filter, not
-  a security boundary, and still is.
-- `strava_connections` — real OAuth access/refresh tokens. RLS enabled with
-  **no policies at all**, service-role only, same strictness pattern the
-  Operations Hub codebase uses for every secret-holding table
-  (`order_tracking_links`, `sa_reviews`, etc.) — **unaffected by turning
-  auth off**, still completely locked to the server. Never read or written
-  from the browser — `src/app/api/strava/status/route.ts` is the only way
-  the UI learns whether an athlete is connected, and it deliberately
-  returns only `{connected, connectedAt, lastSyncedAt}`, never the tokens.
+- `athletes` — a dynamic roster (no longer fixed to `juan`/`jose`), rows
+  created only through `/admin`'s invite flow. `auth_user_id` links a
+  row to its real Supabase Auth user; `email`/`is_admin` were added in
+  migration 013.
+- `workouts`, `templates`, `strava_activities` (select) — RLS grants
+  `authenticated` access (not `anon` — see migration 013). This is
+  still a shared log among the trusted, invite-only roster, not a
+  siloed multi-tenant app: any signed-in athlete can read/write any
+  other athlete's workouts (the "Friends" picker in the header is a
+  view filter, not a security boundary). The one real per-row boundary
+  is `athletes` itself — an athlete can only update their own row (see
+  migration 013's `athletes_update_own` policy), and `is_admin` can
+  only ever be changed server-side regardless of whose row it is.
+- `strava_connections` — real OAuth access/refresh tokens. RLS enabled
+  with **no policies at all**, service-role only, same strictness
+  pattern the Operations Hub codebase uses for every secret-holding
+  table (`order_tracking_links`, `sa_reviews`, etc.). Never read or
+  written from the browser — `src/app/api/strava/status/route.ts` is
+  the only way the UI learns whether the signed-in athlete is
+  connected, and it deliberately returns only
+  `{connected, connectedAt, lastSyncedAt}`, never the tokens.
 
 ## Strava integration
 
@@ -68,17 +66,12 @@ concretely:
   cookie — the Strava redirect is a fresh top-level navigation with no
   session context of its own), so `/api/strava/callback` knows which
   athlete just connected.
-- Every Strava route (`connect`, `status`, `sync`, `disconnect`) takes an
-  explicit **athlete slug** — `?athlete=juan|jose` on the two GETs,
-  `{athleteSlug}` in the POST bodies — resolved by
-  `getAthleteBySlug()` in `src/lib/auth.ts`, instead of a signed-in
-  session (there isn't one right now). `/settings` shows both athletes as
-  separate cards, each with its own Connect/Sync/Disconnect, rather than
-  acting on "whoever is signed in." If auth comes back, this is the one
-  spot that would need to go back to deriving the athlete from the
-  session instead of trusting a client-supplied slug — right now nothing
-  stops Juan from clicking "Connect" on José's card by hand, which is
-  fine only because this app isn't exposed beyond the two of them.
+- Every Strava route (`connect`, `status`, `sync`, `disconnect`) derives
+  the athlete from the **signed-in session** (`getSignedInAthlete()` in
+  `src/lib/auth.ts`), not a client-supplied slug — `/settings` only ever
+  shows your own Strava card, acting on "whoever is signed in." See
+  "Real auth + admin" below for why/when this changed from the earlier,
+  slug-based design.
 - `/api/strava/sync` pulls that athlete's most recent 50 activities and
   upserts them into `strava_activities`.
 - Sync is manual (a "Sync now" button on `/settings`) — there's no
@@ -141,10 +134,18 @@ is null` — not just the ones just fetched, so a prior failed attempt
    `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and the
    service-role key into `SUPABASE_SERVICE_ROLE_KEY` (Settings -> API).
    These are env vars only — never commit them.
-2. ~~Create two Supabase Auth users and link them~~ — **not needed while
-   auth is off.** José's account (`josemiguel.espi188@gmail.com`) already
-   exists and is linked from when this was briefly tried; it's simply
-   unused by the app right now. Skip straight to step 3.
+2. **Run migrations 002-013 in order** (`supabase/migrations/`) if the
+   project predates this file's current `schema.sql` — a fresh
+   `schema.sql` run already includes all of them. **Auth is back on**
+   (see "Real auth + admin" below) — José's account
+   (`josemiguel.espi188@gmail.com`) already exists and is linked, and
+   migration 013 seeds it as the first admin; every other athlete
+   (Juan included) gets invited from `/admin` once this is deployed,
+   no manual Auth-user creation needed. In **Supabase Dashboard ->
+   Auth -> URL Configuration -> Redirect URLs**, add
+   `https://<this app's domain>/accept-invite` — invite and
+   password-reset emails both link there, and Supabase refuses to
+   redirect anywhere not on this list.
 3. **Create a Strava API app** at
    <https://www.strava.com/settings/api> — "Authorization Callback Domain"
    must be this app's real deployed domain (no `https://`, no path, e.g.
@@ -610,15 +611,14 @@ about who he was even looking at, plus a push toward the bigger
   changes the very first, never-visited-before default.
 - **The header's athlete switch no longer defaults to "Both"** —
   `AthleteViewProvider`'s initial `who`/`lastSingle`
-  (`src/lib/athlete-view-context.tsx`) changed from `"juan"`/showing
-  both to `"jose"` alone. Direct quote: "no deberían salir los dos
-  usuarios... genera mucha confusión." A real **"Friends" model** (pick
-  whose data to see as a social relationship, not a hardcoded
-  two-person roster) is what José actually asked for next, but that
-  needs real auth back first — see "Data model & auth" above for why
-  auth is currently off — so it's flagged in that file's own comment,
-  not built here. Switching to "Both" in the header still works exactly
-  as before; only the *default* changed.
+  (then `src/lib/athlete-view-context.tsx`) changed from `"juan"`/
+  showing both to `"jose"` alone. Direct quote: "no deberían salir los
+  dos usuarios... genera mucha confusión." A real **"Friends" model**
+  (pick whose data to see, not a hardcoded two-person roster) was what
+  José asked for next — built later the same month once real auth came
+  back; see "Real auth + admin" near the end of this file for the
+  actual implementation (`lib/auth-context.tsx` replaced
+  `athlete-view-context.tsx` entirely).
 - **Dashboard is no longer a separate page.** `/dashboard` is deleted;
   its entire content (KPIs, weekly volume chart, by-sport breakdown,
   upcoming list, zone tables, Strava totals, best efforts, recent
@@ -857,6 +857,152 @@ API Application" work elsewhere in this conversation's history).
   which platform(s) end up being the destination, and isn't gated by
   anyone's approval — it could start now if wanted, before COROS/Garmin
   access exists at all.
+
+## Real auth + admin + "Friends" (Oct 2026)
+
+The biggest structural change in this codebase so far — auth comes back
+on (reversing the "Data model & auth" decision above), every page now
+requires a real account, and the hardcoded Juan/José pair becomes a
+dynamic, admin-managed roster. Direct quotes driving this: "necesitamos
+una parte, un botón de admin... donde manejar los usuarios. En los
+usuarios básicamente puedes añadir usuarios... una vez añadido el
+usuario se manda una invitación a través de mail... al lado del título
+de cadencia no me gusta que esté como Juan José Miguel Both, sino...
+José Miguel Friends." Two mechanism decisions were confirmed explicitly
+(`AskUserQuestion`) before touching anything, given how costly either
+would have been to guess wrong: **Friends is open, no request/accept**
+(being invited by an admin at all is the trust boundary — "Automático,
+sin solicitud"), and **yes, re-enable full-app login now**, accepting
+that every page behind it.
+
+- **Migration `013_real_auth_and_admin.sql`** (mirrored in
+  `schema.sql` — **needs this migration run in the Supabase SQL
+  editor**): `athletes` gains `email` and `is_admin`; the old
+  `slug in ('juan','jose')` check constraint is dropped (the roster is
+  no longer fixed); a `athletes_guard_is_admin` trigger silently
+  reverts any attempt to change `is_admin` from a non-service-role
+  write path, so a motivated user calling the REST API directly can't
+  self-promote — `is_admin` only ever changes through `/admin`'s
+  service-role API routes. José is seeded as the first admin (his
+  account/row already existed from an earlier, since-reversed auth
+  attempt). **RLS flips from `anon, authenticated` back to
+  `authenticated` only** on `athletes`/`workouts`/`templates`/
+  `strava_activities`/`strava_daily_load` — real accounts exist again,
+  so there's no reason for a visitor with no account to read or write
+  anything. This is NOT a privacy boundary between signed-in athletes
+  though: any authenticated athlete can still read/write any other
+  athlete's `workouts` (unchanged "shared coach log" behavior) — the
+  one real per-row boundary is `athletes` itself, where a new
+  `athletes_update_own` policy (`auth_user_id = auth.uid()`) means an
+  athlete can only ever update their own profile row, never anyone
+  else's, and never `is_admin` on any row (the trigger covers that
+  even for your own row).
+- **`lib/auth-context.tsx`** (renamed from the old
+  `athlete-view-context.tsx`, which it replaces entirely) is now both
+  the auth gate AND the view-filter state in one `AuthProvider`/
+  `useAuth()`: tracks the Supabase session, resolves `me` (your own
+  `athletes` row, matched by `auth_user_id`) and `athletes` (the full
+  roster, for the Friends picker and any slug -> name/initials lookup
+  — this directly replaces the old hardcoded `ATHLETES` constant,
+  which is gone from `lib/types.ts`; `AthleteSlug` itself is still
+  exported but is now just an alias for `string`, not a two-value
+  union, so most existing `AthleteSlug`-typed call sites needed no
+  rename), and `viewing` (slugs currently shown on the calendar —
+  always includes your own, `toggleFriend()` adds/removes others,
+  replacing the old `who: "juan" | "jose" | "both"`). **No gate
+  component separate from the provider** — `AuthProvider` itself
+  renders either the sign-in screen or `children`, based on session
+  state, which avoids a second wrapper layer; the one pathname
+  exception is `/accept-invite` (checked by prefix inside the
+  provider — a route-group split would have been architecturally
+  cleaner but meant moving every existing page into a new folder, not
+  worth it for one exception).
+- **Sign-in screen** (inside `auth-context.tsx`, shown by
+  `AuthProvider` whenever there's no session) is plain email+password,
+  **no self sign-up** (every account comes from `/admin`'s invite
+  flow), plus "Forgot your password?" (`supabase.auth
+  .resetPasswordForEmail`, same `/accept-invite` redirect as a fresh
+  invite — one page serves both since the underlying Supabase
+  mechanism, a URL-hash session, is identical either way).
+- **`src/proxy.ts`** (Next.js 16 renamed the old `middleware.ts`
+  convention to `proxy.ts`/`export function proxy` — built directly
+  against that, not the deprecated name) does the standard Supabase
+  SSR session-cookie refresh on every request. It doesn't gate
+  anything itself — `AuthProvider` does that client-side.
+- **`lib/auth.ts`** (server-side): `getSignedInAthlete()` reads the
+  real session now, replacing the old `getAthleteBySlug()` (deleted —
+  nothing calls it anymore). `requireAdmin()` throws unless the
+  signed-in athlete's `is_admin` is true; every `/api/admin/*` route
+  calls it first.
+- **Strava routes (`connect`/`status`/`sync`/`disconnect`) derive the
+  athlete from the session now, not a client-supplied `?athlete=`
+  slug** — closes the exact gap flagged in the old "Strava integration"
+  note above ("nothing stops Juan from clicking Connect on José's
+  card"). `/settings` correspondingly dropped its per-athlete-card
+  loop entirely — it only ever shows `useAuth().me`'s own Profile/
+  Zones/Strava cards now, never another athlete's.
+- **Header redesign** (`SiteHeader.tsx`): the old "Juan / José / Both"
+  pill switcher is gone, replaced with a pill showing your own name
+  plus a "Friends ▾" dropdown (checkboxes, one per other athlete in
+  the roster) that adds/removes them from `viewing` — multiple friends
+  can be checked at once, generalizing the old binary "Both". An
+  "Admin" link renders **only for `me.is_admin`, as the rightmost nav
+  item** (per explicit instruction, "lo más a la derecha posible"), and
+  a Sign Out button was added (there wasn't one before, since auth was
+  off).
+- **`/admin`** (`app/admin/page.tsx` + `app/api/admin/athletes/*`):
+  lists the roster (name, email, admin badge, has-an-account or not),
+  with two invite paths from one endpoint
+  (`POST /api/admin/athletes/invite`, `supabase.auth.admin
+  .inviteUserByEmail()` — same proven pattern as the Operations Hub
+  codebase's own "Team invites" feature, not a hand-rolled token
+  table): **"+ Add athlete"** creates a brand-new `athletes` row
+  (slug auto-generated from the name, deduped against the roster) and
+  invites it in one call; **"Send invite" on an existing unlinked
+  row** (Juan's, seeded with no `auth_user_id` before real auth came
+  back) instead links the new auth account to that SAME row —
+  preserving its existing workouts/Strava connection instead of
+  creating a duplicate "Juan 2". `PATCH /api/admin/athletes/[id]`
+  toggles `is_admin`, refusing to demote the last remaining admin
+  (would lock everyone out of `/admin` with no way back short of a
+  manual SQL edit).
+- **`/accept-invite`** (public, outside the auth gate) is where both
+  an invite link and a password-reset link land — Supabase's browser
+  client auto-detects the session from the URL hash
+  (`detectSessionInUrl`, on by default), this page waits for it, then
+  `supabase.auth.updateUser({password})` finishes the account and
+  routes to `/settings` — directly satisfying "como tienes que
+  obviamente crear tu clave y llenar el form de toda la info de
+  settings": password first, then straight into the profile
+  questionnaire that already existed.
+- **A "Connect COROS / Garmin" placeholder card** sits next to the
+  Strava card on `/settings` (direct quote: "en el introform tiene que
+  conectar con strava y con coros o garmin, ahorita no esta lista esa
+  conexion") — disabled, labeled "Not available yet," pointing at this
+  file's own COROS/Garmin research section rather than faking a
+  working connection, same honesty rule this codebase applies to every
+  other not-yet-built integration (the AI chat placeholder, etc.).
+- **Every file that touched the old hardcoded `ATHLETES`/`Who`/
+  `useAthleteView`** was updated to the dynamic roster:
+  `WorkoutDialog.tsx`'s athlete picker now takes an `athletes` prop;
+  `lib/ics.ts`'s `buildWeekIcs()` takes `athleteBySlug` +
+  `isMultiple` instead of `who`; `lib/excelPlan.ts`'s `matchAthlete()`
+  and the Plan sheet's dropdown take the real roster instead of the
+  constant (both `buildPlanTemplate()` and `parsePlanWorkbook()` now
+  require it as a parameter — `GET /api/plan/template` and
+  `POST /api/plan/import` fetch it server-side); `DashboardPanel.tsx`
+  and `calendar/page.tsx` filter by `viewing.includes(athleteSlug)`
+  instead of `who === "both"`.
+- Not yet tested against a real Supabase project from this sandbox (no
+  live project connected here, same standing limitation as every other
+  Supabase-dependent feature in this codebase) — **confirm once
+  deployed**: that migration 013 runs cleanly, that the
+  `/accept-invite` redirect URL is allow-listed in the Supabase
+  dashboard, that inviting Juan from `/admin` actually links his
+  existing row (not a duplicate), that the last-admin-removal guard
+  actually blocks itself out, and that signing out and back in behaves
+  correctly across a real browser session (not just this sandbox's
+  build-time type checking).
 
 ## Style
 

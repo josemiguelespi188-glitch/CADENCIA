@@ -1,18 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getAthleteBySlug } from "@/lib/auth";
+import { NextResponse } from "next/server";
+import { getSignedInAthlete } from "@/lib/auth";
 import { createServiceClient } from "@/lib/supabase/server";
 
 /**
  * strava_connections has RLS enabled with no policies at all (service-role
- * only — it holds real OAuth tokens), so the Settings page can't read it
- * directly from the browser. This route reads it server-side with the
- * service client and returns only the non-secret bits the UI needs, for
- * the athlete named in `?athlete=juan|jose`.
+ * only — it holds real OAuth tokens), so Settings can't read it directly
+ * from the browser. Always the SIGNED-IN athlete's own connection now —
+ * see the note in connect/route.ts.
  */
-export async function GET(req: NextRequest) {
-  const slug = req.nextUrl.searchParams.get("athlete");
-  const athlete = slug ? await getAthleteBySlug(slug) : null;
-  if (!athlete) return NextResponse.json({ error: "Unknown athlete" }, { status: 400 });
+export async function GET() {
+  const athlete = await getSignedInAthlete();
+  if (!athlete) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
   const db = createServiceClient();
   const { data } = await db

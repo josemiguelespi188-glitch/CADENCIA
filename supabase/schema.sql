@@ -4,15 +4,22 @@
 create extension if not exists pgcrypto;
 
 -- ─── athletes ──────────────────────────────────────────────────────────────
--- Fixed roster of two: Juan and José. `auth_user_id` links a row to a real
--- Supabase Auth user once that user is created (see CLAUDE.md — this app
--- has no self-signup; the two accounts are created by hand once).
+-- A dynamic roster, not a fixed pair (see migration 013) — new athletes
+-- are created only through /admin's invite flow (service-role, no
+-- self-signup). `auth_user_id` links a row to a real Supabase Auth user
+-- once invited and accepted. `slug` still exists as a short identifier
+-- (used in URLs/exports before this migration) but is no longer
+-- constrained to a fixed allow-list.
 create table if not exists athletes (
   id uuid primary key default gen_random_uuid(),
-  slug text not null unique check (slug in ('juan', 'jose')),
+  slug text not null unique,
   name text not null,
   initials text not null,
   auth_user_id uuid unique references auth.users(id) on delete set null,
+  email text unique,
+  -- Can reach /admin — only ever set server-side via the service-role
+  -- admin API; see the athletes_guard_is_admin trigger below.
+  is_admin boolean not null default false,
   -- Training-zone thresholds, editable from /settings — see migration 003
   -- and CLAUDE.md's roadmap (these feed future AI plan generation / a
   -- virtual coach agent, neither built yet).
@@ -60,12 +67,35 @@ comment on column athletes.weight_kg is 'Manually entered body weight (kg) — d
 comment on column athletes.resting_hr is 'Resting heart rate (bpm), self-reported.';
 comment on column athletes.max_hr is 'Max heart rate (bpm), self-reported or from a field test.';
 comment on column athletes.personal_bests is 'Array of {id, sport, distanceLabel, distanceMeters, timeSec, date, raceName} — see src/lib/racePredictor.ts.';
+comment on column athletes.email is 'Login email — set at invite time.';
+comment on column athletes.is_admin is 'Can reach /admin. Only ever changed server-side — see athletes_guard_is_admin below.';
 
-insert into athletes (slug, name, initials)
+insert into athletes (slug, name, initials, email, is_admin)
 values
-  ('juan', 'Juan', 'JB'),
-  ('jose', 'José Miguel', 'JE')
+  ('juan', 'Juan', 'JB', null, false),
+  ('jose', 'José Miguel', 'JE', 'josemiguel.espi188@gmail.com', true)
 on conflict (slug) do nothing;
+
+-- Blocks self-promotion to admin from any write path except the
+-- service-role client (the admin API routes) — see migration 013.
+create or replace function athletes_guard_is_admin()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.role() <> 'service_role' and new.is_admin is distinct from old.is_admin then
+    new.is_admin := old.is_admin;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists athletes_guard_is_admin_trigger on athletes;
+create trigger athletes_guard_is_admin_trigger
+  before update on athletes
+  for each row execute function athletes_guard_is_admin();
 
 -- ─── workouts ──────────────────────────────────────────────────────────────
 create table if not exists workouts (
@@ -200,52 +230,55 @@ create trigger workouts_set_updated_at
   for each row execute function set_updated_at();
 
 -- ─── RLS ─────────────────────────────────────────────────────────────────────
--- This is a shared, two-person coach log, not a siloed multi-tenant app:
--- any visitor can read and write both athletes' workouts/templates — the
--- "who" switch in the UI is a view filter, not a security boundary.
---
--- Auth is deliberately NOT required right now (explicit product decision,
--- Oct 2026 — "quita el tema de la autenticacion por el momento, no
--- necesitamos claves ahorita"): policies below grant `anon` the same access
--- as `authenticated`, so the app works with nobody signed in. This is a
--- real, accepted tradeoff — anyone with the deployed URL can read and write
--- every workout/template — acceptable only because this app isn't publicly
--- shared or indexed. strava_connections stays locked to service-role only
--- regardless (real OAuth tokens), unaffected by this decision. Revisit
--- before sharing the URL beyond Juan and José, or re-enable Supabase Auth
--- (the `auth_user_id` column and the `/auth` sign-in page both still exist
--- in git history) and narrow these policies back to `authenticated` only.
+-- Real accounts again (see migration 013 — auth was briefly off, Oct
+-- 2026, and came back once an admin/invite system was needed). This is
+-- still a shared training log among a small, trusted, invite-only
+-- roster, not a siloed multi-tenant app: any signed-in athlete can read
+-- and write every OTHER athlete's workouts/templates (the "Friends"
+-- picker in the UI is a view filter, not a security boundary) — being
+-- invited at all is the trust boundary, not per-row ownership. The one
+-- real per-row boundary is `athletes` itself: an athlete can update only
+-- their own profile row, and never their own (or anyone's) `is_admin`
+-- flag — see the trigger above. strava_connections stays locked to
+-- service-role only regardless (real OAuth tokens).
 
 alter table athletes enable row level security;
 drop policy if exists athletes_select_authenticated on athletes;
 drop policy if exists athletes_select_public on athletes;
-create policy athletes_select_public on athletes
-  for select to anon, authenticated using (true);
+create policy athletes_select_authenticated on athletes
+  for select to authenticated using (true);
+
+drop policy if exists athletes_update_own on athletes;
+create policy athletes_update_own on athletes
+  for update to authenticated
+  using (auth_user_id = auth.uid())
+  with check (auth_user_id = auth.uid());
 
 alter table workouts enable row level security;
-drop policy if exists workouts_all_authenticated on workouts;
 drop policy if exists workouts_all_public on workouts;
-create policy workouts_all_public on workouts
-  for all to anon, authenticated using (true) with check (true);
+drop policy if exists workouts_all_authenticated on workouts;
+create policy workouts_all_authenticated on workouts
+  for all to authenticated using (true) with check (true);
 
 alter table templates enable row level security;
-drop policy if exists templates_all_authenticated on templates;
 drop policy if exists templates_all_public on templates;
-create policy templates_all_public on templates
-  for all to anon, authenticated using (true) with check (true);
+drop policy if exists templates_all_authenticated on templates;
+create policy templates_all_authenticated on templates
+  for all to authenticated using (true) with check (true);
 
 alter table strava_activities enable row level security;
-drop policy if exists strava_activities_select_authenticated on strava_activities;
 drop policy if exists strava_activities_select_public on strava_activities;
-create policy strava_activities_select_public on strava_activities
-  for select to anon, authenticated using (true);
+drop policy if exists strava_activities_select_authenticated on strava_activities;
+create policy strava_activities_select_authenticated on strava_activities
+  for select to authenticated using (true);
 -- No insert/update/delete policy — written only by the service-role sync route.
 
 alter table strava_connections enable row level security;
--- Deliberately no policies at all — service-role only, with or without auth.
+-- Deliberately no policies at all — service-role only.
 
 alter table strava_daily_load enable row level security;
 drop policy if exists strava_daily_load_select_public on strava_daily_load;
-create policy strava_daily_load_select_public on strava_daily_load
-  for select to anon, authenticated using (true);
+drop policy if exists strava_daily_load_select_authenticated on strava_daily_load;
+create policy strava_daily_load_select_authenticated on strava_daily_load
+  for select to authenticated using (true);
 -- No insert/update/delete policy — written only by the service-role sync route.

@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs";
-import { ATHLETES, SPORTS, type AthleteSlug, type PersonalBest, type Sport } from "@/lib/types";
+import { SPORTS, type AthleteSlug, type PersonalBest, type Sport } from "@/lib/types";
 import { durationLabel } from "@/lib/dates";
 import { predictRaceTimes } from "@/lib/racePredictor";
 import { computeHrZones, computePaceZones, computePowerZones, type ZoneKey } from "@/lib/zones";
@@ -104,7 +104,7 @@ export async function buildPlanTemplate(locale: Locale = "es", athletes: Athlete
   ws.getRow(1).font = { bold: true };
   ws.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE9E9E6" } };
 
-  const athleteNames = (Object.keys(ATHLETES) as AthleteSlug[]).map((s) => ATHLETES[s].name);
+  const athleteNames = athletes.map((a) => a.name);
   const sportNames = SPORTS.map((s) => SPORT_LABEL[s][locale]);
   const doneOptions = locale === "en" ? ["Yes", "No"] : ["Sí", "No"];
 
@@ -113,7 +113,7 @@ export async function buildPlanTemplate(locale: Locale = "es", athletes: Athlete
   // dataValidation on a cell materializes that row, which would otherwise
   // push addRow()'s result past all of them).
   ws.addRow([
-    athleteNames[0],
+    athleteNames[0] ?? "",
     "2026-11-03",
     sportNames[2],
     "06:00",
@@ -319,12 +319,10 @@ function cellToTimeStr(v: ExcelJS.CellValue): string | null {
   return m ? `${m[1].padStart(2, "0")}:${m[2]}` : null;
 }
 
-function matchAthlete(raw: string): AthleteSlug | null {
+function matchAthlete(raw: string, roster: { slug: string; name: string }[]): AthleteSlug | null {
   const s = raw.trim().toLowerCase();
-  for (const slug of Object.keys(ATHLETES) as AthleteSlug[]) {
-    if (slug === s || ATHLETES[slug].name.toLowerCase() === s) return slug;
-  }
-  return null;
+  const found = roster.find((a) => a.slug.toLowerCase() === s || a.name.toLowerCase() === s);
+  return found?.slug ?? null;
 }
 
 function matchSport(raw: string): Sport | null {
@@ -342,7 +340,7 @@ function timeDiffMinutes(start: string, end: string): number | null {
   return diff > 0 ? diff : null;
 }
 
-export async function parsePlanWorkbook(buffer: ArrayBuffer): Promise<ParsePlanResult> {
+export async function parsePlanWorkbook(buffer: ArrayBuffer, roster: { slug: string; name: string }[]): Promise<ParsePlanResult> {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buffer);
   const ws = wb.worksheets[0];
@@ -358,7 +356,7 @@ export async function parsePlanWorkbook(buffer: ArrayBuffer): Promise<ParsePlanR
     const titleRaw = cellToString(get(7));
     if (!athleteRaw && !dateRaw && !sportRaw && !titleRaw) return; // skip fully blank row
 
-    const athleteSlug = matchAthlete(athleteRaw);
+    const athleteSlug = matchAthlete(athleteRaw, roster);
     const date = cellToDateStr(dateRaw);
     const sport = matchSport(sportRaw);
 

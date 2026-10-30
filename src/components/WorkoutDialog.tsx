@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocale } from "@/lib/i18n/context";
 import { Button } from "@/components/ui/button";
-import { ATHLETES, SPORTS, type AthleteSlug, type Sport, type Template, type Workout } from "@/lib/types";
+import { SPORTS, type Athlete, type AthleteSlug, type Sport, type Template, type Workout } from "@/lib/types";
 import { ymd, today } from "@/lib/dates";
 
 export type WorkoutWithSlug = Workout & { athleteSlug: AthleteSlug };
@@ -27,13 +27,16 @@ interface Props {
   /** null = closed. undefined date fields fall back to sensible defaults for a new workout. */
   editing: { record: WorkoutWithSlug | null; defaultDate?: string; defaultAthlete?: AthleteSlug } | null;
   templates: Template[];
+  /** Every athlete in the roster, for the athlete picker — the dynamic
+   * replacement for the old hardcoded ATHLETES constant. */
+  athletes: Athlete[];
   onClose: () => void;
   onSave: (value: WorkoutFormValue, existingId: string | null) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }
 
 const EMPTY: WorkoutFormValue = {
-  athleteSlug: "juan",
+  athleteSlug: "",
   date: ymd(today()),
   sport: "run",
   title: "",
@@ -47,7 +50,7 @@ const EMPTY: WorkoutFormValue = {
   rpe: null,
 };
 
-export function WorkoutDialog({ editing, templates, onClose, onSave, onDelete }: Props) {
+export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, onDelete }: Props) {
   const { t } = useLocale();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [value, setValue] = useState<WorkoutFormValue>(EMPTY);
@@ -83,10 +86,11 @@ export function WorkoutDialog({ editing, templates, onClose, onSave, onDelete }:
         : {
             ...EMPTY,
             date: editing.defaultDate ?? EMPTY.date,
-            athleteSlug: editing.defaultAthlete ?? EMPTY.athleteSlug,
+            athleteSlug: editing.defaultAthlete ?? athletes[0]?.slug ?? "",
           }
     );
     dialogRef.current?.showModal();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
 
   function applyTemplate(id: string) {
@@ -142,9 +146,9 @@ export function WorkoutDialog({ editing, templates, onClose, onSave, onDelete }:
               onChange={(e) => setValue((v) => ({ ...v, athleteSlug: e.target.value as AthleteSlug }))}
               className="h-10 rounded-xl border border-line bg-bg px-3 text-sm"
             >
-              {(Object.keys(ATHLETES) as AthleteSlug[]).map((slug) => (
-                <option key={slug} value={slug}>
-                  {ATHLETES[slug].name}
+              {athletes.map((a) => (
+                <option key={a.slug} value={a.slug}>
+                  {a.name}
                 </option>
               ))}
             </select>

@@ -1,15 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getAthleteBySlug } from "@/lib/auth";
+import { NextResponse } from "next/server";
+import { getSignedInAthlete } from "@/lib/auth";
 import { buildStravaAuthorizeUrl, getSiteBaseUrl } from "@/lib/integrations/strava";
 
 /**
- * Starts the OAuth round trip for the athlete named in `?athlete=juan|jose`
- * — auth is off for now, so there's no signed-in session to derive this
- * from; the Settings page passes it explicitly instead (see lib/auth.ts).
+ * Starts the OAuth round trip for the SIGNED-IN athlete — derived from the
+ * session now that real auth is back (see CLAUDE.md's "Real auth + admin"
+ * section), not a client-supplied `?athlete=` slug. Closes the old gap
+ * where nothing stopped one athlete from clicking Connect on another's
+ * card.
  */
-export async function GET(req: NextRequest) {
-  const slug = req.nextUrl.searchParams.get("athlete");
-  const athlete = slug ? await getAthleteBySlug(slug) : null;
+export async function GET() {
+  const athlete = await getSignedInAthlete();
   if (!athlete) {
     return NextResponse.redirect(`${getSiteBaseUrl()}/settings?strava=error`);
   }

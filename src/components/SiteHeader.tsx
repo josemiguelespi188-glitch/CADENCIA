@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useLocale } from "@/lib/i18n/context";
-import { useAthleteView } from "@/lib/athlete-view-context";
-import { ATHLETES, type Who } from "@/lib/types";
+import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
 // Dashboard was folded into the bottom of /calendar (see CLAUDE.md's
@@ -19,9 +18,11 @@ const NAV: { href: string; key: string }[] = [
 
 export function SiteHeader() {
   const { t, locale, toggle: toggleLocale } = useLocale();
-  const { who, setWho } = useAthleteView();
+  const { me, athletes, viewing, toggleFriend, signOut } = useAuth();
   const pathname = usePathname();
   const [dark, setDark] = useState(false);
+  const [friendsOpen, setFriendsOpen] = useState(false);
+  const friendsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     try {
@@ -32,6 +33,14 @@ export function SiteHeader() {
     } catch {
       /* ignore */
     }
+  }, []);
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (friendsRef.current && !friendsRef.current.contains(e.target as Node)) setFriendsOpen(false);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
 
   function toggleTheme() {
@@ -50,7 +59,8 @@ export function SiteHeader() {
     }
   }
 
-  const whoOptions: Who[] = ["juan", "jose", "both"];
+  const friends = athletes.filter((a) => a.id !== me?.id);
+  const isEn = locale === "en";
 
   return (
     <header className="fixed top-0 inset-x-0 z-50 border-b border-line bg-bg/90 backdrop-blur-md">
@@ -67,22 +77,49 @@ export function SiteHeader() {
           </span>
         </Link>
 
-        <div className="inline-flex rounded-full bg-surface-2 p-1 gap-0.5">
-          {whoOptions.map((w) => (
-            <button
-              key={w}
-              type="button"
-              onClick={() => setWho(w)}
-              aria-pressed={who === w}
-              className={cn(
-                "rounded-full px-3 py-1.5 text-xs font-medium uppercase tracking-wide transition-colors",
-                who === w ? "bg-ink text-bg" : "text-ink-2 hover:text-ink"
+        {me && (
+          <div className="inline-flex items-center gap-2">
+            <span className="rounded-full bg-ink px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-bg">
+              {me.name}
+            </span>
+            <div ref={friendsRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setFriendsOpen((v) => !v)}
+                className={cn(
+                  "rounded-full px-3 py-1.5 text-xs font-medium uppercase tracking-wide transition-colors",
+                  viewing.length > 1 ? "bg-surface-2 text-ink" : "bg-surface-2 text-ink-2 hover:text-ink"
+                )}
+              >
+                {isEn ? "Friends" : "Friends"} {viewing.length > 1 ? `(${viewing.length - 1})` : ""} ▾
+              </button>
+              {friendsOpen && (
+                <div className="absolute left-0 top-full z-10 mt-1 w-56 rounded-xl border border-line bg-surface p-2 shadow-lg">
+                  {friends.length === 0 ? (
+                    <p className="px-2 py-1.5 text-xs text-ink-3">
+                      {isEn ? "No one else here yet." : "Todavía no hay nadie más aquí."}
+                    </p>
+                  ) : (
+                    friends.map((f) => (
+                      <label
+                        key={f.slug}
+                        className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-surface-2"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={viewing.includes(f.slug)}
+                          onChange={() => toggleFriend(f.slug)}
+                          className="h-4 w-4"
+                        />
+                        {f.name}
+                      </label>
+                    ))
+                  )}
+                </div>
               )}
-            >
-              {w === "both" ? t("both") : ATHLETES[w].name}
-            </button>
-          ))}
-        </div>
+            </div>
+          </div>
+        )}
 
         <nav className="hidden items-center gap-5 sm:flex ml-auto">
           {NAV.map((item) => (
@@ -125,6 +162,24 @@ export function SiteHeader() {
               </svg>
             )}
           </button>
+
+          <button onClick={signOut} className="text-sm text-ink-2 hover:text-ink transition-colors">
+            {t("sign_out")}
+          </button>
+
+          {/* Admin, always the rightmost item when visible — per explicit
+             instruction ("lo más a la derecha posible"). */}
+          {me?.is_admin && (
+            <Link
+              href="/admin"
+              className={cn(
+                "rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors",
+                pathname?.startsWith("/admin") ? "bg-ink text-bg" : "bg-surface-2 text-ink-2 hover:text-ink"
+              )}
+            >
+              {isEn ? "Admin" : "Admin"}
+            </Link>
+          )}
         </nav>
       </div>
     </header>

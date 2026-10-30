@@ -8,7 +8,7 @@ import { StravaTotals } from "@/components/StravaTotals";
 import { FitnessPanel } from "@/components/FitnessPanel";
 import { ActivityDetailDialog } from "@/components/ActivityDetailDialog";
 import type { WorkoutWithSlug } from "@/components/WorkoutDialog";
-import { ATHLETES, SPORTS, type ActivityWithSlug, type Athlete, type Who } from "@/lib/types";
+import { SPORTS, type ActivityWithSlug, type Athlete } from "@/lib/types";
 import { addDays, dayDiff, fmt, hm, hrs, monday, paceLabel, parseYmd, today } from "@/lib/dates";
 import { computeBestEfforts } from "@/lib/bestEfforts";
 import { cn } from "@/lib/utils";
@@ -23,12 +23,12 @@ const RECENT_PAGE_SIZE = 5;
  * underlying queries this panel needs), so there's no second fetch here.
  */
 export function DashboardPanel({
-  who,
+  viewing,
   athletes,
   workouts,
   activities,
 }: {
-  who: Who;
+  viewing: string[];
   athletes: Athlete[];
   workouts: WorkoutWithSlug[];
   activities: ActivityWithSlug[];
@@ -38,15 +38,11 @@ export function DashboardPanel({
   const [openActivity, setOpenActivity] = useState<ActivityWithSlug | null>(null);
   const [recentPage, setRecentPage] = useState(0);
 
-  const visible = useMemo(
-    () => (who === "both" ? workouts : workouts.filter((w) => w.athleteSlug === who)),
-    [workouts, who]
-  );
-  const visibleActivities = useMemo(
-    () => (who === "both" ? activities : activities.filter((a) => a.athleteSlug === who)),
-    [activities, who]
-  );
-  const soloAthlete = who === "both" ? null : (athletes.find((a) => a.slug === who) ?? null);
+  const isMultiple = viewing.length > 1;
+  const athleteBySlug = useMemo(() => Object.fromEntries(athletes.map((a) => [a.slug, a])), [athletes]);
+  const visible = useMemo(() => workouts.filter((w) => viewing.includes(w.athleteSlug)), [workouts, viewing]);
+  const visibleActivities = useMemo(() => activities.filter((a) => viewing.includes(a.athleteSlug)), [activities, viewing]);
+  const soloAthlete = viewing.length === 1 ? (athletes.find((a) => a.slug === viewing[0]) ?? null) : null;
   const bestEfforts = useMemo(() => computeBestEfforts(visibleActivities), [visibleActivities]);
 
   const td = today();
@@ -99,7 +95,7 @@ export function DashboardPanel({
         <Kpi
           label={t("k_race")}
           value={daysToRace !== null ? `${daysToRace} ${t("days")}` : "–"}
-          sub={nextRace ? nextRace.title + (who === "both" ? ` · ${ATHLETES[nextRace.athleteSlug].initials}` : "") : t("no_race")}
+          sub={nextRace ? nextRace.title + (isMultiple ? ` · ${athleteBySlug[nextRace.athleteSlug]?.initials ?? "?"}` : "") : t("no_race")}
         />
       </div>
 
@@ -228,7 +224,7 @@ export function DashboardPanel({
             <thead>
               <tr className="border-b border-line text-left text-xs uppercase tracking-widest text-ink-3">
                 <th className="px-4 py-3 font-semibold">{isEn ? "Date" : "Fecha"}</th>
-                {who === "both" && <th className="px-2 py-3 font-semibold">{t("athlete")}</th>}
+                {isMultiple && <th className="px-2 py-3 font-semibold">{t("athlete")}</th>}
                 <th className="px-2 py-3 font-semibold">{isEn ? "Activity" : "Actividad"}</th>
                 <th className="px-2 py-3 text-right font-semibold">{isEn ? "Duration" : "Duración"}</th>
                 <th className="px-2 py-3 text-right font-semibold">{isEn ? "Distance" : "Distancia"}</th>
@@ -247,7 +243,7 @@ export function DashboardPanel({
                     className="cursor-pointer border-b border-line last:border-0 hover:bg-surface-2"
                   >
                     <td className="whitespace-nowrap px-4 py-2.5 text-ink-3">{fmt(new Date(a.start_date), locale, { day: "numeric", month: "short" })}</td>
-                    {who === "both" && <td className="px-2 py-2.5 font-medium">{ATHLETES[a.athleteSlug].initials}</td>}
+                    {isMultiple && <td className="px-2 py-2.5 font-medium">{athleteBySlug[a.athleteSlug]?.initials ?? "?"}</td>}
                     <td className="max-w-[220px] truncate px-2 py-2.5">{a.name}</td>
                     <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums">{hm(a.moving_time_s / 60, locale as "es" | "en")}</td>
                     <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums">{a.distance_m ? `${(a.distance_m / 1000).toFixed(1)} km` : "—"}</td>

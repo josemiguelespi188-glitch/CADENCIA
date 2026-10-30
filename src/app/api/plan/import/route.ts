@@ -17,12 +17,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No file uploaded." }, { status: 400 });
   }
 
-  const buffer = await file.arrayBuffer();
-  const { rows, errors } = await parsePlanWorkbook(buffer);
-
   const db = createServiceClient();
-  const { data: athletes } = await db.from("athletes").select("id, slug");
+  const { data: athletes } = await db.from("athletes").select("id, slug, name");
+  const roster = (athletes ?? []).map((a) => ({ slug: a.slug, name: a.name }));
   const athleteIdBySlug = new Map((athletes ?? []).map((a) => [a.slug, a.id]));
+
+  const buffer = await file.arrayBuffer();
+  const { rows, errors } = await parsePlanWorkbook(buffer, roster);
 
   const payload = rows.map((r) => ({
     athlete_id: athleteIdBySlug.get(r.athleteSlug),

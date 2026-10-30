@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { IBM_Plex_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { LocaleProvider } from "@/lib/i18n/context";
-import { AthleteViewProvider } from "@/lib/athlete-view-context";
+import { AuthProvider } from "@/lib/auth-context";
 
 const ibmPlexSans = IBM_Plex_Sans({
   variable: "--font-ibm-plex-sans",
@@ -35,7 +35,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           }}
         />
         <LocaleProvider>
-          <AthleteViewProvider>{children}</AthleteViewProvider>
+          <AuthProvider>{children}</AuthProvider>
         </LocaleProvider>
       </body>
     </html>

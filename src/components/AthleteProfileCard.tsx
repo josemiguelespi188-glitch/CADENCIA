@@ -5,7 +5,7 @@ import { useLocale } from "@/lib/i18n/context";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ATHLETES, SPORTS, type Athlete, type AthleteSlug, type PersonalBest, type Sport } from "@/lib/types";
+import { SPORTS, type Athlete, type AthleteSlug, type PersonalBest, type Sport } from "@/lib/types";
 import { durationLabel, parseDuration } from "@/lib/dates";
 import { DISTANCE_PRESETS, predictRaceTimes } from "@/lib/racePredictor";
 import { ZoneTables } from "@/components/ZoneTables";
@@ -119,7 +119,7 @@ export function AthleteProfileCard({ slug }: { slug: AthleteSlug }) {
 
   return (
     <Card className="flex flex-col gap-5">
-      <CardTitle>{ATHLETES[slug].name} · {isEn ? "Athlete Profile" : "Perfil del Atleta"}</CardTitle>
+      <CardTitle>{athlete?.name ?? "…"} · {isEn ? "Athlete Profile" : "Perfil del Atleta"}</CardTitle>
 
       <form onSubmit={save} className="flex flex-col gap-6">
         <section>

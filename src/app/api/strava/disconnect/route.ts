@@ -1,11 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getAthleteBySlug } from "@/lib/auth";
+import { NextResponse } from "next/server";
+import { getSignedInAthlete } from "@/lib/auth";
 import { createServiceClient } from "@/lib/supabase/server";
 
-export async function POST(req: NextRequest) {
-  const { athleteSlug } = await req.json().catch(() => ({ athleteSlug: null }));
-  const athlete = athleteSlug ? await getAthleteBySlug(athleteSlug) : null;
-  if (!athlete) return NextResponse.json({ error: "Unknown athlete" }, { status: 400 });
+export async function POST() {
+  const athlete = await getSignedInAthlete();
+  if (!athlete) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
   const db = createServiceClient();
   const { error } = await db.from("strava_connections").delete().eq("athlete_id", athlete.id);

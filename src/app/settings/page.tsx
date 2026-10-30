@@ -3,12 +3,12 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useLocale } from "@/lib/i18n/context";
-import { useAthleteView } from "@/lib/athlete-view-context";
+import { useAuth } from "@/lib/auth-context";
 import { createClient } from "@/lib/supabase/client";
 import { SiteHeader } from "@/components/SiteHeader";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ATHLETES, type Athlete, type AthleteSlug } from "@/lib/types";
+import type { Athlete } from "@/lib/types";
 import { parsePace } from "@/lib/dates";
 import { ZoneTables } from "@/components/ZoneTables";
 import { AthleteProfileCard } from "@/components/AthleteProfileCard";
@@ -28,15 +28,9 @@ export default function SettingsPage() {
 }
 
 function SettingsContent() {
-  const { t, locale } = useLocale();
+  const { t, locale, toggle: toggleLocale } = useLocale();
   const isEn = locale === "en";
-  const { who } = useAthleteView();
-  // Only the athlete(s) currently selected in the header switch —
-  // showing both by default read as confusing while this is really a
-  // single-user test (see CLAUDE.md's "Data model & auth" /
-  // athlete-view-context.tsx notes). Switch to "Both" in the header to
-  // see every athlete's settings at once.
-  const slugs = (who === "both" ? (Object.keys(ATHLETES) as AthleteSlug[]) : [who]) as AthleteSlug[];
+  const { me } = useAuth();
   const searchParams = useSearchParams();
   const [toast, setToast] = useState<string | null>(null);
 
@@ -58,30 +52,35 @@ function SettingsContent() {
 
           {toast && <div className="mb-4 rounded-xl border border-line bg-surface-2 px-4 py-3 text-sm">{toast}</div>}
 
-          <div className="flex flex-col gap-4">
-            {slugs.map((slug) => (
-              <AthleteProfileCard key={slug} slug={slug} />
-            ))}
-          </div>
+          {!me ? (
+            <p className="text-ink-3">{t("loading")}</p>
+          ) : (
+            <>
+              <AthleteProfileCard slug={me.slug} />
 
-          <div className="mt-8 flex flex-col gap-4">
-            {slugs.map((slug) => (
-              <AthleteZonesCard key={slug} slug={slug} />
-            ))}
-          </div>
+              <div className="mt-8">
+                <AthleteZonesCard slug={me.slug} name={me.name} />
+              </div>
 
-          <div className="mt-8 flex flex-col gap-4">
-            {slugs.map((slug) => (
-              <AthleteStravaCard key={slug} slug={slug} />
-            ))}
-          </div>
+              <div className="mt-8 grid gap-4 sm:grid-cols-2">
+                <AthleteStravaCard name={me.name} />
+                <ComingSoonConnectCard title="COROS / Garmin" />
+              </div>
+
+              <div className="mt-8">
+                <button onClick={toggleLocale} className="text-xs uppercase tracking-wide text-ink-3 hover:text-ink">
+                  {t("other_lang")}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </main>
     </div>
   );
 }
 
-function AthleteStravaCard({ slug }: { slug: AthleteSlug }) {
+function AthleteStravaCard({ name }: { name: string }) {
   const { t, locale } = useLocale();
   const isEn = locale === "en";
   const [status, setStatus] = useState<StravaStatus | null>(null);
@@ -89,9 +88,9 @@ function AthleteStravaCard({ slug }: { slug: AthleteSlug }) {
   const [message, setMessage] = useState<string | null>(null);
 
   const loadStatus = useCallback(async () => {
-    const res = await fetch(`/api/strava/status?athlete=${slug}`);
+    const res = await fetch("/api/strava/status");
     if (res.ok) setStatus(await res.json());
-  }, [slug]);
+  }, []);
 
   useEffect(() => {
     // Initial data fetch on mount — see the same note in calendar/page.tsx.
@@ -103,11 +102,7 @@ function AthleteStravaCard({ slug }: { slug: AthleteSlug }) {
     setBusy(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/strava/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ athleteSlug: slug }),
-      });
+      const res = await fetch("/api/strava/sync", { method: "POST" });
       const data = await res.json();
       setMessage(
         res.ok
@@ -125,11 +120,7 @@ function AthleteStravaCard({ slug }: { slug: AthleteSlug }) {
   async function disconnect() {
     setBusy(true);
     try {
-      await fetch("/api/strava/disconnect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ athleteSlug: slug }),
-      });
+      await fetch("/api/strava/disconnect", { method: "POST" });
       await loadStatus();
     } finally {
       setBusy(false);
@@ -138,9 +129,7 @@ function AthleteStravaCard({ slug }: { slug: AthleteSlug }) {
 
   return (
     <Card>
-      <CardTitle>
-        {ATHLETES[slug].name} · Strava
-      </CardTitle>
+      <CardTitle>{name} · Strava</CardTitle>
 
       <div className="mt-4 flex items-center gap-3">
         <span
@@ -169,7 +158,7 @@ function AthleteStravaCard({ slug }: { slug: AthleteSlug }) {
             </Button>
           </>
         ) : (
-          <a href={`/api/strava/connect?athlete=${slug}`}>
+          <a href="/api/strava/connect">
             <Button size="sm">{t("strava_connect")}</Button>
           </a>
         )}
@@ -178,7 +167,38 @@ function AthleteStravaCard({ slug }: { slug: AthleteSlug }) {
   );
 }
 
-function AthleteZonesCard({ slug }: { slug: AthleteSlug }) {
+/**
+ * Honest placeholder — per explicit instruction that the intro/settings
+ * flow should offer connecting both Strava AND COROS/Garmin, with a plain
+ * note that the latter isn't built yet (see CLAUDE.md's COROS/Garmin
+ * research note: it's real scope of its own, not something to fake a
+ * working button for).
+ */
+function ComingSoonConnectCard({ title }: { title: string }) {
+  const { locale } = useLocale();
+  const isEn = locale === "en";
+  return (
+    <Card className="opacity-70">
+      <CardTitle>{title}</CardTitle>
+      <div className="mt-4 flex items-center gap-3">
+        <span className="h-2.5 w-2.5 rounded-full bg-ink-3" />
+        <span className="text-sm text-ink-2">{isEn ? "Not available yet" : "Todavía no disponible"}</span>
+      </div>
+      <p className="mt-2 text-xs text-ink-3">
+        {isEn
+          ? "Coming soon — see CLAUDE.md for the research on what this needs."
+          : "Próximamente — ver CLAUDE.md para la investigación de lo que esto necesita."}
+      </p>
+      <div className="mt-5">
+        <Button size="sm" disabled>
+          {isEn ? "Connect" : "Conectar"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function AthleteZonesCard({ slug, name }: { slug: string; name: string }) {
   const { t } = useLocale();
   const [athlete, setAthlete] = useState<Athlete | null>(null);
   const [lthr, setLthr] = useState("");
@@ -234,7 +254,7 @@ function AthleteZonesCard({ slug }: { slug: AthleteSlug }) {
     <>
     <Card>
       <CardTitle>
-        {ATHLETES[slug].name} · {t("zones_h")}
+        {name} · {t("zones_h")}
       </CardTitle>
 
       <form onSubmit={save} className="mt-4 grid grid-cols-2 gap-3">
