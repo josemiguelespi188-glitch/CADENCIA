@@ -109,6 +109,13 @@ const DICT: Record<Locale, Record<string, string>> = {
     totals_ytd: "Este año",
     totals_all: "Siempre",
     weight: "Peso",
+    rpe: "Esfuerzo percibido (RPE)",
+    rpe_hint: "0 = sin esfuerzo, 10 = esfuerzo máximo.",
+    planned_vs_completed: "Planificado vs. Completado",
+    planned_label: "Planificado",
+    completed_label: "Completado",
+    gear: "Equipo",
+    no_plan_matched: "Esta actividad no está vinculada a ningún entreno planificado.",
   },
   en: {
     brand_sub: "training log",
@@ -214,6 +221,13 @@ const DICT: Record<Locale, Record<string, string>> = {
     totals_ytd: "This year",
     totals_all: "All time",
     weight: "Weight",
+    rpe: "Rating of Perceived Exertion (RPE)",
+    rpe_hint: "0 = no exertion, 10 = maximal effort.",
+    planned_vs_completed: "Planned vs. Completed",
+    planned_label: "Planned",
+    completed_label: "Completed",
+    gear: "Gear",
+    no_plan_matched: "This activity isn't linked to any planned workout.",
   },
 };
 

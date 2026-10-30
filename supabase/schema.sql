@@ -29,6 +29,8 @@ create table if not exists athletes (
   strava_weight_kg numeric(5,1),
   strava_stats jsonb,
   strava_profile_synced_at timestamptz,
+  -- Raw shoes+bikes list from Strava, kept for reference — see migration 010.
+  strava_gear jsonb,
   created_at timestamptz not null default now()
 );
 
@@ -40,6 +42,7 @@ comment on column athletes.strava_hr_zones is 'Raw heart_rate.zones array from S
 comment on column athletes.strava_power_zones is 'Raw power.zones array from Strava''s GET /athlete/zones, when configured there. Null if none.';
 comment on column athletes.strava_weight_kg is 'Weight in kg, from Strava''s GET /athlete (only present if the athlete set it there).';
 comment on column athletes.strava_stats is 'Raw response from Strava''s GET /athletes/{id}/stats — recent (4wk) / YTD / all-time totals per sport.';
+comment on column athletes.strava_gear is 'Raw shoes + bikes list from Strava''s GET /athlete.';
 
 insert into athletes (slug, name, initials)
 values
@@ -65,6 +68,8 @@ create table if not exists workouts (
   -- workout type/structure label. See migration 007.
   strava_comment text not null default '',
   workout_type text not null default '',
+  -- Rating of Perceived Exertion, Borg CR10 (0-10) — see migration 010.
+  rpe integer check (rpe is null or (rpe >= 0 and rpe <= 10)),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -110,7 +115,9 @@ create table if not exists strava_activities (
   total_elevation_gain_m numeric(7,1),
   max_heart_rate numeric(5,1),
   average_watts numeric(6,1),
-  calories numeric(7,1)
+  calories numeric(7,1),
+  -- Shoe/bike name, resolved from Strava's gear list at sync time — see migration 010.
+  gear_name text
 );
 
 create index if not exists strava_activities_athlete_date_idx on strava_activities (athlete_id, start_date desc);

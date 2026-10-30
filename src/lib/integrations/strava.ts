@@ -115,6 +115,8 @@ export interface StravaSummaryActivity {
   average_watts?: number;
   /** Energy, rides only — converted to calories at ~4.184 kJ/kcal when stored. */
   kilojoules?: number;
+  /** Strava's own gear id (a shoe or bike) — resolved to a name via the athlete's own gear list. */
+  gear_id?: string;
 }
 
 /**
@@ -175,12 +177,19 @@ export async function fetchStravaAthleteZones(accessToken: string): Promise<Stra
   return res.json();
 }
 
+export interface StravaGearItem {
+  id: string;
+  name: string;
+}
+
 export interface StravaAthleteProfile {
   id: number;
   weight?: number; // kg
+  shoes?: StravaGearItem[];
+  bikes?: StravaGearItem[];
 }
 
-/** Pulls the authenticated athlete's own Strava profile (just what we use: id + weight). Null on failure. */
+/** Pulls the authenticated athlete's own Strava profile (id, weight, gear list). Null on failure. */
 export async function fetchStravaAthleteProfile(accessToken: string): Promise<StravaAthleteProfile | null> {
   const res = await fetch(`${STRAVA_API_BASE}/athlete`, {
     headers: { Authorization: `Bearer ${accessToken}` },

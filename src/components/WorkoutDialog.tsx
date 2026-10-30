@@ -20,6 +20,7 @@ export interface WorkoutFormValue {
   notes: string;
   stravaComment: string;
   done: boolean;
+  rpe: number | null;
 }
 
 interface Props {
@@ -43,6 +44,7 @@ const EMPTY: WorkoutFormValue = {
   notes: "",
   stravaComment: "",
   done: false,
+  rpe: null,
 };
 
 export function WorkoutDialog({ editing, templates, onClose, onSave, onDelete }: Props) {
@@ -76,6 +78,7 @@ export function WorkoutDialog({ editing, templates, onClose, onSave, onDelete }:
             notes: r.notes,
             stravaComment: r.strava_comment,
             done: r.done,
+            rpe: r.rpe,
           }
         : {
             ...EMPTY,
@@ -246,6 +249,20 @@ export function WorkoutDialog({ editing, templates, onClose, onSave, onDelete }:
               {t("is_done")}
             </label>
           </div>
+          {value.done && (
+            <Field label={`${t("rpe")}${value.rpe !== null ? `: ${value.rpe}` : ""}`} full>
+              <input
+                type="range"
+                min={0}
+                max={10}
+                step={1}
+                value={value.rpe ?? 0}
+                onChange={(e) => setValue((v) => ({ ...v, rpe: Number(e.target.value) }))}
+                className="w-full"
+              />
+              <p className="text-xs text-ink-3">{t("rpe_hint")}</p>
+            </Field>
+          )}
         </div>
 
         <div className="mt-2 flex flex-wrap items-center gap-2">

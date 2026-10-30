@@ -30,8 +30,33 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No Strava connection for this athlete." }, { status: 400 });
   }
 
-  const activities = await fetchRecentStravaActivities(accessToken, 30);
   const db = createServiceClient();
+
+  // Profile is fetched FIRST (not alongside zones/stats below) because its
+  // shoes+bikes list has to exist before building the activity rows, to
+  // resolve each activity's gear_id to a real name at insert time rather
+  // than in a second pass.
+  let gearMap = new Map<string, string>();
+  try {
+    const profile = await fetchStravaAthleteProfile(accessToken);
+    if (profile) {
+      gearMap = new Map([...(profile.shoes ?? []), ...(profile.bikes ?? [])].map((g) => [g.id, g.name]));
+      const stats = await fetchStravaAthleteStats(accessToken, profile.id);
+      await db
+        .from("athletes")
+        .update({
+          strava_weight_kg: profile.weight ?? null,
+          strava_stats: stats,
+          strava_gear: [...(profile.shoes ?? []), ...(profile.bikes ?? [])],
+          strava_profile_synced_at: new Date().toISOString(),
+        })
+        .eq("id", athlete.id);
+    }
+  } catch (e) {
+    console.error("Failed to fetch Strava athlete profile/stats", e);
+  }
+
+  const activities = await fetchRecentStravaActivities(accessToken, 30);
 
   const rows = activities.map((a) => ({
     id: String(a.id),
@@ -50,6 +75,7 @@ export async function POST(req: NextRequest) {
     max_heart_rate: a.max_heartrate ?? null,
     average_watts: a.average_watts ?? null,
     calories: a.kilojoules ? Math.round(a.kilojoules / 4.184) : null,
+    gear_name: a.gear_id ? (gearMap.get(a.gear_id) ?? null) : null,
     raw: a,
     synced_at: new Date().toISOString(),
   }));
@@ -80,25 +106,6 @@ export async function POST(req: NextRequest) {
       .eq("id", athlete.id);
   } catch (e) {
     console.error("Failed to fetch Strava athlete zones", e);
-  }
-
-  // Weight + aggregate totals from Strava's own profile/stats endpoints —
-  // best-effort, same reasoning as zones above. The profile call also
-  // gives us the athlete's real Strava numeric id, needed for the stats
-  // call (distinct from our own `athlete.id`).
-  try {
-    const profile = await fetchStravaAthleteProfile(accessToken);
-    const stats = profile ? await fetchStravaAthleteStats(accessToken, profile.id) : null;
-    await db
-      .from("athletes")
-      .update({
-        strava_weight_kg: profile?.weight ?? null,
-        strava_stats: stats,
-        strava_profile_synced_at: new Date().toISOString(),
-      })
-      .eq("id", athlete.id);
-  } catch (e) {
-    console.error("Failed to fetch Strava athlete profile/stats", e);
   }
 
   // Auto-complete + AI write-back for anything not processed yet — not

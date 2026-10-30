@@ -33,6 +33,8 @@ export interface Athlete {
   /** Raw GET /athletes/{id}/stats response — recent (4wk) / YTD / all-time totals per sport. */
   strava_stats: StravaAthleteStats | null;
   strava_profile_synced_at: string | null;
+  /** Raw shoes + bikes list from Strava's GET /athlete. */
+  strava_gear: { id: string; name: string }[] | null;
 }
 
 export interface StravaTotals {
@@ -70,6 +72,8 @@ export interface Workout {
   strava_comment: string;
   /** Free-text workout type/structure (e.g. "Tempo", "Series"). */
   workout_type: string;
+  /** Rating of Perceived Exertion, Borg CR10 (0-10). */
+  rpe: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -113,4 +117,6 @@ export interface StravaActivity {
   max_heart_rate: number | null;
   average_watts: number | null;
   calories: number | null;
+  /** Shoe or bike name used, resolved from Strava's gear list at sync time. */
+  gear_name: string | null;
 }

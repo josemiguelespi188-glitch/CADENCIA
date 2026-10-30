@@ -478,6 +478,67 @@ selector outranks the preflight's `*` reset regardless of source
 order), not a per-component fix, since the bug was never
 component-specific.
 
+### Planned vs Completed, RPE, and gear (Oct 2026)
+
+Triggered by the user sharing a real TrainingPeaks activity-detail screen
+as a reference and asking for the analysis to be "más completo." Three
+concrete, honestly-derivable pieces got built from that reference; two
+bigger pieces (below) were flagged rather than guessed at.
+
+- **Planned vs Completed**: `ActivityDetailDialog.tsx` now looks up
+  (`workouts` where `strava_activity_id = activity.id`) whenever it opens,
+  and — when found — renders a small table mirroring TrainingPeaks'
+  own Planned/Completed columns (duration, distance, RPE), plus the
+  planned workout's own title/notes underneath. No new table or sync
+  logic needed — this is just a read against data that already exists
+  once auto-complete has linked a workout to an activity (see "Strava
+  integration" above).
+- **RPE** (Rating of Perceived Exertion, Borg CR10 scale 0-10 — the
+  actual standard scale TrainingPeaks itself uses, not the separate
+  5-face "how did you feel" scale also shown in the reference, which was
+  deliberately skipped as redundant with RPE rather than building two
+  parallel subjective scales). New `workouts.rpe` column (migration
+  010), a slider in `WorkoutDialog.tsx` shown once a workout is marked
+  done, surfaced in the Planned vs Completed table above.
+- **Gear** (shoes/bike used): Strava's `GET /athlete` includes the
+  athlete's own `shoes`/`bikes` lists; `/api/strava/sync` now fetches
+  the profile **before** building activity rows specifically so each
+  activity's `gear_id` can be resolved to a real name
+  (`strava_activities.gear_name`, migration 010) at insert time rather
+  than needing a second pass. Shown in `ActivityDetailDialog.tsx` when
+  present.
+- **Dialog width** bumped `480px -> 520px` to fit the new comparison
+  table without cramping — the only layout change needed; everything
+  else reuses the existing Stat grid pattern.
+
+**Two bigger pieces from the same reference were explicitly NOT built,
+flagged to the user instead of guessed at:**
+
+1. **Fitness/Fatigue/Form (CTL/ATL/TSB)** — TrainingPeaks' own headline
+   metric trio, a real, standard, computable formula (Banister
+   impulse-response model: Fitness = 42-day EWMA of daily training
+   stress, Fatigue = 7-day EWMA, Form = Fitness − Fatigue) that this
+   codebase could legitimately compute from `relative_effort` history —
+   **except** an accurate 42-day EWMA needs meaningfully more than 42
+   days of real history to converge (ramping up from a cold start
+   understates true fitness for weeks), which directly conflicts with
+   the explicit "no necesito lo histórico, solamente el último mes"
+   decision documented above. Not started until that tension is
+   resolved one way or the other (extend history — even a lightweight
+   daily-stress-only fetch further back, not full per-activity detail —
+   or accept an understated/cold-start value for a while).
+2. **The full "Analyze 360" view** (GPS route map, HR/cadence/pace
+   graphs over time, time-in-zone distribution, laps) — needs Strava's
+   `/activities/{id}/streams` endpoint (a new per-activity call, should
+   be fetched lazily when an activity is actually opened, not during
+   bulk sync, to avoid multiplying API calls against Strava's rate
+   limits across 30 days of activities) plus a charting approach and,
+   for the map specifically, a mapping library/tile provider (Leaflet +
+   OpenStreetMap needs no account; Mapbox, what TrainingPeaks itself
+   uses in the reference screenshot, needs one). The single largest
+   remaining piece from "quiero tener todas las métricas de Strava" —
+   needs its own go-ahead before starting, not a silent build.
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as
