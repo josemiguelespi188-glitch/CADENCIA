@@ -1004,6 +1004,41 @@ that every page behind it.
   correctly across a real browser session (not just this sandbox's
   build-time type checking).
 
+### Two live-testing bugs, found and fixed the same day
+
+1. **Wrong redirect domain** — the reset-password email sent the user
+   to `localhost:3000` instead of the real deployed domain. Root cause
+   was **Supabase's own "Site URL" field** (Auth -> URL Configuration),
+   separate from the "Redirect URLs" allow-list this file already told
+   people to set — Site URL defaults to `http://localhost:3000` on a
+   fresh project and is the fallback used whenever the requested
+   `redirectTo` doesn't exactly match an allow-listed entry. Fixed by
+   setting Site URL to the real deployed domain too, and adding the
+   exact `https://<domain>/accept-invite` path (not just the bare
+   domain) to Redirect URLs — a domain-only entry there does NOT match
+   a request for a specific path.
+2. **"This link is invalid or expired" even on a correct, fresh link**
+   — root cause: `createClient()` uses `@supabase/ssr`'s
+   `createBrowserClient`, which defaults to the **PKCE** flow. PKCE
+   stores a code verifier in the browser that *requested* the
+   reset/invite, and the emailed link only works if opened back in
+   that same browser — which an email link essentially never is
+   (different tab, different device, a mail app's in-app browser,
+   etc.). This is a well-documented Supabase gotcha, not specific to
+   this codebase. **Fixed by switching to the `token_hash`+`verifyOtp`
+   pattern Supabase's own docs recommend for exactly this case** — see
+   the big comment at the top of `app/accept-invite/page.tsx`.
+   **This needs a matching change in the Supabase dashboard, or it
+   still won't work**: under **Auth -> Email Templates**, both "Invite
+   user" and "Reset Password" need their link changed from the default
+   `{{ .ConfirmationURL }}` to
+   `{{ .SiteURL }}/accept-invite?token_hash={{ .TokenHash }}&type=invite`
+   (invite template) and `&type=recovery` (reset template) respectively
+   — **not yet confirmed this was actually done in the dashboard**, do
+   that before testing again. The old `?code=...` PKCE path was left in
+   the page as a fallback (harmless, just unused once the templates are
+   switched), not ripped out.
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as

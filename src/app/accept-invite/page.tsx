@@ -2,24 +2,38 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import type { EmailOtpType } from "@supabase/supabase-js";
 import { useLocale } from "@/lib/i18n/context";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 
+const OTP_TYPES: EmailOtpType[] = ["signup", "invite", "magiclink", "recovery", "email_change", "email"];
+
 /**
- * Where an invite (or password-recovery) email link lands. `createClient()`
- * uses `@supabase/ssr`'s `createBrowserClient`, which defaults to the PKCE
- * flow — the link lands here with `?code=...` in the query string, NOT the
- * old implicit-grant `#access_token=...` hash (that only auto-populates a
- * session via `detectSessionInUrl`, which PKCE doesn't use). So this page
- * explicitly exchanges that code for a session via
- * `exchangeCodeForSession()` — found live (Oct 2026): without this, the
- * page hung forever on "Checking your invite link…" since no session ever
- * appeared. Falls back to the hash-based `getSession()`/`onAuthStateChange`
- * path too, in case a link ever arrives that way instead. Deliberately
- * outside the AuthProvider gate (see lib/auth-context.tsx's PUBLIC_PATHS)
- * since this IS the page that creates the session in the first place —
- * gating it the same way as every other route would be circular.
+ * Where an invite (or password-recovery) email link lands.
+ *
+ * **Primary path: `?token_hash=...&type=...`**, via `verifyOtp()` — needs
+ * the Supabase email templates (Auth -> Email Templates -> "Invite user" /
+ * "Reset Password") changed to link here with
+ * `{{ .SiteURL }}/accept-invite?token_hash={{ .TokenHash }}&type=invite`
+ * (or `type=recovery` for the reset template) instead of the default
+ * `{{ .ConfirmationURL }}`. This is the one that actually works reliably:
+ * found live (Oct 2026) that `{{ .ConfirmationURL }}`'s PKCE `?code=...`
+ * link fails with "invalid or expired" whenever it's opened in a different
+ * browser/device/tab than the one that requested it — PKCE stores a code
+ * verifier in that browser's own local storage, which an email link almost
+ * never gets opened back in. `verifyOtp` with a token_hash needs no stored
+ * verifier, so it works from any browser Supabase's own docs recommend
+ * this exact pattern for email links for that reason.
+ *
+ * **Fallback path: `?code=...`** (`exchangeCodeForSession()`) — kept in
+ * case the email templates haven't been switched over yet, so an old-style
+ * link still does *something* rather than nothing.
+ *
+ * Deliberately outside the AuthProvider gate (see lib/auth-context.tsx's
+ * PUBLIC_PATHS) since this IS the page that creates the session in the
+ * first place — gating it the same way as every other route would be
+ * circular.
  */
 export default function AcceptInvitePage() {
   const { locale } = useLocale();
@@ -36,7 +50,25 @@ export default function AcceptInvitePage() {
     const supabase = createClient();
     let settled = false;
 
-    const code = new URLSearchParams(window.location.search).get("code");
+    const params = new URLSearchParams(window.location.search);
+    const tokenHash = params.get("token_hash");
+    const rawType = params.get("type");
+    const otpType = OTP_TYPES.find((t) => t === rawType);
+
+    if (tokenHash && otpType) {
+      supabase.auth.verifyOtp({ token_hash: tokenHash, type: otpType }).then(({ data, error: verifyError }) => {
+        if (data.session) {
+          settled = true;
+          setReady(true);
+          window.history.replaceState({}, "", window.location.pathname);
+        } else if (verifyError) {
+          console.error("verifyOtp failed", verifyError);
+          setLinkError(true);
+        }
+      });
+    }
+
+    const code = params.get("code");
     if (code) {
       supabase.auth.exchangeCodeForSession(code).then(({ data, error: exchangeError }) => {
         if (data.session) {
@@ -46,7 +78,7 @@ export default function AcceptInvitePage() {
           window.history.replaceState({}, "", window.location.pathname);
         } else if (exchangeError) {
           console.error("exchangeCodeForSession failed", exchangeError);
-          setLinkError(true);
+          if (!tokenHash) setLinkError(true);
         }
       });
     }
