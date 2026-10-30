@@ -25,6 +25,10 @@ create table if not exists athletes (
   strava_hr_zones jsonb,
   strava_power_zones jsonb,
   strava_zones_synced_at timestamptz,
+  -- Athlete-level Strava data (not per-activity) — see migration 009.
+  strava_weight_kg numeric(5,1),
+  strava_stats jsonb,
+  strava_profile_synced_at timestamptz,
   created_at timestamptz not null default now()
 );
 
@@ -34,6 +38,8 @@ comment on column athletes.ftp_watts is 'Cycling functional threshold power (FTP
 comment on column athletes.vo2max is 'VO2max, in ml/kg/min.';
 comment on column athletes.strava_hr_zones is 'Raw heart_rate.zones array from Strava''s GET /athlete/zones, when configured there. Null if none.';
 comment on column athletes.strava_power_zones is 'Raw power.zones array from Strava''s GET /athlete/zones, when configured there. Null if none.';
+comment on column athletes.strava_weight_kg is 'Weight in kg, from Strava''s GET /athlete (only present if the athlete set it there).';
+comment on column athletes.strava_stats is 'Raw response from Strava''s GET /athletes/{id}/stats — recent (4wk) / YTD / all-time totals per sport.';
 
 insert into athletes (slug, name, initials)
 values

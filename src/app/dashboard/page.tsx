@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { SiteHeader } from "@/components/SiteHeader";
 import { Card } from "@/components/ui/card";
 import { ZoneTables } from "@/components/ZoneTables";
+import { StravaTotals } from "@/components/StravaTotals";
 import { ActivityDetailDialog } from "@/components/ActivityDetailDialog";
 import { ATHLETES, SPORTS, type Athlete, type AthleteSlug, type StravaActivity, type Workout } from "@/lib/types";
 import { addDays, dayDiff, fmt, hm, hrs, monday, paceLabel, parseYmd, today, ymd } from "@/lib/dates";
@@ -184,6 +185,9 @@ export default function DashboardPage() {
                 <>
                   <h2 className="mt-8 mb-3 text-sm uppercase tracking-widest text-ink-3">{t("zones_h")}</h2>
                   <ZoneTables athlete={soloAthlete} />
+                  <div className="mt-4">
+                    <StravaTotals athlete={soloAthlete} />
+                  </div>
                 </>
               ) : (
                 <p className="mt-8 text-sm text-ink-3">

@@ -104,6 +104,11 @@ const DICT: Record<Locale, Record<string, string>> = {
     importing: "Importando…",
     import_done: "{n} entrenos importados.",
     import_errors: "{n} filas con error (no se importaron):",
+    strava_totals_h: "Totales de Strava",
+    totals_recent: "Últimas 4 sem.",
+    totals_ytd: "Este año",
+    totals_all: "Siempre",
+    weight: "Peso",
   },
   en: {
     brand_sub: "training log",
@@ -204,6 +209,11 @@ const DICT: Record<Locale, Record<string, string>> = {
     importing: "Importing…",
     import_done: "{n} workouts imported.",
     import_errors: "{n} rows had errors (not imported):",
+    strava_totals_h: "Strava totals",
+    totals_recent: "Last 4 wks",
+    totals_ytd: "This year",
+    totals_all: "All time",
+    weight: "Weight",
   },
 };
 

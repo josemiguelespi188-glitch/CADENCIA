@@ -447,13 +447,36 @@ tener todas"), two tiers:
   Shown in `ActivityDetailDialog.tsx` (when present on that activity)
   and as a new "Relative Effort" column in the dashboard's Recent
   Activities table.
-- **Would need a new API call, not built yet** — flagged to the user,
-  not started without confirmation: `GET /athletes/{id}/stats` (4-week/
-  year-to-date/all-time totals per sport — a real "Totals" dashboard
-  panel), `GET /athlete` (profile: weight, unit preference — relevant
-  if power zones should ever be computed relative to real body weight),
-  and the GPS route/map (`map.summary_polyline` on each activity —
-  would need a mapping library, the largest of the three).
+- **Built (Oct 2026, second pass)**: `GET /athletes/{id}/stats` (recent
+  4wk / YTD / all-time totals per sport — real Strava aggregation, not
+  computed by us) and `GET /athlete` (just `weight`, used nowhere yet
+  but stored for when power zones might want real body weight). New
+  columns `athletes.strava_weight_kg` / `strava_stats`
+  (migration 009), pulled every sync right after zones, same
+  best-effort/non-blocking pattern. `components/StravaTotals.tsx`
+  renders it on `/dashboard` (single-athlete view only, same as zones)
+  — a plain table, recent/YTD/all-time × run/ride/swim, distance + time.
+  `fetchStravaAthleteProfile()`'s own response also gives the real
+  Strava athlete id, which `fetchStravaAthleteStats()` needs and which
+  this codebase otherwise never stores (only `strava_connections.
+  strava_athlete_id`, set once at connect time — fetching it fresh each
+  sync avoids an extra query).
+- **Still not built, still needs confirmation before starting**: the
+  GPS route/map (`map.summary_polyline` on each activity) — would need
+  a mapping library, clearly the largest of what's left.
+
+### Dialog centering bug (found + fixed, Oct 2026)
+
+Every native `<dialog>` in this app (`WorkoutDialog`,
+`ActivityDetailDialog`, the inline one on `/templates`) was rendering
+pinned to the top-left instead of centered — reported live with a
+screenshot. Root cause: `dialog:modal` is centered by the browser's own
+UA stylesheet via `margin: auto`, but Tailwind's preflight resets
+`margin` to `0` on every element, silently overriding that. Fixed with
+one global rule in `globals.css` (`dialog { margin: auto; }` — a type
+selector outranks the preflight's `*` reset regardless of source
+order), not a per-component fix, since the bug was never
+component-specific.
 
 ## Style
 

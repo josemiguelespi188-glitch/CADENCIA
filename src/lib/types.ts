@@ -28,6 +28,30 @@ export interface Athlete {
   /** Raw power.zones from Strava's GET /athlete/zones, if configured there. */
   strava_power_zones: { min: number; max: number }[] | null;
   strava_zones_synced_at: string | null;
+  /** Weight in kg, from Strava's GET /athlete. */
+  strava_weight_kg: number | null;
+  /** Raw GET /athletes/{id}/stats response — recent (4wk) / YTD / all-time totals per sport. */
+  strava_stats: StravaAthleteStats | null;
+  strava_profile_synced_at: string | null;
+}
+
+export interface StravaTotals {
+  count: number;
+  distance: number; // meters
+  moving_time: number; // seconds
+  elevation_gain: number; // meters
+}
+
+export interface StravaAthleteStats {
+  recent_run_totals?: StravaTotals;
+  recent_ride_totals?: StravaTotals;
+  recent_swim_totals?: StravaTotals;
+  ytd_run_totals?: StravaTotals;
+  ytd_ride_totals?: StravaTotals;
+  ytd_swim_totals?: StravaTotals;
+  all_run_totals?: StravaTotals;
+  all_ride_totals?: StravaTotals;
+  all_swim_totals?: StravaTotals;
 }
 
 export interface Workout {

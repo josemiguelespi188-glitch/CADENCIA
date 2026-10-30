@@ -3,6 +3,8 @@ import { getAthleteBySlug } from "@/lib/auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import {
   fetchRecentStravaActivities,
+  fetchStravaAthleteProfile,
+  fetchStravaAthleteStats,
   fetchStravaAthleteZones,
   getValidAccessToken,
   updateStravaActivityDescription,
@@ -78,6 +80,25 @@ export async function POST(req: NextRequest) {
       .eq("id", athlete.id);
   } catch (e) {
     console.error("Failed to fetch Strava athlete zones", e);
+  }
+
+  // Weight + aggregate totals from Strava's own profile/stats endpoints —
+  // best-effort, same reasoning as zones above. The profile call also
+  // gives us the athlete's real Strava numeric id, needed for the stats
+  // call (distinct from our own `athlete.id`).
+  try {
+    const profile = await fetchStravaAthleteProfile(accessToken);
+    const stats = profile ? await fetchStravaAthleteStats(accessToken, profile.id) : null;
+    await db
+      .from("athletes")
+      .update({
+        strava_weight_kg: profile?.weight ?? null,
+        strava_stats: stats,
+        strava_profile_synced_at: new Date().toISOString(),
+      })
+      .eq("id", athlete.id);
+  } catch (e) {
+    console.error("Failed to fetch Strava athlete profile/stats", e);
   }
 
   // Auto-complete + AI write-back for anything not processed yet — not

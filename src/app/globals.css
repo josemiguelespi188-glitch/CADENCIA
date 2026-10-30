@@ -98,6 +98,18 @@ body {
   color: var(--bg);
 }
 
+/* Native <dialog>, opened via showModal(), is centered by the browser's
+   own UA stylesheet (margin: auto on dialog:modal) — but Tailwind's
+   preflight resets margin to 0 on every element, which silently kills
+   that centering and left every dialog in this app pinned to the
+   top-left instead (found live, Oct 2026). `dialog` as a type selector
+   outranks the `*` reset regardless of source order, so this one rule
+   restores it everywhere a <dialog> is used (WorkoutDialog,
+   ActivityDetailDialog, the templates page's inline dialog). */
+dialog {
+  margin: auto;
+}
+
 /* Sport accent utility — one class per sport sets --c/--soft, consumed by
    dots, tags and soft-background chips throughout the app. */
 .s-swim { --c: var(--swim); --soft: var(--swim-soft); }

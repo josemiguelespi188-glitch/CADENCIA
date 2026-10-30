@@ -175,6 +175,48 @@ export async function fetchStravaAthleteZones(accessToken: string): Promise<Stra
   return res.json();
 }
 
+export interface StravaAthleteProfile {
+  id: number;
+  weight?: number; // kg
+}
+
+/** Pulls the authenticated athlete's own Strava profile (just what we use: id + weight). Null on failure. */
+export async function fetchStravaAthleteProfile(accessToken: string): Promise<StravaAthleteProfile | null> {
+  const res = await fetch(`${STRAVA_API_BASE}/athlete`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export interface StravaTotals {
+  count: number;
+  distance: number;
+  moving_time: number;
+  elevation_gain: number;
+}
+
+export interface StravaAthleteStats {
+  recent_run_totals?: StravaTotals;
+  recent_ride_totals?: StravaTotals;
+  recent_swim_totals?: StravaTotals;
+  ytd_run_totals?: StravaTotals;
+  ytd_ride_totals?: StravaTotals;
+  ytd_swim_totals?: StravaTotals;
+  all_run_totals?: StravaTotals;
+  all_ride_totals?: StravaTotals;
+  all_swim_totals?: StravaTotals;
+}
+
+/** Recent (4wk) / YTD / all-time totals per sport, from Strava's own aggregation. Null on failure. */
+export async function fetchStravaAthleteStats(accessToken: string, stravaAthleteId: number): Promise<StravaAthleteStats | null> {
+  const res = await fetch(`${STRAVA_API_BASE}/athletes/${stravaAthleteId}/stats`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+
 /** Writes a new description onto a Strava activity (requires the `activity:write` scope). */
 export async function updateStravaActivityDescription(
   accessToken: string,
