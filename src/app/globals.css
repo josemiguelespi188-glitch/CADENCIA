@@ -1,0 +1,99 @@
+@import "tailwindcss";
+
+/* ─── Cadencia Brand Tokens — Light (default) ───
+   Same monochrome base as the Zenit/CarbsNutrition design system, so the
+   two apps read as one family. Sport colors are the only hues in the
+   whole app — everything else is ink/surface/line grayscale. */
+:root {
+  --bg: #FFFFFF;
+  --surface: #FFFFFF;
+  --surface-2: #E9E9E6;
+  --ink: #0B0B0C;
+  --ink-2: #55565B;
+  --ink-3: #8A8B8E;
+  --line: #D3D3CF;
+  --line-strong: #0B0B0C;
+  --error: #C41C00;
+
+  --swim: #2F7A8C;
+  --bike: #B5752C;
+  --run: #B4432E;
+  --gym: #6B5B95;
+  --race: #0B0B0C;
+
+  --swim-soft: #2F7A8C1A;
+  --bike-soft: #B5752C1A;
+  --run-soft: #B4432E1A;
+  --gym-soft: #6B5B951A;
+  --race-soft: #0B0B0C0D;
+}
+
+/* ─── Dark Mode — only via [data-theme="dark"], never by OS ─── */
+[data-theme="dark"] {
+  --bg: #0B0B0C;
+  --surface: #141416;
+  --surface-2: #1C1C1E;
+  --ink: #F3F3F1;
+  --ink-2: #ABACAF;
+  --ink-3: #6F7073;
+  --line: #2B2B2D;
+  --line-strong: #F3F3F1;
+  --error: #FF6B6B;
+
+  --swim: #5FB4C8;
+  --bike: #E0A355;
+  --run: #E07A5F;
+  --gym: #A594D1;
+  --race: #F3F3F1;
+
+  --swim-soft: #5FB4C826;
+  --bike-soft: #E0A35526;
+  --run-soft: #E07A5F26;
+  --gym-soft: #A594D126;
+  --race-soft: #F3F3F11A;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-error: var(--error);
+
+  --color-swim: var(--swim);
+  --color-bike: var(--bike);
+  --color-run: var(--run);
+  --color-gym: var(--gym);
+  --color-race: var(--race);
+  --color-swim-soft: var(--swim-soft);
+  --color-bike-soft: var(--bike-soft);
+  --color-run-soft: var(--run-soft);
+  --color-gym-soft: var(--gym-soft);
+  --color-race-soft: var(--race-soft);
+
+  --font-sans: var(--font-ibm-plex-sans), 'IBM Plex Sans', Arial, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background: var(--ink);
+  color: var(--bg);
+}
+
+/* Sport accent utility — one class per sport sets --c/--soft, consumed by
+   dots, tags and soft-background chips throughout the app. */
+.s-swim { --c: var(--swim); --soft: var(--swim-soft); }
+.s-bike { --c: var(--bike); --soft: var(--bike-soft); }
+.s-run { --c: var(--run); --soft: var(--run-soft); }
+.s-gym { --c: var(--gym); --soft: var(--gym-soft); }
+.s-race { --c: var(--race); --soft: var(--race-soft); }

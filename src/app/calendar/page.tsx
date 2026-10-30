@@ -1,0 +1,436 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useLocale } from "@/lib/i18n/context";
+import { useAthleteView } from "@/lib/athlete-view-context";
+import { createClient } from "@/lib/supabase/client";
+import { SiteHeader } from "@/components/SiteHeader";
+import { Button } from "@/components/ui/button";
+import { WorkoutDialog, type WorkoutFormValue, type WorkoutWithSlug } from "@/components/WorkoutDialog";
+import { ATHLETES, SPORTS, type AthleteSlug, type Athlete, type Template, type Workout } from "@/lib/types";
+import { addDays, fmt, hm, monday, parseYmd, today, ymd } from "@/lib/dates";
+import { cn } from "@/lib/utils";
+
+type EditingState = { record: WorkoutWithSlug | null; defaultDate?: string; defaultAthlete?: AthleteSlug } | null;
+
+export default function CalendarPage() {
+  const { t, locale } = useLocale();
+  const { who, lastSingle } = useAthleteView();
+  const router = useRouter();
+
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [athletes, setAthletes] = useState<Athlete[]>([]);
+  const [workouts, setWorkouts] = useState<WorkoutWithSlug[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<"week" | "month">("week");
+  const [anchor, setAnchor] = useState(() => today());
+  const [editing, setEditing] = useState<EditingState>(null);
+
+  const load = useCallback(async () => {
+    const supabase = createClient();
+    const [{ data: ath }, { data: w }, { data: tpl }] = await Promise.all([
+      supabase.from("athletes").select("*"),
+      supabase.from("workouts").select("*").order("date", { ascending: true }),
+      supabase.from("templates").select("*"),
+    ]);
+    const athleteList = (ath as Athlete[]) ?? [];
+    setAthletes(athleteList);
+    const byId = new Map(athleteList.map((a) => [a.id, a.slug]));
+    setWorkouts(
+      ((w as Workout[]) ?? []).map((row) => ({ ...row, athleteSlug: byId.get(row.athlete_id) ?? "juan" }))
+    );
+    setTemplates((tpl as Template[]) ?? []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => {
+      if (!data.user) {
+        router.push("/auth");
+        return;
+      }
+      setCheckingAuth(false);
+      load();
+    });
+  }, [router, load]);
+
+  const visible = useMemo(
+    () => (who === "both" ? workouts : workouts.filter((w) => w.athleteSlug === who)),
+    [workouts, who]
+  );
+
+  async function saveWorkout(value: WorkoutFormValue, existingId: string | null) {
+    const supabase = createClient();
+    const athlete = athletes.find((a) => a.slug === value.athleteSlug);
+    if (!athlete) return;
+    const payload = {
+      athlete_id: athlete.id,
+      date: value.date,
+      sport: value.sport,
+      title: value.title || t(value.sport),
+      start: value.start || null,
+      minutes: value.minutes,
+      km: value.km,
+      notes: value.notes,
+      done: value.done,
+    };
+    if (existingId) {
+      await supabase.from("workouts").update(payload).eq("id", existingId);
+    } else {
+      await supabase.from("workouts").insert(payload);
+    }
+    await load();
+  }
+
+  async function deleteWorkout(id: string) {
+    const supabase = createClient();
+    await supabase.from("workouts").delete().eq("id", id);
+    await load();
+  }
+
+  async function toggleDone(w: WorkoutWithSlug) {
+    setWorkouts((prev) => prev.map((x) => (x.id === w.id ? { ...x, done: !x.done } : x)));
+    const supabase = createClient();
+    await supabase.from("workouts").update({ done: !w.done }).eq("id", w.id);
+  }
+
+  function openAdd(date: string) {
+    setEditing({ record: null, defaultDate: date, defaultAthlete: who === "both" ? lastSingle : who });
+  }
+
+  if (checkingAuth) return null;
+
+  return (
+    <div className="flex min-h-screen flex-col bg-bg">
+      <SiteHeader />
+      <main className="flex-1 px-6 pt-28 pb-24">
+        <div className="mx-auto max-w-6xl">
+          {loading ? (
+            <p className="text-ink-3">{t("loading")}</p>
+          ) : (
+            <>
+              <Toolbar
+                view={view}
+                setView={setView}
+                anchor={anchor}
+                setAnchor={setAnchor}
+                visible={visible}
+                locale={locale}
+                t={t}
+                onAdd={() => openAdd(ymd(anchor >= today() || view === "month" ? anchor : today()))}
+              />
+              {view === "week" ? (
+                <WeekView
+                  anchor={anchor}
+                  visible={visible}
+                  locale={locale}
+                  t={t}
+                  onAdd={openAdd}
+                  onToggle={toggleDone}
+                  onEdit={(w) => setEditing({ record: w })}
+                />
+              ) : (
+                <MonthView
+                  anchor={anchor}
+                  visible={visible}
+                  locale={locale}
+                  onDayClick={(d) => {
+                    setView("week");
+                    setAnchor(d);
+                  }}
+                />
+              )}
+            </>
+          )}
+        </div>
+      </main>
+
+      <WorkoutDialog
+        editing={editing}
+        templates={templates}
+        onClose={() => setEditing(null)}
+        onSave={saveWorkout}
+        onDelete={deleteWorkout}
+      />
+    </div>
+  );
+}
+
+// ─── Toolbar ──────────────────────────────────────────────────────────────
+
+function Toolbar({
+  view,
+  setView,
+  anchor,
+  setAnchor,
+  visible,
+  locale,
+  t,
+  onAdd,
+}: {
+  view: "week" | "month";
+  setView: (v: "week" | "month") => void;
+  anchor: Date;
+  setAnchor: (d: Date) => void;
+  visible: WorkoutWithSlug[];
+  locale: string;
+  t: (k: string) => string;
+  onAdd: () => void;
+}) {
+  const start = monday(anchor);
+  const end = addDays(start, 6);
+  const label =
+    view === "week"
+      ? `${fmt(start, locale, { day: "numeric", month: "short" })} – ${fmt(end, locale, { day: "numeric", month: "short", year: "numeric" })}`
+      : fmt(anchor, locale, { month: "long", year: "numeric" });
+
+  const items =
+    view === "week"
+      ? visible.filter((w) => {
+          const d = parseYmd(w.date);
+          return d >= start && d <= end;
+        })
+      : visible.filter((w) => {
+          const d = parseYmd(w.date);
+          return d.getMonth() === anchor.getMonth() && d.getFullYear() === anchor.getFullYear();
+        });
+  const plannedMin = items.reduce((a, w) => a + w.minutes, 0);
+  const doneMin = items.filter((w) => w.done).reduce((a, w) => a + w.minutes, 0);
+
+  function nav(n: number) {
+    setAnchor(view === "week" ? addDays(anchor, 7 * n) : new Date(anchor.getFullYear(), anchor.getMonth() + n, 1));
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 mb-4">
+      <h1 className="text-2xl font-semibold tracking-tight mr-auto">{label}</h1>
+      <span className="text-sm text-ink-3">
+        {items.length} {t("sessions")} · {hm(plannedMin, locale as "es" | "en")} {t("planned")} · {hm(doneMin, locale as "es" | "en")} {t("done")}
+      </span>
+      <div className="inline-flex rounded-full bg-surface-2 p-1 gap-0.5">
+        {(["week", "month"] as const).map((v) => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            className={cn(
+              "rounded-full px-3 py-1.5 text-xs font-medium uppercase tracking-wide transition-colors",
+              view === v ? "bg-ink text-bg" : "text-ink-2 hover:text-ink"
+            )}
+          >
+            {t(v)}
+          </button>
+        ))}
+      </div>
+      <div className="flex gap-1">
+        <Button variant="steel" size="sm" onClick={() => nav(-1)} aria-label={t("prev")}>
+          ‹
+        </Button>
+        <Button variant="steel" size="sm" onClick={() => setAnchor(today())}>
+          {t("today")}
+        </Button>
+        <Button variant="steel" size="sm" onClick={() => nav(1)} aria-label={t("next")}>
+          ›
+        </Button>
+      </div>
+      <Button size="sm" onClick={onAdd}>
+        + {t("add")}
+      </Button>
+    </div>
+  );
+}
+
+// ─── Week view ────────────────────────────────────────────────────────────
+
+function sortWorkouts(a: Workout, b: Workout) {
+  return (
+    (a.date < b.date ? -1 : a.date > b.date ? 1 : 0) ||
+    ((a.start || "") < (b.start || "") ? -1 : (a.start || "") > (b.start || "") ? 1 : 0) ||
+    (SPORTS.indexOf(a.sport) - SPORTS.indexOf(b.sport))
+  );
+}
+
+function WeekView({
+  anchor,
+  visible,
+  locale,
+  t,
+  onAdd,
+  onToggle,
+  onEdit,
+}: {
+  anchor: Date;
+  visible: WorkoutWithSlug[];
+  locale: string;
+  t: (k: string) => string;
+  onAdd: (date: string) => void;
+  onToggle: (w: WorkoutWithSlug) => void;
+  onEdit: (w: WorkoutWithSlug) => void;
+}) {
+  const start = monday(anchor);
+  const td = today();
+  const byDate = new Map<string, WorkoutWithSlug[]>();
+  visible.forEach((w) => {
+    const arr = byDate.get(w.date) ?? [];
+    arr.push(w);
+    byDate.set(w.date, arr);
+  });
+  byDate.forEach((arr) => arr.sort(sortWorkouts));
+
+  return (
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-7">
+      {Array.from({ length: 7 }).map((_, i) => {
+        const d = addDays(start, i);
+        const key = ymd(d);
+        const items = byDate.get(key) ?? [];
+        const isToday = +d === +td;
+        return (
+          <section
+            key={key}
+            className={cn(
+              "flex min-h-[170px] flex-col gap-2 rounded-xl border bg-surface p-2",
+              isToday ? "border-2 border-line-strong" : "border-line"
+            )}
+          >
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-xs font-semibold uppercase tracking-widest text-ink-3">
+                {fmt(d, locale, { weekday: "short" })}
+              </span>
+              <span className="text-xl font-bold leading-none">{d.getDate()}</span>
+              <button
+                onClick={() => onAdd(key)}
+                aria-label={t("add")}
+                className="ml-auto h-7 w-7 rounded-md border border-dashed border-line text-ink-3 hover:bg-surface-2 hover:text-ink"
+              >
+                +
+              </button>
+            </div>
+            {items.length ? (
+              items.map((w) => <WorkoutChip key={w.id} w={w} locale={locale} t={t} onToggle={onToggle} onEdit={onEdit} />)
+            ) : (
+              <p className="text-xs text-ink-3">{t("free")}</p>
+            )}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function WorkoutChip({
+  w,
+  locale,
+  t,
+  onToggle,
+  onEdit,
+}: {
+  w: WorkoutWithSlug;
+  locale: string;
+  t: (k: string) => string;
+  onToggle: (w: WorkoutWithSlug) => void;
+  onEdit: (w: WorkoutWithSlug) => void;
+}) {
+  const metaParts = [w.start, w.minutes ? hm(w.minutes, locale as "es" | "en") : "", w.km ? `${w.km} km` : ""].filter(Boolean);
+  return (
+    <div className={cn("s-" + w.sport, "flex items-start gap-1.5 rounded-lg p-1.5")} style={{ background: "var(--soft)" }}>
+      <button
+        type="button"
+        onClick={() => onToggle(w)}
+        aria-pressed={w.done}
+        className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2"
+        style={{ borderColor: "var(--c)", background: w.done ? "var(--c)" : "transparent" }}
+      >
+        {w.done && (
+          <svg width="11" height="11" viewBox="0 0 14 14">
+            <path d="M2.5 7.5l3 3 6-7" fill="none" stroke="var(--bg)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </button>
+      <button type="button" onClick={() => onEdit(w)} className="min-w-0 flex-1 text-left">
+        <div className="flex items-center gap-1.5">
+          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: "var(--c)" }} />
+          <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--c)" }}>
+            {t(w.sport)}
+          </span>
+          <span className="ml-auto rounded border border-line bg-surface px-1 text-[10px] font-bold">{ATHLETES[w.athleteSlug].initials}</span>
+        </div>
+        <p className={cn("text-sm font-medium break-words", w.done && "line-through opacity-60")}>{w.title}</p>
+        {metaParts.length > 0 && <p className="text-xs text-ink-3">{metaParts.join(" · ")}</p>}
+      </button>
+    </div>
+  );
+}
+
+// ─── Month view ───────────────────────────────────────────────────────────
+
+function MonthView({
+  anchor,
+  visible,
+  locale,
+  onDayClick,
+}: {
+  anchor: Date;
+  visible: WorkoutWithSlug[];
+  locale: string;
+  onDayClick: (d: Date) => void;
+}) {
+  const td = today();
+  const byDate = new Map<string, WorkoutWithSlug[]>();
+  visible.forEach((w) => {
+    const arr = byDate.get(w.date) ?? [];
+    arr.push(w);
+    byDate.set(w.date, arr);
+  });
+
+  const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+  const gridStart = monday(first);
+  const daysInMonth = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0).getDate();
+  const rows = Math.ceil((((first.getDay() + 6) % 7) + daysInMonth) / 7);
+  const cells = Array.from({ length: rows * 7 }, (_, i) => addDays(gridStart, i));
+  const dowLabels = Array.from({ length: 7 }, (_, i) => fmt(addDays(gridStart, i), locale, { weekday: "short" }));
+
+  return (
+    <div>
+      <div className="grid grid-cols-7 gap-1 text-center text-xs font-semibold uppercase tracking-widest text-ink-3">
+        {dowLabels.map((d, i) => (
+          <div key={i}>{d}</div>
+        ))}
+      </div>
+      <div className="mt-1 grid grid-cols-7 gap-1">
+        {cells.map((d) => {
+          const key = ymd(d);
+          const items = (byDate.get(key) ?? []).sort(sortWorkouts);
+          const off = d.getMonth() !== anchor.getMonth();
+          const isToday = +d === +td;
+          return (
+            <button
+              key={key}
+              onClick={() => onDayClick(d)}
+              className={cn(
+                "flex min-h-[90px] flex-col gap-1 rounded-lg border bg-surface p-1.5 text-left",
+                off && "opacity-50",
+                isToday ? "border-2 border-line-strong" : "border-line"
+              )}
+            >
+              <span className="text-sm font-bold">{d.getDate()}</span>
+              {items.slice(0, 3).map((w) => (
+                <div
+                  key={w.id}
+                  className={cn("s-" + w.sport, "flex items-center gap-1 truncate rounded px-1 text-[11px]")}
+                  style={{ background: "var(--soft)" }}
+                  title={w.title}
+                >
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: "var(--c)" }} />
+                  <span className={cn("truncate", w.done && "line-through opacity-60")}>{w.title}</span>
+                </div>
+              ))}
+              {items.length > 3 && <span className="text-[10px] text-ink-3">+{items.length - 3}</span>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
