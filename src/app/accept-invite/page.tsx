@@ -7,19 +7,26 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 
 /**
- * Where an invite (or password-recovery) email link lands. Supabase's
- * browser client auto-detects the session from the URL hash on load
- * (`detectSessionInUrl`, on by default) — this page just waits for that,
- * then finishes by setting a real password. Deliberately outside the
- * AuthProvider gate (see lib/auth-context.tsx's PUBLIC_PATHS) since this
- * IS the page that creates the session in the first place — gating it
- * the same way as every other route would be circular.
+ * Where an invite (or password-recovery) email link lands. `createClient()`
+ * uses `@supabase/ssr`'s `createBrowserClient`, which defaults to the PKCE
+ * flow — the link lands here with `?code=...` in the query string, NOT the
+ * old implicit-grant `#access_token=...` hash (that only auto-populates a
+ * session via `detectSessionInUrl`, which PKCE doesn't use). So this page
+ * explicitly exchanges that code for a session via
+ * `exchangeCodeForSession()` — found live (Oct 2026): without this, the
+ * page hung forever on "Checking your invite link…" since no session ever
+ * appeared. Falls back to the hash-based `getSession()`/`onAuthStateChange`
+ * path too, in case a link ever arrives that way instead. Deliberately
+ * outside the AuthProvider gate (see lib/auth-context.tsx's PUBLIC_PATHS)
+ * since this IS the page that creates the session in the first place —
+ * gating it the same way as every other route would be circular.
  */
 export default function AcceptInvitePage() {
   const { locale } = useLocale();
   const isEn = locale === "en";
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [linkError, setLinkError] = useState(false);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -27,13 +34,47 @@ export default function AcceptInvitePage() {
 
   useEffect(() => {
     const supabase = createClient();
+    let settled = false;
+
+    const code = new URLSearchParams(window.location.search).get("code");
+    if (code) {
+      supabase.auth.exchangeCodeForSession(code).then(({ data, error: exchangeError }) => {
+        if (data.session) {
+          settled = true;
+          setReady(true);
+          // Drop the one-time code from the URL/history now that it's used.
+          window.history.replaceState({}, "", window.location.pathname);
+        } else if (exchangeError) {
+          console.error("exchangeCodeForSession failed", exchangeError);
+          setLinkError(true);
+        }
+      });
+    }
+
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) setReady(true);
+      if (data.session) {
+        settled = true;
+        setReady(true);
+      }
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) setReady(true);
+      if (session) {
+        settled = true;
+        setReady(true);
+      }
     });
-    return () => sub.subscription.unsubscribe();
+
+    // If nothing established a session within a few seconds (no code, no
+    // hash, or an expired/already-used link), stop showing "Checking…"
+    // forever and say so.
+    const timeout = window.setTimeout(() => {
+      if (!settled) setLinkError(true);
+    }, 6000);
+
+    return () => {
+      sub.subscription.unsubscribe();
+      window.clearTimeout(timeout);
+    };
   }, []);
 
   async function submit(e: React.FormEvent) {
@@ -71,7 +112,13 @@ export default function AcceptInvitePage() {
           <p className="mt-1 text-[10px] uppercase tracking-[0.5em] text-ink-3">{isEn ? "training log" : "registro de entreno"}</p>
         </div>
 
-        {!ready ? (
+        {linkError ? (
+          <p className="text-center text-sm text-error">
+            {isEn
+              ? "This link is invalid or has expired. Ask for a new invite or password reset."
+              : "Este enlace no es válido o ya expiró. Pide una nueva invitación o recuperación de contraseña."}
+          </p>
+        ) : !ready ? (
           <p className="text-center text-sm text-ink-3">
             {isEn ? "Checking your invite link…" : "Verificando tu enlace de invitación…"}
           </p>
