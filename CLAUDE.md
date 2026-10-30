@@ -125,6 +125,96 @@ Everything above is a one-time setup cost; once done, both athletes land
 straight in `/calendar`, connect their own Strava from `/settings`, and
 every page works with no further manual steps.
 
+## Roadmap — becoming a TrainingPeaks-style platform (Oct 2026)
+
+The real goal of this app, per explicit instruction, is bigger than "a
+shared training log": Juan and José want to train in sync, see each
+other's progress, build their own personalized plans toward a specific
+goal, and eventually get a TrainingPeaks-grade dashboard (training
+effectiveness, effort rating, AI insights) — all in the Zenit/
+CarbsNutrition visual language this app already uses. Four mechanism
+decisions were confirmed explicitly (`AskUserQuestion`) before building
+any of this, since guessing wrong on any of them would have meant
+building the wrong integration entirely:
+
+1. **Weekly plan delivery is a downloadable `.ics` file, not SMS/WhatsApp
+   and not a live Google Calendar OAuth push.** Twilio-style SMS was
+   explicitly declined (cost + a new account to provision, like Resend
+   was for Communications), and so was a Google Calendar API integration
+   for this first pass — simpler wins: each athlete downloads their own
+   week's file and imports it into their own calendar app by hand. This
+   also directly serves the user's own stated priority ("no quiero que te
+   enfoques en hacer el entrenamiento sino en codear que todo esté
+   perfecto para luego poder cargar el entrenamiento") — the one thing
+   that has to be right is the export pipeline (stable ids so
+   re-importing an edited week updates events instead of duplicating,
+   and rich per-workout descriptions explaining the workout's purpose),
+   not any particular week's actual training content.
+2. **Each athlete's export is scoped to themselves** — when both
+   confirmed "cada atleta conecta su propia cuenta Google," that's
+   really about where the file lands (each athlete's own personal
+   calendar), which applies the same way to a manually-imported `.ics`
+   file as it would to a live OAuth push. The export therefore always
+   respects the calendar's own athlete filter (`who` from
+   `athlete-view-context.tsx`) — exporting while "Both" is selected
+   produces one file with both athletes' workouts (each tagged with
+   their initials in the event title), exporting while a single athlete
+   is selected produces that athlete's workouts only.
+3. **Strava write-back (pushing an AI-generated description onto the
+   matching Strava activity) will run fully automatically the moment a
+   sync happens** — no draft/approve step, per explicit choice ("qué
+   lo haga automático apenas sincroniza... más rápido, menos control").
+   Not built yet (see priority order below) — when it is, this preference
+   means `/api/strava/sync` itself should call the description-generation
+   step and push back to Strava's API inline, not a separate
+   human-in-the-loop review screen.
+4. **Build order, explicitly confirmed**: (1) the weekly `.ics` export
+   pipeline first — **done**, see below; (2) Strava auto-complete
+   (marking a planned workout "done" from a matching synced activity —
+   deliberately left out of the original sync route, see "Strava
+   integration" above) plus the auto-write-back description; (3) the
+   TrainingPeaks-style dashboard (effectiveness, effort rating, AI
+   insights) last, since it needs real synced data flowing first to be
+   meaningful rather than a shell with no numbers behind it. Don't jump
+   ahead to (2) or (3) without this file saying they're done being
+   built, or without a fresh explicit instruction to reprioritize.
+
+### Weekly `.ics` export (built)
+
+`src/lib/ics.ts`'s `buildWeekIcs()` generates one `.ics` file for
+whichever workouts are visible on the Calendar page (respects the `who`
+filter), for the currently visible week — a "Download week" button in
+the Toolbar (`src/app/calendar/page.tsx`). Each workout becomes one
+`VEVENT`:
+
+- A **stable `UID`** (`${workout.id}@cadencia`) — re-downloading the same
+  week after editing a workout produces an event with the same UID, so
+  re-importing it updates the existing calendar event instead of
+  duplicating it (standard iCalendar behavior; Apple Calendar honors this
+  reliably on a plain `.ics` import, Google Calendar's import flow is
+  less consistent about it — worth confirming empirically once real
+  weeks are actually being imported, not just assumed from the RFC).
+- **Timed if `start` is set** (`DTSTART`/`DTEND` from `date`+`start`,
+  duration = `minutes`, defaulting to 60 if `minutes` is 0), **all-day
+  otherwise**.
+- **`SUMMARY`** is `sport: title`, prefixed with the athlete's initials
+  only when the export covers both athletes (no prefix needed for a
+  single-athlete export — redundant with every other event in that same
+  file).
+- **`DESCRIPTION`** is the workout's own `notes` field plus `km` if set —
+  **this is the field that has to carry the workout's actual purpose**
+  per the user's explicit requirement ("tiene que en notas explicar
+  exactamente lo que hace cada entrenamiento, cuál es el objetivo") — no
+  new dedicated "objective" field was added for this, `notes` already
+  exists and is free text, so reusing it was the minimal change; revisit
+  only if a structured objective field turns out to be worth splitting
+  out from free-form notes once real weeks are being written.
+
+Nothing server-side was needed for this — the calendar page already has
+every workout loaded client-side, so the `.ics` text is built and handed
+to the browser as a download (`Blob` + a synthetic `<a download>` click)
+entirely in the browser, no new API route.
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as

@@ -7,8 +7,9 @@ import { createClient } from "@/lib/supabase/client";
 import { SiteHeader } from "@/components/SiteHeader";
 import { Button } from "@/components/ui/button";
 import { WorkoutDialog, type WorkoutFormValue, type WorkoutWithSlug } from "@/components/WorkoutDialog";
-import { ATHLETES, SPORTS, type AthleteSlug, type Athlete, type Template, type Workout } from "@/lib/types";
+import { ATHLETES, SPORTS, type AthleteSlug, type Athlete, type Template, type Who, type Workout } from "@/lib/types";
 import { addDays, fmt, hm, monday, parseYmd, today, ymd } from "@/lib/dates";
+import { buildWeekIcs, downloadIcs } from "@/lib/ics";
 import { cn } from "@/lib/utils";
 
 type EditingState = { record: WorkoutWithSlug | null; defaultDate?: string; defaultAthlete?: AthleteSlug } | null;
@@ -109,6 +110,7 @@ export default function CalendarPage() {
                 anchor={anchor}
                 setAnchor={setAnchor}
                 visible={visible}
+                who={who}
                 locale={locale}
                 t={t}
                 onAdd={() => openAdd(ymd(anchor >= today() || view === "month" ? anchor : today()))}
@@ -158,6 +160,7 @@ function Toolbar({
   anchor,
   setAnchor,
   visible,
+  who,
   locale,
   t,
   onAdd,
@@ -167,6 +170,7 @@ function Toolbar({
   anchor: Date;
   setAnchor: (d: Date) => void;
   visible: WorkoutWithSlug[];
+  who: Who;
   locale: string;
   t: (k: string) => string;
   onAdd: () => void;
@@ -193,6 +197,11 @@ function Toolbar({
 
   function nav(n: number) {
     setAnchor(view === "week" ? addDays(anchor, 7 * n) : new Date(anchor.getFullYear(), anchor.getMonth() + n, 1));
+  }
+
+  function downloadWeek() {
+    const ics = buildWeekIcs(items, who, t);
+    downloadIcs(`cadencia-${who}-${ymd(start)}.ics`, ics);
   }
 
   return (
@@ -226,6 +235,11 @@ function Toolbar({
           ›
         </Button>
       </div>
+      {view === "week" && items.length > 0 && (
+        <Button variant="steel" size="sm" onClick={downloadWeek}>
+          {t("download_week")}
+        </Button>
+      )}
       <Button size="sm" onClick={onAdd}>
         + {t("add")}
       </Button>

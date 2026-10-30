@@ -75,6 +75,7 @@ const DICT: Record<Locale, Record<string, string>> = {
     strava_never: "Nunca",
     settings_h: "Ajustes",
     other_lang: "English",
+    download_week: "Descargar semana",
   },
   en: {
     brand_sub: "training log",
@@ -146,6 +147,7 @@ const DICT: Record<Locale, Record<string, string>> = {
     strava_never: "Never",
     settings_h: "Settings",
     other_lang: "Español",
+    download_week: "Download week",
   },
 };
 
