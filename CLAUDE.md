@@ -296,6 +296,85 @@ calculator would use to derive paces for other distances. If the real intent
 is the latter, this column's shape would need to change before anything
 downstream (plan generation) starts depending on it.
 
+### Pastel palette, real Strava zones, and an expanded dashboard (Oct 2026)
+
+After José actually connected his Strava account and tested the app live,
+a round of direct feedback (with a COROS dashboard screenshot as a visual
+reference) led to several changes:
+
+- **Sport accent colors are now deliberately pastel/muted**, not the
+  original saturated hues — per explicit feedback ("colores pasteles...
+  no tan heavies"). `--error` (strong red) and the new `--success`
+  (strong green) token in `globals.css` are reserved exclusively for
+  genuine alert/success states (a failed sync, a real warning) — **never**
+  used as a routine sport-color dot or chip. The base app stays
+  white/gray exactly as before; only the sport hues themselves got
+  softer.
+- **Sync now pulls the last 30 days, fully paginated** (`days` param on
+  `fetchRecentStravaActivities()` in `lib/integrations/strava.ts`, replacing
+  the old flat "most recent 50" cap) — per explicit instruction ("no
+  necesito lo histórico, solamente el último mes"). No deep history by
+  design; revisit if a longer window is ever wanted.
+- **Sync also pulls the athlete's real zones from Strava itself**
+  (`fetchStravaAthleteZones()`, `GET /athlete/zones`) when the athlete has
+  any configured there — stored on `athletes.strava_hr_zones` /
+  `strava_power_zones` (migration 005). This is the literal "sacar...
+  el threshold, rate zone, el FTP... de Strava" ask — real data when
+  Strava has it, **not** a guess. Most athletes never configure zones in
+  Strava's own app though, so the common case is still the
+  manually-entered thresholds from the "Training zones" card.
+- **`lib/zones.ts`** computes HR/pace/power zone tables from an athlete's
+  threshold values, used as the fallback whenever Strava has no zones of
+  its own (and always for pace, since Strava's zones endpoint has no pace
+  zones at all). This is the **standard, published %-of-threshold model**
+  from Allen & Coggan's "Training and Racing with a Power Meter" — not a
+  reverse-engineered copy of COROS's (or any other platform's)
+  proprietary, undocumented zone algorithm, which there isn't enough
+  public spec to replicate honestly from a single reference screenshot.
+  `components/ZoneTables.tsx` renders all three (HR/pace/power), labeled
+  "De Strava" vs "Calculadas" so it's always clear which source a given
+  table came from — reused on both `/settings` (per-athlete, editable
+  context) and `/dashboard` (read-only, only when a single athlete is
+  selected — zones aren't meaningful for "Both" at once).
+- **The calendar now shows real Strava activity that has no matching
+  plan**, not just linked ones — per explicit instruction. Any synced
+  activity not referenced by a `workouts.strava_activity_id` renders as
+  its own dashed-border chip (vs. the planned chip's solid soft
+  background — the visual cue that this happened but wasn't planned) on
+  both week and month views, scoped to the same last-30-days window sync
+  itself uses.
+- **The dashboard gained**: a real "Recent activities" table (date,
+  duration, distance, avg HR + %LTHR when a threshold is set, cadence —
+  `strava_activities.average_heart_rate` is new, migration 006, from
+  Strava's `average_heartrate`), the zone tables, and a "Best efforts
+  (last 30 days)" panel (`lib/bestEfforts.ts` — fastest pace per standard
+  running distance, 5K/10K/21K/42K within a tolerance, from whatever's
+  synced). **Deliberately NOT added**: anything resembling COROS's
+  "Training Status," "Recovery %," "7-Day Efficiency Score," or
+  overnight HRV widgets — those come from COROS's own watch sensors and
+  proprietary algorithms, and Strava's API exposes none of it. Fabricating
+  plausible-looking numbers for them would be actively dishonest, so
+  they're skipped entirely rather than faked — the user's own message
+  acknowledged this tradeoff ("obviamente no vamos a tener tanta
+  información"). "Best efforts" is also deliberately never called
+  "Personal Record" in the UI, since it only ever sees the last 30 days,
+  not real all-time PRs.
+- `mapStravaSportType()` moved from `lib/integrations/strava.ts` to a new
+  `lib/sport.ts` — it's a pure function with no server dependency, but
+  `strava.ts` imports the service-role Supabase client (which itself
+  pulls in `next/headers`), so importing anything from `strava.ts` into
+  a `"use client"` page (the Calendar page needs this to color-code
+  unmatched activity chips) broke the client bundle. Keep any future
+  pure Strava helper that a client component needs in `sport.ts`, not
+  `strava.ts`.
+- **Migrations 005 and 006 need to be run in the SQL editor** before any
+  of this works against the live project — not yet confirmed against
+  real Strava zone data from this sandbox (`clickup.com`-style network
+  restriction doesn't apply here, but no live Strava connection exists
+  to test against from this environment either); confirm once deployed
+  that a real `/athlete/zones` response renders correctly and that
+  average_heartrate actually arrives for activities that recorded it.
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as

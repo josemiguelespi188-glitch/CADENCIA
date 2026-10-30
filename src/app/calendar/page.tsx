@@ -7,12 +7,23 @@ import { createClient } from "@/lib/supabase/client";
 import { SiteHeader } from "@/components/SiteHeader";
 import { Button } from "@/components/ui/button";
 import { WorkoutDialog, type WorkoutFormValue, type WorkoutWithSlug } from "@/components/WorkoutDialog";
-import { ATHLETES, SPORTS, type AthleteSlug, type Athlete, type Template, type Who, type Workout } from "@/lib/types";
+import {
+  ATHLETES,
+  SPORTS,
+  type AthleteSlug,
+  type Athlete,
+  type StravaActivity,
+  type Template,
+  type Who,
+  type Workout,
+} from "@/lib/types";
 import { addDays, fmt, hm, monday, parseYmd, today, ymd } from "@/lib/dates";
 import { buildWeekIcs, downloadIcs } from "@/lib/ics";
+import { mapStravaSportType } from "@/lib/sport";
 import { cn } from "@/lib/utils";
 
 type EditingState = { record: WorkoutWithSlug | null; defaultDate?: string; defaultAthlete?: AthleteSlug } | null;
+type ActivityWithSlug = StravaActivity & { athleteSlug: AthleteSlug };
 
 export default function CalendarPage() {
   const { t, locale } = useLocale();
@@ -20,6 +31,7 @@ export default function CalendarPage() {
 
   const [athletes, setAthletes] = useState<Athlete[]>([]);
   const [workouts, setWorkouts] = useState<WorkoutWithSlug[]>([]);
+  const [activities, setActivities] = useState<ActivityWithSlug[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"week" | "month">("week");
@@ -28,16 +40,29 @@ export default function CalendarPage() {
 
   const load = useCallback(async () => {
     const supabase = createClient();
-    const [{ data: ath }, { data: w }, { data: tpl }] = await Promise.all([
+    const [{ data: ath }, { data: w }, { data: tpl }, { data: acts }] = await Promise.all([
       supabase.from("athletes").select("*"),
       supabase.from("workouts").select("*").order("date", { ascending: true }),
       supabase.from("templates").select("*"),
+      // Last 30 days only — "no necesito lo histórico, solamente el
+      // último mes" — see CLAUDE.md's "Calendar shows real Strava
+      // activity" note.
+      supabase
+        .from("strava_activities")
+        .select("*")
+        .gte("local_date", ymd(addDays(today(), -30)))
+        .order("local_date", { ascending: true }),
     ]);
     const athleteList = (ath as Athlete[]) ?? [];
     setAthletes(athleteList);
     const byId = new Map(athleteList.map((a) => [a.id, a.slug]));
-    setWorkouts(
-      ((w as Workout[]) ?? []).map((row) => ({ ...row, athleteSlug: byId.get(row.athlete_id) ?? "juan" }))
+    const workoutRows = ((w as Workout[]) ?? []).map((row) => ({ ...row, athleteSlug: byId.get(row.athlete_id) ?? "juan" }));
+    setWorkouts(workoutRows);
+    const linkedActivityIds = new Set(workoutRows.map((r) => r.strava_activity_id).filter(Boolean));
+    setActivities(
+      ((acts as StravaActivity[]) ?? [])
+        .filter((a) => !linkedActivityIds.has(a.id))
+        .map((row) => ({ ...row, athleteSlug: byId.get(row.athlete_id) ?? "juan" }))
     );
     setTemplates((tpl as Template[]) ?? []);
     setLoading(false);
@@ -54,6 +79,10 @@ export default function CalendarPage() {
   const visible = useMemo(
     () => (who === "both" ? workouts : workouts.filter((w) => w.athleteSlug === who)),
     [workouts, who]
+  );
+  const visibleActivities = useMemo(
+    () => (who === "both" ? activities : activities.filter((a) => a.athleteSlug === who)),
+    [activities, who]
   );
 
   async function saveWorkout(value: WorkoutFormValue, existingId: string | null) {
@@ -119,6 +148,8 @@ export default function CalendarPage() {
                 <WeekView
                   anchor={anchor}
                   visible={visible}
+                  activities={visibleActivities}
+                  who={who}
                   locale={locale}
                   t={t}
                   onAdd={openAdd}
@@ -129,6 +160,7 @@ export default function CalendarPage() {
                 <MonthView
                   anchor={anchor}
                   visible={visible}
+                  activities={visibleActivities}
                   locale={locale}
                   onDayClick={(d) => {
                     setView("week");
@@ -260,6 +292,8 @@ function sortWorkouts(a: Workout, b: Workout) {
 function WeekView({
   anchor,
   visible,
+  activities,
+  who,
   locale,
   t,
   onAdd,
@@ -268,6 +302,8 @@ function WeekView({
 }: {
   anchor: Date;
   visible: WorkoutWithSlug[];
+  activities: ActivityWithSlug[];
+  who: Who;
   locale: string;
   t: (k: string) => string;
   onAdd: (date: string) => void;
@@ -284,12 +320,21 @@ function WeekView({
   });
   byDate.forEach((arr) => arr.sort(sortWorkouts));
 
+  const activitiesByDate = new Map<string, ActivityWithSlug[]>();
+  activities.forEach((a) => {
+    if (!a.local_date) return;
+    const arr = activitiesByDate.get(a.local_date) ?? [];
+    arr.push(a);
+    activitiesByDate.set(a.local_date, arr);
+  });
+
   return (
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-7">
       {Array.from({ length: 7 }).map((_, i) => {
         const d = addDays(start, i);
         const key = ymd(d);
         const items = byDate.get(key) ?? [];
+        const dayActivities = activitiesByDate.get(key) ?? [];
         const isToday = +d === +td;
         return (
           <section
@@ -312,14 +357,51 @@ function WeekView({
                 +
               </button>
             </div>
-            {items.length ? (
-              items.map((w) => <WorkoutChip key={w.id} w={w} locale={locale} t={t} onToggle={onToggle} onEdit={onEdit} />)
+            {items.length || dayActivities.length ? (
+              <>
+                {items.map((w) => (
+                  <WorkoutChip key={w.id} w={w} locale={locale} t={t} onToggle={onToggle} onEdit={onEdit} />
+                ))}
+                {dayActivities.map((a) => (
+                  <ActivityChip key={a.id} a={a} who={who} locale={locale} />
+                ))}
+              </>
             ) : (
               <p className="text-xs text-ink-3">{t("free")}</p>
             )}
           </section>
         );
       })}
+    </div>
+  );
+}
+
+/** A real Strava activity with no matching planned workout — see
+ * CLAUDE.md's "Calendar shows real Strava activity" note. Dashed border
+ * (vs. the planned chip's solid soft background) is the visual cue that
+ * this happened but wasn't planned. */
+function ActivityChip({ a, who, locale }: { a: ActivityWithSlug; who: Who; locale: string }) {
+  const sport = mapStravaSportType(a.sport_type);
+  const metaParts = [
+    a.moving_time_s ? hm(a.moving_time_s / 60, locale as "es" | "en") : "",
+    a.distance_m ? `${(a.distance_m / 1000).toFixed(1)} km` : "",
+  ].filter(Boolean);
+  return (
+    <div
+      className={cn(sport ? "s-" + sport : "", "flex items-start gap-1.5 rounded-lg border border-dashed p-1.5")}
+      style={{ borderColor: sport ? "var(--c)" : "var(--line)" }}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: sport ? "var(--c)" : "var(--ink-3)" }} />
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">Strava</span>
+          {who === "both" && (
+            <span className="ml-auto rounded border border-line bg-surface px-1 text-[10px] font-bold">{ATHLETES[a.athleteSlug].initials}</span>
+          )}
+        </div>
+        <p className="text-sm font-medium break-words">{a.name}</p>
+        {metaParts.length > 0 && <p className="text-xs text-ink-3">{metaParts.join(" · ")}</p>}
+      </div>
     </div>
   );
 }
@@ -373,11 +455,13 @@ function WorkoutChip({
 function MonthView({
   anchor,
   visible,
+  activities,
   locale,
   onDayClick,
 }: {
   anchor: Date;
   visible: WorkoutWithSlug[];
+  activities: ActivityWithSlug[];
   locale: string;
   onDayClick: (d: Date) => void;
 }) {
@@ -387,6 +471,13 @@ function MonthView({
     const arr = byDate.get(w.date) ?? [];
     arr.push(w);
     byDate.set(w.date, arr);
+  });
+  const activitiesByDate = new Map<string, ActivityWithSlug[]>();
+  activities.forEach((a) => {
+    if (!a.local_date) return;
+    const arr = activitiesByDate.get(a.local_date) ?? [];
+    arr.push(a);
+    activitiesByDate.set(a.local_date, arr);
   });
 
   const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
@@ -407,8 +498,10 @@ function MonthView({
         {cells.map((d) => {
           const key = ymd(d);
           const items = (byDate.get(key) ?? []).sort(sortWorkouts);
+          const dayActivities = activitiesByDate.get(key) ?? [];
           const off = d.getMonth() !== anchor.getMonth();
           const isToday = +d === +td;
+          const total = items.length + dayActivities.length;
           return (
             <button
               key={key}
@@ -431,7 +524,21 @@ function MonthView({
                   <span className={cn("truncate", w.done && "line-through opacity-60")}>{w.title}</span>
                 </div>
               ))}
-              {items.length > 3 && <span className="text-[10px] text-ink-3">+{items.length - 3}</span>}
+              {dayActivities.slice(0, Math.max(0, 3 - items.length)).map((a) => {
+                const sport = mapStravaSportType(a.sport_type);
+                return (
+                  <div
+                    key={a.id}
+                    className={cn(sport ? "s-" + sport : "", "flex items-center gap-1 truncate rounded border border-dashed px-1 text-[11px]")}
+                    style={{ borderColor: sport ? "var(--c)" : "var(--line)" }}
+                    title={a.name}
+                  >
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: sport ? "var(--c)" : "var(--ink-3)" }} />
+                    <span className="truncate">{a.name}</span>
+                  </div>
+                );
+              })}
+              {total > 3 && <span className="text-[10px] text-ink-3">+{total - 3}</span>}
             </button>
           );
         })}

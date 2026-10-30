@@ -6,28 +6,40 @@ import { useAthleteView } from "@/lib/athlete-view-context";
 import { createClient } from "@/lib/supabase/client";
 import { SiteHeader } from "@/components/SiteHeader";
 import { Card } from "@/components/ui/card";
+import { ZoneTables } from "@/components/ZoneTables";
 import { ATHLETES, SPORTS, type Athlete, type AthleteSlug, type StravaActivity, type Workout } from "@/lib/types";
-import { addDays, dayDiff, fmt, hm, hrs, monday, parseYmd, today } from "@/lib/dates";
+import { addDays, dayDiff, fmt, hm, hrs, monday, paceLabel, parseYmd, today, ymd } from "@/lib/dates";
+import { computeBestEfforts } from "@/lib/bestEfforts";
 import { cn } from "@/lib/utils";
 
 type WorkoutWithSlug = Workout & { athleteSlug: AthleteSlug };
+type ActivityWithSlug = StravaActivity & { athleteSlug: AthleteSlug };
 
 export default function DashboardPage() {
   const { t, locale } = useLocale();
+  const isEn = locale === "en";
   const { who } = useAthleteView();
 
   const [loading, setLoading] = useState(true);
+  const [athletes, setAthletes] = useState<Athlete[]>([]);
   const [workouts, setWorkouts] = useState<WorkoutWithSlug[]>([]);
-  const [activities, setActivities] = useState<(StravaActivity & { athleteSlug: AthleteSlug })[]>([]);
+  const [activities, setActivities] = useState<ActivityWithSlug[]>([]);
 
   const load = useCallback(async () => {
     const supabase = createClient();
     const [{ data: ath }, { data: w }, { data: acts }] = await Promise.all([
       supabase.from("athletes").select("*"),
       supabase.from("workouts").select("*"),
-      supabase.from("strava_activities").select("*").order("start_date", { ascending: false }).limit(40),
+      // Last 30 days only — see CLAUDE.md's "Calendar shows real Strava
+      // activity" / dashboard notes: no deep history for now.
+      supabase
+        .from("strava_activities")
+        .select("*")
+        .gte("local_date", ymd(addDays(today(), -30)))
+        .order("start_date", { ascending: false }),
     ]);
     const athleteList = (ath as Athlete[]) ?? [];
+    setAthletes(athleteList);
     const byId = new Map(athleteList.map((a) => [a.id, a.slug]));
     setWorkouts(((w as Workout[]) ?? []).map((row) => ({ ...row, athleteSlug: byId.get(row.athlete_id) ?? "juan" })));
     setActivities(
@@ -50,6 +62,8 @@ export default function DashboardPage() {
     () => (who === "both" ? activities : activities.filter((a) => a.athleteSlug === who)),
     [activities, who]
   );
+  const soloAthlete = who === "both" ? null : (athletes.find((a) => a.slug === who) ?? null);
+  const bestEfforts = useMemo(() => computeBestEfforts(visibleActivities), [visibleActivities]);
 
   const td = today();
   const weekStart = monday(td);
@@ -80,6 +94,8 @@ export default function DashboardPage() {
       return d >= td && d <= addDays(td, 6);
     })
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
+  const thresholdHr = soloAthlete?.threshold_hr ?? null;
 
   return (
     <div className="flex min-h-screen flex-col bg-bg">
@@ -162,31 +178,81 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <h2 className="mt-8 text-sm uppercase tracking-widest text-ink-3">Strava</h2>
-              <div className="mt-3 flex flex-col gap-2">
-                {visibleActivities.length === 0 && (
-                  <p className="text-sm text-ink-3">
-                    {locale === "en" ? "No synced Strava activity yet." : "Todavía no hay actividad sincronizada de Strava."}
-                  </p>
-                )}
-                {visibleActivities.slice(0, 10).map((a) => (
-                  <Card key={a.id} className="p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{a.name}</p>
-                        <p className="text-xs text-ink-3">
-                          {fmt(new Date(a.start_date), locale, { day: "numeric", month: "short" })} · {a.sport_type}
-                          {who === "both" ? ` · ${ATHLETES[a.athleteSlug].initials}` : ""}
+              {soloAthlete ? (
+                <>
+                  <h2 className="mt-8 mb-3 text-sm uppercase tracking-widest text-ink-3">{t("zones_h")}</h2>
+                  <ZoneTables athlete={soloAthlete} />
+                </>
+              ) : (
+                <p className="mt-8 text-sm text-ink-3">
+                  {isEn ? "Pick a single athlete above to see their training zones." : "Elige un solo atleta arriba para ver sus zonas de entrenamiento."}
+                </p>
+              )}
+
+              <h2 className="mt-8 mb-3 text-sm uppercase tracking-widest text-ink-3">
+                {isEn ? "Best efforts (last 30 days)" : "Mejores esfuerzos (últimos 30 días)"}
+              </h2>
+              <div className="grid gap-3 sm:grid-cols-4">
+                {bestEfforts.map((e) => (
+                  <Card key={e.key} className="p-4">
+                    <p className="text-xs font-semibold uppercase tracking-widest text-ink-3">{e.label}</p>
+                    {e.best ? (
+                      <>
+                        <p className="mt-1 text-2xl font-bold tabular-nums" style={{ fontFamily: "var(--font-mono)" }}>
+                          {hm(e.best.moving_time_s / 60, locale as "es" | "en")}
                         </p>
-                      </div>
-                      <p className="text-xs text-ink-2 tabular-nums">
-                        {hm(a.moving_time_s / 60, locale as "es" | "en")} · {(a.distance_m / 1000).toFixed(1)} km
-                        {a.average_cadence ? ` · ${Math.round(a.average_cadence)} cad` : ""}
-                      </p>
-                    </div>
+                        <p className="mt-0.5 text-xs text-ink-3">
+                          {paceLabel(Math.round(e.best.moving_time_s / (e.best.distance_m / 1000)))} ·{" "}
+                          {fmt(new Date(e.best.start_date), locale, { day: "numeric", month: "short" })}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="mt-1 text-sm text-ink-3">—</p>
+                    )}
                   </Card>
                 ))}
               </div>
+
+              <h2 className="mt-8 mb-3 text-sm uppercase tracking-widest text-ink-3">
+                {isEn ? "Recent activities" : "Actividades recientes"}
+              </h2>
+              {visibleActivities.length === 0 ? (
+                <p className="text-sm text-ink-3">{isEn ? "No synced Strava activity yet." : "Todavía no hay actividad sincronizada de Strava."}</p>
+              ) : (
+                <Card className="overflow-x-auto p-0">
+                  <table className="w-full min-w-[640px] text-sm">
+                    <thead>
+                      <tr className="border-b border-line text-left text-xs uppercase tracking-widest text-ink-3">
+                        <th className="px-4 py-3 font-semibold">{isEn ? "Date" : "Fecha"}</th>
+                        {who === "both" && <th className="px-2 py-3 font-semibold">{t("athlete")}</th>}
+                        <th className="px-2 py-3 font-semibold">{isEn ? "Activity" : "Actividad"}</th>
+                        <th className="px-2 py-3 text-right font-semibold">{isEn ? "Duration" : "Duración"}</th>
+                        <th className="px-2 py-3 text-right font-semibold">{isEn ? "Distance" : "Distancia"}</th>
+                        <th className="px-2 py-3 text-right font-semibold">{isEn ? "Avg HR" : "FC prom."}</th>
+                        <th className="px-4 py-3 text-right font-semibold">{isEn ? "Cadence" : "Cadencia"}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleActivities.slice(0, 20).map((a) => {
+                        const pctThreshold = a.average_heart_rate && thresholdHr ? Math.round((a.average_heart_rate / thresholdHr) * 100) : null;
+                        return (
+                          <tr key={a.id} className="border-b border-line last:border-0">
+                            <td className="whitespace-nowrap px-4 py-2.5 text-ink-3">{fmt(new Date(a.start_date), locale, { day: "numeric", month: "short" })}</td>
+                            {who === "both" && <td className="px-2 py-2.5 font-medium">{ATHLETES[a.athleteSlug].initials}</td>}
+                            <td className="max-w-[220px] truncate px-2 py-2.5">{a.name}</td>
+                            <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums">{hm(a.moving_time_s / 60, locale as "es" | "en")}</td>
+                            <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums">{a.distance_m ? `${(a.distance_m / 1000).toFixed(1)} km` : "—"}</td>
+                            <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums">
+                              {a.average_heart_rate ? `${Math.round(a.average_heart_rate)} bpm${pctThreshold ? ` (${pctThreshold}%)` : ""}` : "—"}
+                            </td>
+                            <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums">{a.average_cadence ? Math.round(a.average_cadence) : "—"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </Card>
+              )}
             </>
           )}
         </div>

@@ -107,18 +107,64 @@ export interface StravaSummaryActivity {
   distance: number;
   average_cadence?: number;
   average_speed?: number;
+  average_heartrate?: number;
 }
 
-/** Fetches the athlete's most recent activities (Strava's own pagination, newest first). */
+/**
+ * Fetches every activity in the last `days` days (default 30 — per
+ * explicit product decision, no deep history for now: "no necesito lo
+ * histórico, solamente el último mes"). Paginates through Strava's own
+ * `page`/`per_page` until a page comes back older than the window or
+ * empty, capped at `maxPages` as a hard safety limit (200/page *
+ * 10 pages = 2,000 activities, far more than a month could realistically
+ * hold even training twice a day).
+ */
 export async function fetchRecentStravaActivities(
   accessToken: string,
-  perPage = 30
+  days = 30,
+  maxPages = 10
 ): Promise<StravaSummaryActivity[]> {
-  const params = new URLSearchParams({ per_page: String(perPage) });
-  const res = await fetch(`${STRAVA_API_BASE}/athlete/activities?${params.toString()}`, {
+  const after = Math.floor(Date.now() / 1000) - days * 86400;
+  const perPage = 200;
+  const all: StravaSummaryActivity[] = [];
+
+  for (let page = 1; page <= maxPages; page++) {
+    const params = new URLSearchParams({ per_page: String(perPage), page: String(page), after: String(after) });
+    const res = await fetch(`${STRAVA_API_BASE}/athlete/activities?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) throw new Error(`Strava activities fetch failed: ${res.status} ${await res.text()}`);
+    const batch: StravaSummaryActivity[] = await res.json();
+    all.push(...batch);
+    if (batch.length < perPage) break; // last page
+  }
+
+  return all;
+}
+
+export interface StravaZoneRange {
+  min: number;
+  max: number;
+}
+
+export interface StravaAthleteZones {
+  heart_rate?: { custom_zones: boolean; zones: StravaZoneRange[] };
+  power?: { zones: StravaZoneRange[] };
+}
+
+/**
+ * Pulls the zones the athlete has configured in Strava itself, if any —
+ * "sacar todo el threshold, rate zone, el FTP... de Strava" per explicit
+ * request. Returns null if Strava has nothing configured (a very common
+ * case — most athletes never set this up in Strava's own app) or the call
+ * fails, so callers fall back to the manually-entered thresholds on
+ * `/settings` rather than erroring.
+ */
+export async function fetchStravaAthleteZones(accessToken: string): Promise<StravaAthleteZones | null> {
+  const res = await fetch(`${STRAVA_API_BASE}/athlete/zones`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (!res.ok) throw new Error(`Strava activities fetch failed: ${res.status} ${await res.text()}`);
+  if (!res.ok) return null;
   return res.json();
 }
 
@@ -134,14 +180,4 @@ export async function updateStravaActivityDescription(
     body: JSON.stringify({ description }),
   });
   if (!res.ok) throw new Error(`Strava activity update failed: ${res.status} ${await res.text()}`);
-}
-
-/** Maps a sport-shaped Cadencia value from Strava's own `sport_type` string. */
-export function mapStravaSportType(sportType: string): "swim" | "bike" | "run" | "gym" | null {
-  const s = sportType.toLowerCase();
-  if (s.includes("swim")) return "swim";
-  if (s.includes("ride") || s.includes("bike") || s.includes("cycl")) return "bike";
-  if (s.includes("run")) return "run";
-  if (s.includes("weight") || s.includes("workout") || s.includes("training")) return "gym";
-  return null;
 }

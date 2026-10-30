@@ -20,6 +20,11 @@ create table if not exists athletes (
   threshold_pace_sec_per_km integer,
   ftp_watts integer,
   vo2max numeric(4,1),
+  -- Real zones as configured in Strava itself, pulled on sync — see
+  -- migration 005.
+  strava_hr_zones jsonb,
+  strava_power_zones jsonb,
+  strava_zones_synced_at timestamptz,
   created_at timestamptz not null default now()
 );
 
@@ -27,6 +32,8 @@ comment on column athletes.threshold_hr is 'Lactate threshold heart rate (LTHR),
 comment on column athletes.threshold_pace_sec_per_km is 'Running threshold pace ("race predictor"), in seconds per km.';
 comment on column athletes.ftp_watts is 'Cycling functional threshold power (FTP), in watts.';
 comment on column athletes.vo2max is 'VO2max, in ml/kg/min.';
+comment on column athletes.strava_hr_zones is 'Raw heart_rate.zones array from Strava''s GET /athlete/zones, when configured there. Null if none.';
+comment on column athletes.strava_power_zones is 'Raw power.zones array from Strava''s GET /athlete/zones, when configured there. Null if none.';
 
 insert into athletes (slug, name, initials)
 values
@@ -78,6 +85,7 @@ create table if not exists strava_activities (
   distance_m numeric(10,1) not null default 0,
   average_cadence numeric(6,2),
   average_speed numeric(6,3),
+  average_heart_rate numeric(5,1),
   raw jsonb,
   synced_at timestamptz not null default now(),
   -- Local calendar date (from Strava's start_date_local) — used to match

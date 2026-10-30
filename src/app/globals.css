@@ -2,8 +2,13 @@
 
 /* ─── Cadencia Brand Tokens — Light (default) ───
    Same monochrome base as the Zenit/CarbsNutrition design system, so the
-   two apps read as one family. Sport colors are the only hues in the
-   whole app — everything else is ink/surface/line grayscale. */
+   two apps read as one family. The app stays white/gray; sport colors are
+   the only hues, and they're deliberately SOFT/PASTEL (Oct 2026 — "que
+   sean colores pasteles, que sean colores suaves, no tan heavies") — used
+   for everyday identification (dots, tags, chart bars), not for emphasis.
+   --error (strong red) and --success (strong green) are reserved
+   exclusively for genuine alert/success states (a failed sync, a real
+   warning) — never used as a routine sport accent. */
 :root {
   --bg: #FFFFFF;
   --surface: #FFFFFF;
@@ -14,17 +19,18 @@
   --line: #D3D3CF;
   --line-strong: #0B0B0C;
   --error: #C41C00;
+  --success: #1D7A46;
 
-  --swim: #2F7A8C;
-  --bike: #B5752C;
-  --run: #B4432E;
-  --gym: #6B5B95;
+  --swim: #4D93A3;
+  --bike: #B98A4D;
+  --run: #BF6F5C;
+  --gym: #8A7AAE;
   --race: #0B0B0C;
 
-  --swim-soft: #2F7A8C1A;
-  --bike-soft: #B5752C1A;
-  --run-soft: #B4432E1A;
-  --gym-soft: #6B5B951A;
+  --swim-soft: #4D93A31A;
+  --bike-soft: #B98A4D1A;
+  --run-soft: #BF6F5C1A;
+  --gym-soft: #8A7AAE1A;
   --race-soft: #0B0B0C0D;
 }
 
@@ -39,17 +45,18 @@
   --line: #2B2B2D;
   --line-strong: #F3F3F1;
   --error: #FF6B6B;
+  --success: #5CCB8A;
 
-  --swim: #5FB4C8;
-  --bike: #E0A355;
-  --run: #E07A5F;
-  --gym: #A594D1;
+  --swim: #7FC2D1;
+  --bike: #E3BE8C;
+  --run: #E6A594;
+  --gym: #BBAEDB;
   --race: #F3F3F1;
 
-  --swim-soft: #5FB4C826;
-  --bike-soft: #E0A35526;
-  --run-soft: #E07A5F26;
-  --gym-soft: #A594D126;
+  --swim-soft: #7FC2D126;
+  --bike-soft: #E3BE8C26;
+  --run-soft: #E6A59426;
+  --gym-soft: #BBAEDB26;
   --race-soft: #F3F3F11A;
 }
 
@@ -63,6 +70,7 @@
   --color-line: var(--line);
   --color-line-strong: var(--line-strong);
   --color-error: var(--error);
+  --color-success: var(--success);
 
   --color-swim: var(--swim);
   --color-bike: var(--bike);

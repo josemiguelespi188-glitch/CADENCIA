@@ -3,10 +3,11 @@ import { getAthleteBySlug } from "@/lib/auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import {
   fetchRecentStravaActivities,
+  fetchStravaAthleteZones,
   getValidAccessToken,
-  mapStravaSportType,
   updateStravaActivityDescription,
 } from "@/lib/integrations/strava";
+import { mapStravaSportType } from "@/lib/sport";
 import { generateActivityDescription } from "@/lib/integrations/claude";
 import type { StravaActivity, Workout } from "@/lib/types";
 
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No Strava connection for this athlete." }, { status: 400 });
   }
 
-  const activities = await fetchRecentStravaActivities(accessToken, 50);
+  const activities = await fetchRecentStravaActivities(accessToken, 30);
   const db = createServiceClient();
 
   const rows = activities.map((a) => ({
@@ -41,6 +42,7 @@ export async function POST(req: NextRequest) {
     distance_m: a.distance,
     average_cadence: a.average_cadence ?? null,
     average_speed: a.average_speed ?? null,
+    average_heart_rate: a.average_heartrate ?? null,
     raw: a,
     synced_at: new Date().toISOString(),
   }));
@@ -55,6 +57,24 @@ export async function POST(req: NextRequest) {
     .update({ last_synced_at: new Date().toISOString() })
     .eq("athlete_id", athlete.id);
 
+  // Pull whatever zones the athlete has configured in Strava itself —
+  // best-effort, most athletes never set this up there, so null is the
+  // common case and /settings falls back to the manually-entered
+  // thresholds (see CLAUDE.md's "Strava zones" note).
+  try {
+    const zones = await fetchStravaAthleteZones(accessToken);
+    await db
+      .from("athletes")
+      .update({
+        strava_hr_zones: zones?.heart_rate?.zones ?? null,
+        strava_power_zones: zones?.power?.zones ?? null,
+        strava_zones_synced_at: new Date().toISOString(),
+      })
+      .eq("id", athlete.id);
+  } catch (e) {
+    console.error("Failed to fetch Strava athlete zones", e);
+  }
+
   // Auto-complete + AI write-back for anything not processed yet — not
   // just this batch, so a prior failed attempt (e.g. Claude was briefly
   // down) gets retried on the next sync too.
@@ -63,7 +83,7 @@ export async function POST(req: NextRequest) {
     .select("*")
     .eq("athlete_id", athlete.id)
     .is("description_written_at", null)
-    .limit(50);
+    .limit(200);
 
   let matched = 0;
   let described = 0;

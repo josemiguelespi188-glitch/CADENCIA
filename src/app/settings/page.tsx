@@ -9,6 +9,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ATHLETES, type Athlete, type AthleteSlug } from "@/lib/types";
 import { parsePace } from "@/lib/dates";
+import { ZoneTables } from "@/components/ZoneTables";
 
 interface StravaStatus {
   connected: boolean;
@@ -129,7 +130,7 @@ function AthleteStravaCard({ slug }: { slug: AthleteSlug }) {
       <div className="mt-4 flex items-center gap-3">
         <span
           className="h-2.5 w-2.5 rounded-full"
-          style={{ background: status?.connected ? "#2E8B57" : "var(--ink-3)" }}
+          style={{ background: status?.connected ? "var(--success)" : "var(--ink-3)" }}
         />
         <span className="text-sm">{status?.connected ? t("strava_connected") : isEn ? "Not connected" : "No conectado"}</span>
       </div>
@@ -215,6 +216,7 @@ function AthleteZonesCard({ slug }: { slug: AthleteSlug }) {
   }
 
   return (
+    <>
     <Card>
       <CardTitle>
         {ATHLETES[slug].name} · {t("zones_h")}
@@ -287,6 +289,12 @@ function AthleteZonesCard({ slug }: { slug: AthleteSlug }) {
           {saved && <span className="text-xs text-ink-3">{t("zones_saved")}</span>}
         </div>
       </form>
-    </Card>
+      </Card>
+      {athlete && (athlete.threshold_hr || athlete.threshold_pace_sec_per_km || athlete.ftp_watts || athlete.strava_hr_zones) && (
+        <div className="mt-4">
+          <ZoneTables athlete={athlete} />
+        </div>
+      )}
+    </>
   );
 }

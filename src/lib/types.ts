@@ -23,6 +23,11 @@ export interface Athlete {
   ftp_watts: number | null;
   /** VO2max, in ml/kg/min. */
   vo2max: number | null;
+  /** Raw heart_rate.zones from Strava's GET /athlete/zones, if configured there. */
+  strava_hr_zones: { min: number; max: number }[] | null;
+  /** Raw power.zones from Strava's GET /athlete/zones, if configured there. */
+  strava_power_zones: { min: number; max: number }[] | null;
+  strava_zones_synced_at: string | null;
 }
 
 export interface Workout {
@@ -71,6 +76,7 @@ export interface StravaActivity {
   distance_m: number;
   average_cadence: number | null;
   average_speed: number | null;
+  average_heart_rate: number | null;
   synced_at: string;
   description_written_at: string | null;
 }
