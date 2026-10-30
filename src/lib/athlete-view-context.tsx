@@ -14,8 +14,15 @@ interface AthleteViewCtx {
 const Ctx = createContext<AthleteViewCtx | null>(null);
 
 export function AthleteViewProvider({ children }: { children: ReactNode }) {
-  const [who, setWhoState] = useState<Who>("juan");
-  const [lastSingle, setLastSingle] = useState<AthleteSlug>("juan");
+  // Defaults to a single athlete, never "both" — showing two people's data
+  // side by side by default read as confusing while this is really a
+  // single-user test (José Miguel's real, connected account). A proper
+  // "Friends" model (see José's explicit ask, Oct 2026) — picking whose
+  // data to see as a social relationship, not a hardcoded two-person
+  // roster — needs real auth back first (see CLAUDE.md's "Data model &
+  // auth" section on why auth is currently off); not built here.
+  const [who, setWhoState] = useState<Who>("jose");
+  const [lastSingle, setLastSingle] = useState<AthleteSlug>("jose");
 
   useEffect(() => {
     try {

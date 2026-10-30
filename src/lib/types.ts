@@ -35,6 +35,29 @@ export interface Athlete {
   strava_profile_synced_at: string | null;
   /** Raw shoes + bikes list from Strava's GET /athlete. */
   strava_gear: { id: string; name: string }[] | null;
+  birth_date: string | null;
+  sex: "male" | "female" | "other" | null;
+  height_cm: number | null;
+  /** Manually entered body weight (kg) — distinct from strava_weight_kg. */
+  weight_kg: number | null;
+  resting_hr: number | null;
+  max_hr: number | null;
+  goal_race_name: string | null;
+  goal_race_date: string | null;
+  goal_distance: string | null;
+  goal_notes: string | null;
+  personal_bests: PersonalBest[];
+}
+
+export interface PersonalBest {
+  id: string;
+  sport: Sport;
+  distanceLabel: string;
+  /** Null for a non-standard distance with no known meters — excluded from the race predictor. */
+  distanceMeters: number | null;
+  timeSec: number;
+  date: string;
+  raceName: string;
 }
 
 export interface StravaTotals {
@@ -120,3 +143,5 @@ export interface StravaActivity {
   /** Shoe or bike name used, resolved from Strava's gear list at sync time. */
   gear_name: string | null;
 }
+
+export type ActivityWithSlug = StravaActivity & { athleteSlug: AthleteSlug };

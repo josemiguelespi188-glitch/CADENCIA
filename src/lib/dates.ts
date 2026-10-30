@@ -57,3 +57,22 @@ export function parsePace(min: string, sec: string): number | null {
 export function fmt(d: Date, locale: string, opts: Intl.DateTimeFormatOptions) {
   return new Intl.DateTimeFormat(locale, opts).format(d);
 }
+
+/** Parses H/M/S fields (any may be "") into total seconds, or null if nothing valid was entered. */
+export function parseDuration(h: string, m: string, s: string): number | null {
+  const hh = Number(h || 0);
+  const mm = Number(m || 0);
+  const ss = Number(s || 0);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm) || !Number.isFinite(ss)) return null;
+  const total = hh * 3600 + mm * 60 + ss;
+  return total > 0 ? total : null;
+}
+
+/** Formats a duration in seconds as "H:MM:SS" (or "M:SS" under an hour). */
+export function durationLabel(totalSec: number) {
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = Math.round(totalSec % 60);
+  if (h) return `${h}:${pad(m)}:${pad(s)}`;
+  return `${m}:${pad(s)}`;
+}

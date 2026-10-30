@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useLocale } from "@/lib/i18n/context";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
 interface ImportResult {
@@ -13,8 +14,11 @@ interface ImportResult {
  * The weekly-plan Excel template + importer — "de aquí va a salir al
  * calendario": download the template, fill every workout for the week
  * (times, notes, the Strava comment), upload it back, and every row
- * becomes a real workouts row immediately visible on the calendar. See
- * CLAUDE.md's "Excel weekly-plan import" section and lib/excelPlan.ts.
+ * becomes a real workouts row immediately visible on the calendar. Lives
+ * on the Generate page now, not Calendar — see CLAUDE.md's "Rename
+ * Templates to Generate" note — so a successful import's `onImported`
+ * callback has nothing to refresh here; Calendar picks up the new rows
+ * the next time it's visited (it fetches fresh on every mount).
  */
 export function PlanImportPanel({ onImported }: { onImported: () => void }) {
   const { t, locale } = useLocale();
@@ -46,20 +50,28 @@ export function PlanImportPanel({ onImported }: { onImported: () => void }) {
   }
 
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-line p-3">
-      <span className="text-xs font-semibold uppercase tracking-widest text-ink-3">{t("plan_import_h")}</span>
-      <a href={`/api/plan/template?locale=${locale}`}>
-        <Button variant="steel" size="sm">
-          {t("download_template")}
+    <Card className="flex flex-col gap-3">
+      <div>
+        <h3 className="text-lg font-semibold tracking-tight">{t("plan_import_h")}</h3>
+        <p className="text-xs text-ink-3">
+          {isEn ? "Download the template, fill in the week, upload it back." : "Descarga la plantilla, llena la semana, súbela de vuelta."}
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <a href={`/api/plan/template?locale=${locale}`}>
+          <Button variant="steel" size="sm">
+            {t("download_template")}
+          </Button>
+        </a>
+        <Button variant="steel" size="sm" disabled={uploading} onClick={() => fileRef.current?.click()}>
+          {uploading ? t("importing") : t("upload_excel")}
         </Button>
-      </a>
-      <Button variant="steel" size="sm" disabled={uploading} onClick={() => fileRef.current?.click()}>
-        {uploading ? t("importing") : t("upload_excel")}
-      </Button>
-      <input ref={fileRef} type="file" accept=".xlsx" onChange={handleFile} hidden />
+        <input ref={fileRef} type="file" accept=".xlsx" onChange={handleFile} hidden />
+      </div>
 
       {result && (
-        <div className="w-full text-xs">
+        <div className="text-xs">
           {result.inserted > 0 && <p className="text-success">{t("import_done", { n: result.inserted })}</p>}
           {result.errors.length > 0 && (
             <div className="mt-1 text-ink-2">
@@ -75,6 +87,6 @@ export function PlanImportPanel({ onImported }: { onImported: () => void }) {
           )}
         </div>
       )}
-    </div>
+    </Card>
   );
 }

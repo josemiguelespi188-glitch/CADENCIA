@@ -539,6 +539,128 @@ flagged to the user instead of guessed at:**
    remaining piece from "quiero tener todas las métricas de Strava" —
    needs its own go-ahead before starting, not a silent build.
 
+## Default locale, default single-athlete view, Generate page, merged dashboard, athlete profile (Oct 2026)
+
+A round of direct feedback after José tested the app solo, confusing two
+default-UX habits ("ambos atletas por default") with real confusion
+about who he was even looking at, plus a push toward the bigger
+"triatleta profile" vision from the Roadmap section above.
+
+- **App now defaults to English, not Spanish** — explicit, verbatim
+  instruction: "ojo, siempre tiene que venir predeterminado en inglés."
+  `LocaleProvider`'s initial state (`src/lib/i18n/context.tsx`) changed
+  from `"es"` to `"en"`; still toggleable, and still remembers whatever
+  a viewer picked via `localStorage` on their next visit — this only
+  changes the very first, never-visited-before default.
+- **The header's athlete switch no longer defaults to "Both"** —
+  `AthleteViewProvider`'s initial `who`/`lastSingle`
+  (`src/lib/athlete-view-context.tsx`) changed from `"juan"`/showing
+  both to `"jose"` alone. Direct quote: "no deberían salir los dos
+  usuarios... genera mucha confusión." A real **"Friends" model** (pick
+  whose data to see as a social relationship, not a hardcoded
+  two-person roster) is what José actually asked for next, but that
+  needs real auth back first — see "Data model & auth" above for why
+  auth is currently off — so it's flagged in that file's own comment,
+  not built here. Switching to "Both" in the header still works exactly
+  as before; only the *default* changed.
+- **Dashboard is no longer a separate page.** `/dashboard` is deleted;
+  its entire content (KPIs, weekly volume chart, by-sport breakdown,
+  upcoming list, zone tables, Strava totals, best efforts, recent
+  activities) was extracted into `components/DashboardPanel.tsx` and
+  now renders at the bottom of `/calendar`, below the week/month grid —
+  direct quote: "el panel me gustaría que esté debajo del
+  calendario... meterlo en la misma hoja del calendario." `SiteHeader`'s
+  nav lost its `nav_dashboard` entry. The Calendar page's own
+  `activities` state had to stop being pre-filtered to "unlinked only"
+  at fetch time (that filtering now happens in a separate
+  `visibleActivities` memo used only by the week/month chips) so
+  `DashboardPanel` can still see every last-30-days activity, linked or
+  not, for its Recent Activities/Best Efforts/Strava Totals — the panel
+  re-filters by the selected athlete internally the same way the old
+  `/dashboard` page did.
+- **Recent Activities is now paginated, 5 per page**, with Prev/Next —
+  direct quote: "debería salir solamente las últimas cinco actividades
+  recientes y de ahí una cosa para poder... poner siguiente página." No
+  new query: pagination is a client-side slice over whatever's already
+  in `DashboardPanel`'s `visibleActivities` (the same last-30-days set
+  the rest of the panel uses), `RECENT_PAGE_SIZE = 5`.
+- **Templates renamed to "Generate"** (`src/app/templates/page.tsx`,
+  still at the `/templates` route — only the label/heading changed, not
+  the URL) — direct quote: "el plantillas debería ser Generate. no me
+  gusta cómo se llama plantillas." Per the same "siempre predeterminado
+  en inglés" instruction immediately following that request, "Generate"
+  is treated as the section's actual name rather than a word to
+  translate — both the `es` and `en` entries of `nav_templates`/`tpl_h`
+  in `i18n/context.tsx` are literally "Generate" (see the comment there).
+  The page now has three stacked sections: an AI chat placeholder, the
+  weekly-plan Excel importer (moved here from Calendar, see below), and
+  the original workout-preset grid under a new "Base workouts" heading.
+- **The weekly-plan Excel import panel moved from Calendar to
+  Generate** — direct quote: "ese Excel debe estar en la sección de
+  plantillas para poder cargar los entrenamientos." `PlanImportPanel`
+  itself needed no logic change, just a restyle from a thin inline bar
+  to a full `Card` (matching the new chat card next to it) — its
+  `onImported` callback is now a no-op, since Generate has no workout
+  list of its own to refresh; Calendar already re-fetches fresh on
+  every mount, so a newly imported week shows up the next time it's
+  opened.
+- **`components/AiChatPlaceholder.tsx`** — a real, usable chat UI (type,
+  send, see your message appear) with **no model behind it at all** —
+  direct quote: "ahorita pones solamente un chatbot... y no le
+  conectamos todavía con Anthropic, pero la idea sería poder como
+  chatear." No API call is made on send; the only "response" is one
+  static greeting bubble shown once up front, explicitly saying it
+  isn't connected yet. This is intentionally honest, not a stand-in
+  that pretends to be smarter than it is (same rule this file applies
+  to every other feature) — it's the eventual home of the Roadmap's
+  "virtual coach agent" item, once that's actually built.
+- **Comprehensive athlete profile** (`components/AthleteProfileCard.tsx`,
+  new, rendered above the existing Training Zones card on `/settings`) —
+  direct quotes: "tiene que verse así de completo como el perfil de un
+  triatleta: zonas, VO2 max, todo... mejores tiempos... sería bueno
+  también en settings... hacer un cuestionario... súper completo." New
+  columns on `athletes` (migration `011_athlete_profile.sql`, mirrored
+  into `schema.sql` — **needs this migration run in the Supabase SQL
+  editor**): `birth_date`, `sex`, `height_cm`, `weight_kg` (manual,
+  distinct from the Strava-auto-pulled `strava_weight_kg`),
+  `resting_hr`, `max_hr`, `goal_race_name`, `goal_race_date`,
+  `goal_distance`, `goal_notes`, and `personal_bests` (jsonb array of
+  `{id, sport, distanceLabel, distanceMeters, timeSec, date, raceName}`).
+  The card is one combined questionnaire (personal info, goal race,
+  resting/max HR, an add/remove personal-bests list with sport +
+  preset-distance pickers in `lib/racePredictor.ts`'s
+  `DISTANCE_PRESETS`) saved with a single Save button, same pattern the
+  Operations Hub codebase uses elsewhere for a multi-section form.
+  **Race predictor**: `lib/racePredictor.ts`'s `predictRaceTimes()`
+  projects 5K/10K/Half/Marathon times from the single longest known
+  *run* personal best using Riegel's formula (`T2 = T1*(D2/D1)^1.06`) —
+  a real, published formula (Peter Riegel), not invented or
+  reverse-engineered from any proprietary source. Deliberately a
+  single-reference model, always labeled "estimated" in the UI (vs.
+  "actual" when a standard distance has a real PB within 2%) — a true
+  VDOT-style calculator would weight multiple recent results, which
+  this app doesn't attempt. This profile data is explicitly **prep
+  work for the still-undone Roadmap items** (AI-generated plans, a
+  virtual coach agent, an Excel export carrying the full triathlete
+  profile for an AI agent to read) — direct quote: "la idea es que tú
+  en el Excel pases toda la información del triatleta para que...
+  cargues en un agente de cloud [y] los entrenamientos que haga, haga
+  en función a toda esta información." None of that consumption side is
+  built yet; this phase only adds the data entry layer it will read
+  from.
+- **`/settings` now shows only the athlete(s) currently selected in the
+  header switch**, not always both — direct quote: "en settings,
+  obviamente solo tiene que salir mis Training Zones... deberíamos
+  estar ahorita en una cuenta general." `SettingsContent` now reads
+  `useAthleteView()`'s `who` and renders profile/zones/Strava cards only
+  for that slug (or both, if "Both" is explicitly selected in the
+  header) instead of unconditionally mapping over every `ATHLETES` key.
+- The user explicitly offered to share a real photo of his actual zone
+  data for José to be entered directly — **no specific numeric values
+  (LTHR, HR zones, personal bests, etc.) were fabricated or assumed
+  from any reference screenshot** shown during this phase; every new
+  field here is a blank input the athlete fills in themselves.
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as

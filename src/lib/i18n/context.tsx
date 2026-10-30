@@ -10,7 +10,7 @@ const DICT: Record<Locale, Record<string, string>> = {
     both: "Ambos",
     nav_calendar: "Calendario",
     nav_dashboard: "Panel",
-    nav_templates: "Plantillas",
+    nav_templates: "Generate",
     nav_settings: "Ajustes",
     sign_in: "Iniciar Sesión",
     sign_out: "Cerrar Sesión",
@@ -48,8 +48,13 @@ const DICT: Record<Locale, Record<string, string>> = {
     err_save: "No se pudo guardar. Intenta de nuevo.",
     loading: "Cargando…",
     empty_cal: "Todavía no hay entrenos para esta selección.",
-    tpl_h: "Plantillas",
-    tpl_sub: "Entrenos base que puedes ajustar para cada atleta.",
+    // "Generate" se queda igual en ambos idiomas a propósito — es el
+    // nombre de la sección (Oct 2026: "el plantillas debería ser
+    // Generate... siempre tiene que venir predeterminado en inglés"),
+    // no una palabra a traducir.
+    tpl_h: "Generate",
+    tpl_sub: "Chatea con la IA, importa tu plan semanal o usa un entreno base.",
+    presets_h: "Entrenos base",
     use: "Usar",
     edit: "Editar",
     new_t: "Nueva plantilla",
@@ -160,8 +165,9 @@ const DICT: Record<Locale, Record<string, string>> = {
     err_save: "Could not save. Please try again.",
     loading: "Loading…",
     empty_cal: "No workouts for this selection yet.",
-    tpl_h: "Templates",
-    tpl_sub: "Base workouts you can adjust for each athlete.",
+    tpl_h: "Generate",
+    tpl_sub: "Chat with AI, import your weekly plan, or use a base workout.",
+    presets_h: "Base workouts",
     use: "Use",
     edit: "Edit",
     new_t: "New template",
@@ -241,7 +247,10 @@ interface LocaleCtx {
 const Ctx = createContext<LocaleCtx | null>(null);
 
 export function LocaleProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>("es");
+  // Defaults to English per explicit instruction (Oct 2026 — "siempre
+  // tiene que venir predeterminado en inglés") — still toggleable, and
+  // still remembers whatever the viewer last picked via localStorage.
+  const [locale, setLocaleState] = useState<Locale>("en");
 
   useEffect(() => {
     try {

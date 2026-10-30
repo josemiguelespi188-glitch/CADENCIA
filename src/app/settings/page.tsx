@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useLocale } from "@/lib/i18n/context";
+import { useAthleteView } from "@/lib/athlete-view-context";
 import { createClient } from "@/lib/supabase/client";
 import { SiteHeader } from "@/components/SiteHeader";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -10,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { ATHLETES, type Athlete, type AthleteSlug } from "@/lib/types";
 import { parsePace } from "@/lib/dates";
 import { ZoneTables } from "@/components/ZoneTables";
+import { AthleteProfileCard } from "@/components/AthleteProfileCard";
 
 interface StravaStatus {
   connected: boolean;
@@ -28,6 +30,13 @@ export default function SettingsPage() {
 function SettingsContent() {
   const { t, locale } = useLocale();
   const isEn = locale === "en";
+  const { who } = useAthleteView();
+  // Only the athlete(s) currently selected in the header switch —
+  // showing both by default read as confusing while this is really a
+  // single-user test (see CLAUDE.md's "Data model & auth" /
+  // athlete-view-context.tsx notes). Switch to "Both" in the header to
+  // see every athlete's settings at once.
+  const slugs = (who === "both" ? (Object.keys(ATHLETES) as AthleteSlug[]) : [who]) as AthleteSlug[];
   const searchParams = useSearchParams();
   const [toast, setToast] = useState<string | null>(null);
 
@@ -44,19 +53,25 @@ function SettingsContent() {
     <div className="flex min-h-screen flex-col bg-bg">
       <SiteHeader />
       <main className="flex-1 px-6 pt-28 pb-24">
-        <div className="mx-auto max-w-2xl">
+        <div className="mx-auto max-w-4xl">
           <h1 className="text-2xl font-semibold tracking-tight mb-6">{t("settings_h")}</h1>
 
           {toast && <div className="mb-4 rounded-xl border border-line bg-surface-2 px-4 py-3 text-sm">{toast}</div>}
 
           <div className="flex flex-col gap-4">
-            {(Object.keys(ATHLETES) as AthleteSlug[]).map((slug) => (
+            {slugs.map((slug) => (
+              <AthleteProfileCard key={slug} slug={slug} />
+            ))}
+          </div>
+
+          <div className="mt-8 flex flex-col gap-4">
+            {slugs.map((slug) => (
               <AthleteZonesCard key={slug} slug={slug} />
             ))}
           </div>
 
           <div className="mt-8 flex flex-col gap-4">
-            {(Object.keys(ATHLETES) as AthleteSlug[]).map((slug) => (
+            {slugs.map((slug) => (
               <AthleteStravaCard key={slug} slug={slug} />
             ))}
           </div>

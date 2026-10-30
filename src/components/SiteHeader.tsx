@@ -8,9 +8,11 @@ import { useAthleteView } from "@/lib/athlete-view-context";
 import { ATHLETES, type Who } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
+// Dashboard was folded into the bottom of /calendar (see CLAUDE.md's
+// "Merge Dashboard into Calendar" note) — no separate nav entry for it
+// anymore.
 const NAV: { href: string; key: string }[] = [
   { href: "/calendar", key: "nav_calendar" },
-  { href: "/dashboard", key: "nav_dashboard" },
   { href: "/templates", key: "nav_templates" },
   { href: "/settings", key: "nav_settings" },
 ];

@@ -8,10 +8,11 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { Button } from "@/components/ui/button";
 import { WorkoutDialog, type WorkoutFormValue, type WorkoutWithSlug } from "@/components/WorkoutDialog";
 import { ActivityDetailDialog } from "@/components/ActivityDetailDialog";
-import { PlanImportPanel } from "@/components/PlanImportPanel";
+import { DashboardPanel } from "@/components/DashboardPanel";
 import {
   ATHLETES,
   SPORTS,
+  type ActivityWithSlug,
   type AthleteSlug,
   type Athlete,
   type StravaActivity,
@@ -25,7 +26,6 @@ import { mapStravaSportType } from "@/lib/sport";
 import { cn } from "@/lib/utils";
 
 type EditingState = { record: WorkoutWithSlug | null; defaultDate?: string; defaultAthlete?: AthleteSlug } | null;
-type ActivityWithSlug = StravaActivity & { athleteSlug: AthleteSlug };
 
 export default function CalendarPage() {
   const { t, locale } = useLocale();
@@ -61,12 +61,11 @@ export default function CalendarPage() {
     const byId = new Map(athleteList.map((a) => [a.id, a.slug]));
     const workoutRows = ((w as Workout[]) ?? []).map((row) => ({ ...row, athleteSlug: byId.get(row.athlete_id) ?? "juan" }));
     setWorkouts(workoutRows);
-    const linkedActivityIds = new Set(workoutRows.map((r) => r.strava_activity_id).filter(Boolean));
-    setActivities(
-      ((acts as StravaActivity[]) ?? [])
-        .filter((a) => !linkedActivityIds.has(a.id))
-        .map((row) => ({ ...row, athleteSlug: byId.get(row.athlete_id) ?? "juan" }))
-    );
+    // Kept unfiltered here (every last-30-days activity, linked or not) —
+    // the merged-in DashboardPanel below needs the full set for Recent
+    // Activities/Best Efforts/totals; the calendar grid itself filters out
+    // already-linked activities separately, see `visibleActivities` below.
+    setActivities(((acts as StravaActivity[]) ?? []).map((row) => ({ ...row, athleteSlug: byId.get(row.athlete_id) ?? "juan" })));
     setTemplates((tpl as Template[]) ?? []);
     setLoading(false);
   }, []);
@@ -83,9 +82,18 @@ export default function CalendarPage() {
     () => (who === "both" ? workouts : workouts.filter((w) => w.athleteSlug === who)),
     [workouts, who]
   );
+  const linkedActivityIds = useMemo(
+    () => new Set(workouts.map((w) => w.strava_activity_id).filter(Boolean)),
+    [workouts]
+  );
+  /** Unlinked activities only, for the week/month chips — see
+   * CLAUDE.md's "Calendar shows real Strava activity" note. */
   const visibleActivities = useMemo(
-    () => (who === "both" ? activities : activities.filter((a) => a.athleteSlug === who)),
-    [activities, who]
+    () =>
+      activities.filter(
+        (a) => !linkedActivityIds.has(a.id) && (who === "both" || a.athleteSlug === who)
+      ),
+    [activities, linkedActivityIds, who]
   );
 
   async function saveWorkout(value: WorkoutFormValue, existingId: string | null) {
@@ -139,7 +147,6 @@ export default function CalendarPage() {
             <p className="text-ink-3">{t("loading")}</p>
           ) : (
             <>
-              <PlanImportPanel onImported={load} />
               <Toolbar
                 view={view}
                 setView={setView}
@@ -176,6 +183,7 @@ export default function CalendarPage() {
                   }}
                 />
               )}
+              <DashboardPanel who={who} athletes={athletes} workouts={workouts} activities={activities} />
             </>
           )}
         </div>

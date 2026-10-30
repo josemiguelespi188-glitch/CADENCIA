@@ -5,6 +5,8 @@ import { useLocale } from "@/lib/i18n/context";
 import { createClient } from "@/lib/supabase/client";
 import { SiteHeader } from "@/components/SiteHeader";
 import { Button } from "@/components/ui/button";
+import { PlanImportPanel } from "@/components/PlanImportPanel";
+import { AiChatPlaceholder } from "@/components/AiChatPlaceholder";
 import { SPORTS, type Sport, type Template } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -72,11 +74,20 @@ export default function TemplatesPage() {
       <SiteHeader />
       <main className="flex-1 px-6 pt-28 pb-24">
         <div className="mx-auto max-w-6xl">
-          <div className="mb-6 flex flex-wrap items-center gap-3">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">{t("tpl_h")}</h1>
-              <p className="text-sm text-ink-3">{t("tpl_sub")}</p>
-            </div>
+          <div className="mb-6">
+            <h1 className="text-2xl font-semibold tracking-tight">{t("tpl_h")}</h1>
+            <p className="text-sm text-ink-3">{t("tpl_sub")}</p>
+          </div>
+
+          <div className="mb-8 grid gap-5 lg:grid-cols-2">
+            <AiChatPlaceholder />
+            <PlanImportPanel onImported={() => {}} />
+          </div>
+
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <h2 className="text-sm uppercase tracking-widest text-ink-3">
+              {t("presets_h")}
+            </h2>
             <Button size="sm" className="ml-auto" onClick={() => setEditing({ record: null })}>
               + {t("new_t")}
             </Button>

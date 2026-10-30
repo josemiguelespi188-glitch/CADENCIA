@@ -31,6 +31,19 @@ create table if not exists athletes (
   strava_profile_synced_at timestamptz,
   -- Raw shoes+bikes list from Strava, kept for reference — see migration 010.
   strava_gear jsonb,
+  -- Comprehensive athlete profile (personal info, goal race, resting/max
+  -- HR, personal bests) — see migration 011 and lib/racePredictor.ts.
+  birth_date date,
+  sex text check (sex is null or sex in ('male', 'female', 'other')),
+  height_cm numeric,
+  weight_kg numeric,
+  resting_hr integer,
+  max_hr integer,
+  goal_race_name text,
+  goal_race_date date,
+  goal_distance text,
+  goal_notes text,
+  personal_bests jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now()
 );
 
@@ -43,6 +56,10 @@ comment on column athletes.strava_power_zones is 'Raw power.zones array from Str
 comment on column athletes.strava_weight_kg is 'Weight in kg, from Strava''s GET /athlete (only present if the athlete set it there).';
 comment on column athletes.strava_stats is 'Raw response from Strava''s GET /athletes/{id}/stats — recent (4wk) / YTD / all-time totals per sport.';
 comment on column athletes.strava_gear is 'Raw shoes + bikes list from Strava''s GET /athlete.';
+comment on column athletes.weight_kg is 'Manually entered body weight (kg) — distinct from strava_weight_kg.';
+comment on column athletes.resting_hr is 'Resting heart rate (bpm), self-reported.';
+comment on column athletes.max_hr is 'Max heart rate (bpm), self-reported or from a field test.';
+comment on column athletes.personal_bests is 'Array of {id, sport, distanceLabel, distanceMeters, timeSec, date, raceName} — see src/lib/racePredictor.ts.';
 
 insert into athletes (slug, name, initials)
 values
