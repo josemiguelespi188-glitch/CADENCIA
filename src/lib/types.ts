@@ -15,6 +15,14 @@ export interface Athlete {
   name: string;
   initials: string;
   auth_user_id: string | null;
+  /** Lactate threshold heart rate, in bpm. */
+  threshold_hr: number | null;
+  /** Running threshold pace ("race predictor"), in seconds per km. */
+  threshold_pace_sec_per_km: number | null;
+  /** Cycling functional threshold power, in watts. */
+  ftp_watts: number | null;
+  /** VO2max, in ml/kg/min. */
+  vo2max: number | null;
 }
 
 export interface Workout {

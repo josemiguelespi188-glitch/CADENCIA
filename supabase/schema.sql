@@ -13,8 +13,20 @@ create table if not exists athletes (
   name text not null,
   initials text not null,
   auth_user_id uuid unique references auth.users(id) on delete set null,
+  -- Training-zone thresholds, editable from /settings — see migration 003
+  -- and CLAUDE.md's roadmap (these feed future AI plan generation / a
+  -- virtual coach agent, neither built yet).
+  threshold_hr integer,
+  threshold_pace_sec_per_km integer,
+  ftp_watts integer,
+  vo2max numeric(4,1),
   created_at timestamptz not null default now()
 );
+
+comment on column athletes.threshold_hr is 'Lactate threshold heart rate (LTHR), in bpm.';
+comment on column athletes.threshold_pace_sec_per_km is 'Running threshold pace ("race predictor"), in seconds per km.';
+comment on column athletes.ftp_watts is 'Cycling functional threshold power (FTP), in watts.';
+comment on column athletes.vo2max is 'VO2max, in ml/kg/min.';
 
 insert into athletes (slug, name, initials)
 values

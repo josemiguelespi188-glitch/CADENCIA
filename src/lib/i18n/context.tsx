@@ -76,6 +76,12 @@ const DICT: Record<Locale, Record<string, string>> = {
     settings_h: "Ajustes",
     other_lang: "English",
     download_week: "Descargar semana",
+    zones_h: "Zonas de entrenamiento",
+    lthr: "Frecuencia cardíaca umbral (LTHR)",
+    threshold_pace: "Pace umbral de trote",
+    ftp: "FTP de bici",
+    vo2max: "VO2max",
+    zones_saved: "Zonas guardadas",
   },
   en: {
     brand_sub: "training log",
@@ -148,6 +154,12 @@ const DICT: Record<Locale, Record<string, string>> = {
     settings_h: "Settings",
     other_lang: "Español",
     download_week: "Download week",
+    zones_h: "Training zones",
+    lthr: "Lactate threshold heart rate (LTHR)",
+    threshold_pace: "Running threshold pace",
+    ftp: "Bike FTP",
+    vo2max: "VO2max",
+    zones_saved: "Zones saved",
   },
 };
 

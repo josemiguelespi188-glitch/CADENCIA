@@ -37,6 +37,23 @@ export function hm(minutes: number, locale: "es" | "en" = "es") {
 
 export const hrs = (minutes: number) => minutes / 60;
 
+/** Formats a pace in seconds/km as "M:SS/km". Returns "" for null/0. */
+export function paceLabel(secPerKm: number | null) {
+  if (!secPerKm) return "";
+  const m = Math.floor(secPerKm / 60);
+  const s = Math.round(secPerKm % 60);
+  return `${m}:${pad(s)}/km`;
+}
+
+/** Parses "M:SS" (or "MM:SS") into total seconds, or null if not a valid pace. */
+export function parsePace(min: string, sec: string): number | null {
+  const m = Number(min);
+  const s = Number(sec);
+  if (!Number.isFinite(m) || !Number.isFinite(s) || m < 0 || s < 0 || s >= 60) return null;
+  if (m === 0 && s === 0) return null;
+  return m * 60 + s;
+}
+
 export function fmt(d: Date, locale: string, opts: Intl.DateTimeFormatOptions) {
   return new Intl.DateTimeFormat(locale, opts).format(d);
 }

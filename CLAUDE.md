@@ -215,6 +215,49 @@ every workout loaded client-side, so the `.ics` text is built and handed
 to the browser as a download (`Blob` + a synthetic `<a download>` click)
 entirely in the browser, no new API route.
 
+### Training-zone thresholds (built, Oct 2026)
+
+Four numbers per athlete — **LTHR** (lactate threshold heart rate, bpm),
+**running threshold pace** (what the user calls their "race predictor",
+sec/km), **bike FTP** (watts), and **VO2max** (ml/kg/min) — are now
+editable from a "Training zones" card on `/settings`, one per athlete,
+above the existing Strava card. Columns on `athletes`
+(`threshold_hr`, `threshold_pace_sec_per_km`, `ftp_watts`, `vo2max`),
+added by `supabase/migrations/003_athlete_training_zones.sql` — **needs
+this migration run in the SQL editor** (a fresh `schema.sql` run already
+includes these columns). Saved with a direct browser-side
+`supabase.from("athletes").update(...)` call, same RLS-is-open-to-anon
+pattern every other write in this app already uses (see "Data model &
+auth" above) — no new API route needed.
+
+**These four numbers are explicitly the input layer for two much bigger
+features that are NOT built yet** — don't start either without a fresh
+go-ahead, they're real scope on their own:
+
+1. **AI-generated training plans**: per the user's own framing, "el
+   cloud... según este predictor... va editándose los entrenamientos por
+   persona" — a plan-generation step that reads these thresholds (and
+   presumably recent Strava activity/progress) and writes/adjusts
+   `workouts` rows automatically. Needs its own design pass: which
+   provider, how often it runs, whether it proposes a draft for approval
+   or writes directly (unlike the Strava-description write-back decision
+   above, this wasn't confirmed either way yet), and how it reconciles
+   with an athlete's own manually-added workouts.
+2. **A virtual coach agent**: a conversational interface where editing a
+   plan happens through back-and-forth chat rather than the form-based
+   calendar/dialog UI that exists today. Also entirely undesigned —
+   where it lives in the UI, what it can actually change, how it relates
+   to (1) above (does the chat drive the same generator, or is it a
+   separate path to editing `workouts` directly).
+
+One open question worth confirming before either of those gets designed:
+`threshold_pace_sec_per_km` is stored as a single pace value (seconds per
+km) on the assumption that "race predictor" means a threshold/representative
+pace, not a structured recent-race-result (distance + time) that a VDOT-style
+calculator would use to derive paces for other distances. If the real intent
+is the latter, this column's shape would need to change before anything
+downstream (plan generation) starts depending on it.
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as
