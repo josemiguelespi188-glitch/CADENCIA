@@ -30,28 +30,34 @@ stays identical on purpose so the two apps read as one family.
 
 ## Data model & auth
 
-- `athletes` — a fixed roster of exactly two rows (`juan`, `jose`), seeded
-  by `supabase/schema.sql`. There is no self-signup. `auth_user_id` links a
-  row to a real Supabase Auth user — **this link has to be set by hand**
-  (see setup steps below); until it is, that person can sign in but the app
-  treats them as "no athlete attached."
-- `workouts`, `templates` — shared between both athletes. Any signed-in
-  athlete can read and write both athletes' workouts/templates (RLS policy
-  `for all to authenticated using (true)`) — this is a shared coach log,
-  not a siloed multi-tenant app. The "Juan / José / Both" switch in the
-  header (`src/lib/athlete-view-context.tsx`) is a **view filter only**,
-  never a security boundary.
+**Auth is deliberately switched off for now** (explicit product decision,
+Oct 2026 — "quita el tema de la autenticacion por el momento, no
+necesitamos claves ahorita"). The app has no sign-in page; every page loads
+straight in. This was a real reversal, not the original design — see the
+RLS note in `supabase/schema.sql` for the full rationale, the exact
+tradeoff being accepted, and how to revert it later. What changed
+concretely:
+
+- `athletes` — still a fixed roster of exactly two rows (`juan`, `jose`),
+  seeded by `supabase/schema.sql`. `auth_user_id` still exists and is
+  already linked for José (from when auth was on), but **nothing in the
+  app reads it anymore** — it's inert until auth is turned back on.
+- `workouts`, `templates`, `strava_activities` (select) — RLS policies
+  grant `anon` the same access as `authenticated` (see `schema.sql` /
+  `supabase/migrations/002_disable_auth_rls_gate.sql`), so every page works
+  with nobody signed in. This means **anyone with the deployed URL can read
+  and write every workout/template** — accepted only because this app
+  isn't publicly shared or indexed. The "Juan / José / Both" switch in the
+  header (`src/lib/athlete-view-context.tsx`) was always a view filter, not
+  a security boundary, and still is.
 - `strava_connections` — real OAuth access/refresh tokens. RLS enabled with
   **no policies at all**, service-role only, same strictness pattern the
   Operations Hub codebase uses for every secret-holding table
-  (`order_tracking_links`, `sa_reviews`, etc.). Never read or written from
-  the browser — `src/app/api/strava/status/route.ts` is the only way the
-  UI learns whether an athlete is connected, and it deliberately returns
-  only `{connected, connectedAt, lastSyncedAt}`, never the tokens.
-- `strava_activities` — a cache of activities pulled from Strava's API,
-  written only by the service-role sync route. Readable by any
-  authenticated athlete (so the dashboard can show both athletes' recent
-  activity), but not writable from the browser.
+  (`order_tracking_links`, `sa_reviews`, etc.) — **unaffected by turning
+  auth off**, still completely locked to the server. Never read or written
+  from the browser — `src/app/api/strava/status/route.ts` is the only way
+  the UI learns whether an athlete is connected, and it deliberately
+  returns only `{connected, connectedAt, lastSyncedAt}`, never the tokens.
 
 ## Strava integration
 
@@ -62,10 +68,17 @@ stays identical on purpose so the two apps read as one family.
   cookie — the Strava redirect is a fresh top-level navigation with no
   session context of its own), so `/api/strava/callback` knows which
   athlete just connected.
-- `/api/strava/connect` always acts on **whoever is currently signed in**
-  — there is no "connect for athlete X" picker anywhere, by design, so one
-  athlete can never accidentally connect the other's Strava account to
-  their row.
+- Every Strava route (`connect`, `status`, `sync`, `disconnect`) takes an
+  explicit **athlete slug** — `?athlete=juan|jose` on the two GETs,
+  `{athleteSlug}` in the POST bodies — resolved by
+  `getAthleteBySlug()` in `src/lib/auth.ts`, instead of a signed-in
+  session (there isn't one right now). `/settings` shows both athletes as
+  separate cards, each with its own Connect/Sync/Disconnect, rather than
+  acting on "whoever is signed in." If auth comes back, this is the one
+  spot that would need to go back to deriving the athlete from the
+  session instead of trusting a client-supplied slug — right now nothing
+  stops Juan from clicking "Connect" on José's card by hand, which is
+  fine only because this app isn't exposed beyond the two of them.
 - `/api/strava/sync` pulls that athlete's most recent 50 activities and
   upserts them into `strava_activities`. **It does not attempt to
   auto-match a synced activity to a specific planned `workouts` row** —
@@ -81,44 +94,36 @@ stays identical on purpose so the two apps read as one family.
   webhook is registered in the Operations Hub codebase; add that later if
   manual sync turns out to be too much friction.
 
-## Manual setup steps (none of this exists yet until it's done by hand)
-
-This repo is code only — nothing below is provisioned yet.
+## Manual setup steps
 
 1. **Create a Supabase project** (supabase.com), then run
-   `supabase/schema.sql` once in its SQL editor. Copy the project URL and
-   anon key into `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
-   and the service-role key into `SUPABASE_SERVICE_ROLE_KEY` (Settings ->
-   API). These are env vars only — never commit them.
-2. **Create the two Supabase Auth users** for Juan and José (Authentication
-   -> Users -> Add user, in the Supabase dashboard — set a password for
-   each, or use "Send invite" if email sending is configured for the
-   project).
-3. **Link each Auth user to their `athletes` row** — run in the SQL
-   editor, once per athlete, after step 2:
-   ```sql
-   update athletes set auth_user_id = '<juan-auth-user-uuid>' where slug = 'juan';
-   update athletes set auth_user_id = '<jose-auth-user-uuid>' where slug = 'jose';
-   ```
-   Without this, that person can sign in at `/auth` but every page treats
-   them as unattached (no athlete-scoped data, Strava connect redirects to
-   sign-in).
-4. **Create a Strava API app** at
+   `supabase/schema.sql` once in its SQL editor (and
+   `supabase/migrations/002_disable_auth_rls_gate.sql` if `schema.sql` was
+   already applied before auth was turned off — a fresh run of `schema.sql`
+   alone already includes it). Copy the project URL and anon key into
+   `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and the
+   service-role key into `SUPABASE_SERVICE_ROLE_KEY` (Settings -> API).
+   These are env vars only — never commit them.
+2. ~~Create two Supabase Auth users and link them~~ — **not needed while
+   auth is off.** José's account (`josemiguel.espi188@gmail.com`) already
+   exists and is linked from when this was briefly tried; it's simply
+   unused by the app right now. Skip straight to step 3.
+3. **Create a Strava API app** at
    <https://www.strava.com/settings/api> — "Authorization Callback Domain"
    must be this app's real deployed domain (no `https://`, no path, e.g.
    `cadencia.vercel.app`), or Strava will refuse the OAuth redirect. Copy
    the Client ID/Secret into `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET`.
-5. **Set `NEXT_PUBLIC_SITE_URL`** to this app's real deployed origin (no
+4. **Set `NEXT_PUBLIC_SITE_URL`** to this app's real deployed origin (no
    trailing slash) — it's used to build the Strava `redirect_uri`, so it
-   has to match the callback domain from step 4 exactly or Strava's
+   has to match the callback domain from step 3 exactly or Strava's
    authorize step will fail.
-6. **Deploy to Vercel**, set all of the above as env vars there (Project
+5. **Deploy to Vercel**, set all of the above as env vars there (Project
    Settings -> Environment Variables), matching the `.env.example` names
    exactly.
 
-Everything above is a one-time setup cost; once done, both athletes sign
-in at `/auth`, connect their own Strava from `/settings`, and the
-calendar/dashboard/templates pages work with no further manual steps.
+Everything above is a one-time setup cost; once done, both athletes land
+straight in `/calendar`, connect their own Strava from `/settings`, and
+every page works with no further manual steps.
 
 ## Style
 

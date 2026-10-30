@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useLocale } from "@/lib/i18n/context";
 import { useAthleteView } from "@/lib/athlete-view-context";
 import { createClient } from "@/lib/supabase/client";
@@ -16,9 +15,7 @@ type WorkoutWithSlug = Workout & { athleteSlug: AthleteSlug };
 export default function DashboardPage() {
   const { t, locale } = useLocale();
   const { who } = useAthleteView();
-  const router = useRouter();
 
-  const [checkingAuth, setCheckingAuth] = useState(true);
   const [loading, setLoading] = useState(true);
   const [workouts, setWorkouts] = useState<WorkoutWithSlug[]>([]);
   const [activities, setActivities] = useState<(StravaActivity & { athleteSlug: AthleteSlug })[]>([]);
@@ -40,16 +37,10 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    const supabase = createClient();
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) {
-        router.push("/auth");
-        return;
-      }
-      setCheckingAuth(false);
-      load();
-    });
-  }, [router, load]);
+    // Initial data fetch on mount — see the same note in calendar/page.tsx.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load();
+  }, [load]);
 
   const visible = useMemo(
     () => (who === "both" ? workouts : workouts.filter((w) => w.athleteSlug === who)),
@@ -89,8 +80,6 @@ export default function DashboardPage() {
       return d >= td && d <= addDays(td, 6);
     })
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-
-  if (checkingAuth) return null;
 
   return (
     <div className="flex min-h-screen flex-col bg-bg">

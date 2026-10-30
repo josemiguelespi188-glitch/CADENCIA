@@ -117,31 +117,45 @@ create trigger workouts_set_updated_at
 
 -- ─── RLS ─────────────────────────────────────────────────────────────────────
 -- This is a shared, two-person coach log, not a siloed multi-tenant app:
--- any authenticated athlete (Juan or José) can read and write both
--- athletes' workouts/templates — the "who" switch in the UI is a view
--- filter, not a security boundary. strava_connections stays locked to
--- service-role only, since it holds real OAuth tokens.
+-- any visitor can read and write both athletes' workouts/templates — the
+-- "who" switch in the UI is a view filter, not a security boundary.
+--
+-- Auth is deliberately NOT required right now (explicit product decision,
+-- Oct 2026 — "quita el tema de la autenticacion por el momento, no
+-- necesitamos claves ahorita"): policies below grant `anon` the same access
+-- as `authenticated`, so the app works with nobody signed in. This is a
+-- real, accepted tradeoff — anyone with the deployed URL can read and write
+-- every workout/template — acceptable only because this app isn't publicly
+-- shared or indexed. strava_connections stays locked to service-role only
+-- regardless (real OAuth tokens), unaffected by this decision. Revisit
+-- before sharing the URL beyond Juan and José, or re-enable Supabase Auth
+-- (the `auth_user_id` column and the `/auth` sign-in page both still exist
+-- in git history) and narrow these policies back to `authenticated` only.
 
 alter table athletes enable row level security;
 drop policy if exists athletes_select_authenticated on athletes;
-create policy athletes_select_authenticated on athletes
-  for select to authenticated using (true);
+drop policy if exists athletes_select_public on athletes;
+create policy athletes_select_public on athletes
+  for select to anon, authenticated using (true);
 
 alter table workouts enable row level security;
 drop policy if exists workouts_all_authenticated on workouts;
-create policy workouts_all_authenticated on workouts
-  for all to authenticated using (true) with check (true);
+drop policy if exists workouts_all_public on workouts;
+create policy workouts_all_public on workouts
+  for all to anon, authenticated using (true) with check (true);
 
 alter table templates enable row level security;
 drop policy if exists templates_all_authenticated on templates;
-create policy templates_all_authenticated on templates
-  for all to authenticated using (true) with check (true);
+drop policy if exists templates_all_public on templates;
+create policy templates_all_public on templates
+  for all to anon, authenticated using (true) with check (true);
 
 alter table strava_activities enable row level security;
 drop policy if exists strava_activities_select_authenticated on strava_activities;
-create policy strava_activities_select_authenticated on strava_activities
-  for select to authenticated using (true);
+drop policy if exists strava_activities_select_public on strava_activities;
+create policy strava_activities_select_public on strava_activities
+  for select to anon, authenticated using (true);
 -- No insert/update/delete policy — written only by the service-role sync route.
 
 alter table strava_connections enable row level security;
--- Deliberately no policies at all.
+-- Deliberately no policies at all — service-role only, with or without auth.

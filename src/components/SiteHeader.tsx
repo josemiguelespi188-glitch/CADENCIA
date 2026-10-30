@@ -2,10 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useLocale } from "@/lib/i18n/context";
 import { useAthleteView } from "@/lib/athlete-view-context";
-import { createClient } from "@/lib/supabase/client";
 import { ATHLETES, type Who } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -20,8 +19,6 @@ export function SiteHeader() {
   const { t, locale, toggle: toggleLocale } = useLocale();
   const { who, setWho } = useAthleteView();
   const pathname = usePathname();
-  const router = useRouter();
-  const [signedIn, setSignedIn] = useState(false);
   const [dark, setDark] = useState(false);
 
   useEffect(() => {
@@ -33,13 +30,6 @@ export function SiteHeader() {
     } catch {
       /* ignore */
     }
-
-    const supabase = createClient();
-    supabase.auth.getUser().then(({ data }) => setSignedIn(!!data.user));
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
-      setSignedIn(!!session?.user);
-    });
-    return () => sub.subscription.unsubscribe();
   }, []);
 
   function toggleTheme() {
@@ -56,13 +46,6 @@ export function SiteHeader() {
     } catch {
       /* ignore */
     }
-  }
-
-  async function signOut() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    setSignedIn(false);
-    router.push("/auth");
   }
 
   const whoOptions: Who[] = ["juan", "jose", "both"];
@@ -82,39 +65,36 @@ export function SiteHeader() {
           </span>
         </Link>
 
-        {signedIn && (
-          <div className="inline-flex rounded-full bg-surface-2 p-1 gap-0.5">
-            {whoOptions.map((w) => (
-              <button
-                key={w}
-                type="button"
-                onClick={() => setWho(w)}
-                aria-pressed={who === w}
-                className={cn(
-                  "rounded-full px-3 py-1.5 text-xs font-medium uppercase tracking-wide transition-colors",
-                  who === w ? "bg-ink text-bg" : "text-ink-2 hover:text-ink"
-                )}
-              >
-                {w === "both" ? t("both") : ATHLETES[w].name}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="inline-flex rounded-full bg-surface-2 p-1 gap-0.5">
+          {whoOptions.map((w) => (
+            <button
+              key={w}
+              type="button"
+              onClick={() => setWho(w)}
+              aria-pressed={who === w}
+              className={cn(
+                "rounded-full px-3 py-1.5 text-xs font-medium uppercase tracking-wide transition-colors",
+                who === w ? "bg-ink text-bg" : "text-ink-2 hover:text-ink"
+              )}
+            >
+              {w === "both" ? t("both") : ATHLETES[w].name}
+            </button>
+          ))}
+        </div>
 
         <nav className="hidden items-center gap-5 sm:flex ml-auto">
-          {signedIn &&
-            NAV.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "text-sm transition-colors",
-                  pathname === item.href ? "text-ink font-medium" : "text-ink-2 hover:text-ink"
-                )}
-              >
-                {t(item.key)}
-              </Link>
-            ))}
+          {NAV.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "text-sm transition-colors",
+                pathname === item.href ? "text-ink font-medium" : "text-ink-2 hover:text-ink"
+              )}
+            >
+              {t(item.key)}
+            </Link>
+          ))}
 
           <button onClick={toggleLocale} className="text-xs uppercase tracking-wide text-ink-3 hover:text-ink transition-colors">
             {locale === "es" ? "EN" : "ES"}
@@ -143,16 +123,6 @@ export function SiteHeader() {
               </svg>
             )}
           </button>
-
-          {signedIn ? (
-            <button onClick={signOut} className="text-sm text-ink-2 hover:text-ink transition-colors">
-              {t("sign_out")}
-            </button>
-          ) : (
-            <Link href="/auth" className="text-sm text-ink-2 hover:text-ink transition-colors">
-              {t("sign_in")}
-            </Link>
-          )}
         </nav>
       </div>
     </header>

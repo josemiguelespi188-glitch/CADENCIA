@@ -1,13 +1,12 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useLocale } from "@/lib/i18n/context";
-import { createClient } from "@/lib/supabase/client";
 import { SiteHeader } from "@/components/SiteHeader";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ATHLETES, type Athlete } from "@/lib/types";
+import { ATHLETES, type AthleteSlug } from "@/lib/types";
 
 interface StravaStatus {
   connected: boolean;
@@ -26,34 +25,8 @@ export default function SettingsPage() {
 function SettingsContent() {
   const { t, locale } = useLocale();
   const isEn = locale === "en";
-  const router = useRouter();
   const searchParams = useSearchParams();
-
-  const [checkingAuth, setCheckingAuth] = useState(true);
-  const [athlete, setAthlete] = useState<Athlete | null>(null);
-  const [status, setStatus] = useState<StravaStatus | null>(null);
-  const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-
-  const loadStatus = useCallback(async () => {
-    const res = await fetch("/api/strava/status");
-    if (res.ok) setStatus(await res.json());
-  }, []);
-
-  useEffect(() => {
-    const supabase = createClient();
-    (async () => {
-      const { data } = await supabase.auth.getUser();
-      if (!data.user) {
-        router.push("/auth");
-        return;
-      }
-      const { data: a } = await supabase.from("athletes").select("*").eq("auth_user_id", data.user.id).maybeSingle();
-      setAthlete((a as Athlete) ?? null);
-      setCheckingAuth(false);
-      loadStatus();
-    })();
-  }, [router, loadStatus]);
 
   useEffect(() => {
     const strava = searchParams.get("strava");
@@ -64,12 +37,55 @@ function SettingsContent() {
     else if (strava === "error") setToast(isEn ? "Could not connect Strava. Try again." : "No se pudo conectar Strava. Intenta de nuevo.");
   }, [searchParams, isEn]);
 
+  return (
+    <div className="flex min-h-screen flex-col bg-bg">
+      <SiteHeader />
+      <main className="flex-1 px-6 pt-28 pb-24">
+        <div className="mx-auto max-w-2xl">
+          <h1 className="text-2xl font-semibold tracking-tight mb-6">{t("settings_h")}</h1>
+
+          {toast && <div className="mb-4 rounded-xl border border-line bg-surface-2 px-4 py-3 text-sm">{toast}</div>}
+
+          <div className="flex flex-col gap-4">
+            {(Object.keys(ATHLETES) as AthleteSlug[]).map((slug) => (
+              <AthleteStravaCard key={slug} slug={slug} />
+            ))}
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function AthleteStravaCard({ slug }: { slug: AthleteSlug }) {
+  const { t, locale } = useLocale();
+  const isEn = locale === "en";
+  const [status, setStatus] = useState<StravaStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const loadStatus = useCallback(async () => {
+    const res = await fetch(`/api/strava/status?athlete=${slug}`);
+    if (res.ok) setStatus(await res.json());
+  }, [slug]);
+
+  useEffect(() => {
+    // Initial data fetch on mount — see the same note in calendar/page.tsx.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadStatus();
+  }, [loadStatus]);
+
   async function sync() {
     setBusy(true);
+    setMessage(null);
     try {
-      const res = await fetch("/api/strava/sync", { method: "POST" });
+      const res = await fetch("/api/strava/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ athleteSlug: slug }),
+      });
       const data = await res.json();
-      setToast(res.ok ? (isEn ? `Synced ${data.synced} activities.` : `Se sincronizaron ${data.synced} actividades.`) : data.error);
+      setMessage(res.ok ? (isEn ? `Synced ${data.synced} activities.` : `Se sincronizaron ${data.synced} actividades.`) : data.error);
       await loadStatus();
     } finally {
       setBusy(false);
@@ -79,73 +95,55 @@ function SettingsContent() {
   async function disconnect() {
     setBusy(true);
     try {
-      await fetch("/api/strava/disconnect", { method: "POST" });
+      await fetch("/api/strava/disconnect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ athleteSlug: slug }),
+      });
       await loadStatus();
     } finally {
       setBusy(false);
     }
   }
 
-  if (checkingAuth) return null;
-
   return (
-    <div className="flex min-h-screen flex-col bg-bg">
-      <SiteHeader />
-      <main className="flex-1 px-6 pt-28 pb-24">
-        <div className="mx-auto max-w-2xl">
-          <h1 className="text-2xl font-semibold tracking-tight mb-6">{t("settings_h")}</h1>
+    <Card>
+      <CardTitle>
+        {ATHLETES[slug].name} · Strava
+      </CardTitle>
 
-          {toast && (
-            <div className="mb-4 rounded-xl border border-line bg-surface-2 px-4 py-3 text-sm">{toast}</div>
-          )}
+      <div className="mt-4 flex items-center gap-3">
+        <span
+          className="h-2.5 w-2.5 rounded-full"
+          style={{ background: status?.connected ? "#2E8B57" : "var(--ink-3)" }}
+        />
+        <span className="text-sm">{status?.connected ? t("strava_connected") : isEn ? "Not connected" : "No conectado"}</span>
+      </div>
 
-          <Card>
-            <CardTitle>Strava</CardTitle>
-            <p className="mt-2 text-sm text-ink-2">
-              {athlete
-                ? isEn
-                  ? `Connected as ${ATHLETES[athlete.slug].name}.`
-                  : `Conectado como ${ATHLETES[athlete.slug].name}.`
-                : ""}
-            </p>
+      {status?.connected && (
+        <p className="mt-1 text-xs text-ink-3">
+          {t("strava_last_sync")}: {status.lastSyncedAt ? new Date(status.lastSyncedAt).toLocaleString(locale) : t("strava_never")}
+        </p>
+      )}
 
-            <div className="mt-4 flex items-center gap-3">
-              <span
-                className={
-                  "h-2.5 w-2.5 rounded-full " + (status?.connected ? "bg-[var(--run)]" : "bg-ink-3")
-                }
-                style={status?.connected ? { background: "#2E8B57" } : undefined}
-              />
-              <span className="text-sm">
-                {status?.connected ? t("strava_connected") : (isEn ? "Not connected" : "No conectado")}
-              </span>
-            </div>
+      {message && <p className="mt-2 text-xs text-ink-2">{message}</p>}
 
-            {status?.connected && (
-              <p className="mt-1 text-xs text-ink-3">
-                {t("strava_last_sync")}: {status.lastSyncedAt ? new Date(status.lastSyncedAt).toLocaleString(locale) : t("strava_never")}
-              </p>
-            )}
-
-            <div className="mt-5 flex flex-wrap gap-2">
-              {status?.connected ? (
-                <>
-                  <Button size="sm" onClick={sync} disabled={busy}>
-                    {t("strava_sync")}
-                  </Button>
-                  <Button size="sm" variant="danger" onClick={disconnect} disabled={busy}>
-                    {t("strava_disconnect")}
-                  </Button>
-                </>
-              ) : (
-                <a href="/api/strava/connect">
-                  <Button size="sm">{t("strava_connect")}</Button>
-                </a>
-              )}
-            </div>
-          </Card>
-        </div>
-      </main>
-    </div>
+      <div className="mt-5 flex flex-wrap gap-2">
+        {status?.connected ? (
+          <>
+            <Button size="sm" onClick={sync} disabled={busy}>
+              {t("strava_sync")}
+            </Button>
+            <Button size="sm" variant="danger" onClick={disconnect} disabled={busy}>
+              {t("strava_disconnect")}
+            </Button>
+          </>
+        ) : (
+          <a href={`/api/strava/connect?athlete=${slug}`}>
+            <Button size="sm">{t("strava_connect")}</Button>
+          </a>
+        )}
+      </div>
+    </Card>
   );
 }

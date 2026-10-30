@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useLocale } from "@/lib/i18n/context";
 import { createClient } from "@/lib/supabase/client";
 import { SiteHeader } from "@/components/SiteHeader";
@@ -13,9 +12,7 @@ const EMPTY = { sport: "run" as Sport, title: "", minutes: 0, km: 0, notes: "" }
 
 export default function TemplatesPage() {
   const { t } = useLocale();
-  const router = useRouter();
 
-  const [checkingAuth, setCheckingAuth] = useState(true);
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [editing, setEditing] = useState<{ record: Template | null } | null>(null);
@@ -30,16 +27,10 @@ export default function TemplatesPage() {
   }, []);
 
   useEffect(() => {
-    const supabase = createClient();
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) {
-        router.push("/auth");
-        return;
-      }
-      setCheckingAuth(false);
-      load();
-    });
-  }, [router, load]);
+    // Initial data fetch on mount — see the same note in calendar/page.tsx.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load();
+  }, [load]);
 
   useEffect(() => {
     if (!editing) {
@@ -75,8 +66,6 @@ export default function TemplatesPage() {
     setEditing(null);
     await load();
   }
-
-  if (checkingAuth) return null;
 
   return (
     <div className="flex min-h-screen flex-col bg-bg">

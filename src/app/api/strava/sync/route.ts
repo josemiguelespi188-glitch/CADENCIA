@@ -1,19 +1,22 @@
-import { NextResponse } from "next/server";
-import { getSignedInAthlete } from "@/lib/auth";
+import { NextRequest, NextResponse } from "next/server";
+import { getAthleteBySlug } from "@/lib/auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { fetchRecentStravaActivities, getValidAccessToken, mapStravaSportType } from "@/lib/integrations/strava";
 
 /**
- * Pulls the signed-in athlete's own recent Strava activities and upserts
- * them into `strava_activities`. Deliberately does not try to auto-link an
- * activity to a specific planned `workouts` row — matching by date+sport
- * alone is guesswork (two easy runs on the same day, a workout logged a day
- * off, etc.), so V1 just shows the real activity alongside the plan on the
- * calendar/dashboard and leaves linking to a future pass if it's wanted.
+ * Pulls the named athlete's recent Strava activities and upserts them into
+ * `strava_activities`. `athleteSlug` is passed explicitly in the body
+ * (auth is off for now — see lib/auth.ts) rather than derived from a
+ * session. Deliberately does not try to auto-link an activity to a
+ * specific planned `workouts` row — matching by date+sport alone is
+ * guesswork (two easy runs on the same day, a workout logged a day off,
+ * etc.), so V1 just shows the real activity alongside the plan on the
+ * dashboard and leaves linking to a future pass if it's wanted.
  */
-export async function POST() {
-  const athlete = await getSignedInAthlete();
-  if (!athlete) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+export async function POST(req: NextRequest) {
+  const { athleteSlug } = await req.json().catch(() => ({ athleteSlug: null }));
+  const athlete = athleteSlug ? await getAthleteBySlug(athleteSlug) : null;
+  if (!athlete) return NextResponse.json({ error: "Unknown athlete" }, { status: 400 });
 
   const accessToken = await getValidAccessToken(athlete.id);
   if (!accessToken) {

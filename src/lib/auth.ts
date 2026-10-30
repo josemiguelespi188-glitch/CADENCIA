@@ -1,15 +1,16 @@
-import { createClient } from "@/lib/supabase/server";
-import type { Athlete } from "@/lib/types";
+import { createServiceClient } from "@/lib/supabase/server";
+import type { Athlete, AthleteSlug } from "@/lib/types";
 
-/** The signed-in Supabase user's matching `athletes` row, or null if there's
- * no session or that user hasn't been linked to an athlete yet (see
- * CLAUDE.md — linking is a one-time manual step after creating the two
- * Supabase Auth accounts). */
-export async function getSignedInAthlete(): Promise<Athlete | null> {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
-
-  const { data } = await supabase.from("athletes").select("*").eq("auth_user_id", user.id).maybeSingle();
+/**
+ * Looks up an athlete row by slug. Used by every Strava route instead of a
+ * signed-in session, since auth is deliberately switched off for now (see
+ * the RLS note in supabase/schema.sql) — the caller passes which athlete
+ * it's acting on explicitly (the athlete picker in Settings), rather than
+ * this being derived from `supabase.auth.getUser()`.
+ */
+export async function getAthleteBySlug(slug: string): Promise<Athlete | null> {
+  if (slug !== "juan" && slug !== "jose") return null;
+  const db = createServiceClient();
+  const { data } = await db.from("athletes").select("*").eq("slug", slug as AthleteSlug).maybeSingle();
   return (data as Athlete) ?? null;
 }

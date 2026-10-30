@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useLocale } from "@/lib/i18n/context";
 import { useAthleteView } from "@/lib/athlete-view-context";
 import { createClient } from "@/lib/supabase/client";
@@ -17,9 +16,7 @@ type EditingState = { record: WorkoutWithSlug | null; defaultDate?: string; defa
 export default function CalendarPage() {
   const { t, locale } = useLocale();
   const { who, lastSingle } = useAthleteView();
-  const router = useRouter();
 
-  const [checkingAuth, setCheckingAuth] = useState(true);
   const [athletes, setAthletes] = useState<Athlete[]>([]);
   const [workouts, setWorkouts] = useState<WorkoutWithSlug[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -46,16 +43,12 @@ export default function CalendarPage() {
   }, []);
 
   useEffect(() => {
-    const supabase = createClient();
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) {
-        router.push("/auth");
-        return;
-      }
-      setCheckingAuth(false);
-      load();
-    });
-  }, [router, load]);
+    // Initial data fetch on mount — synchronizing with Supabase, the
+    // canonical use for an effect; the lint rule can't see through
+    // `load`'s own setState calls, so it flags this call site itself.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load();
+  }, [load]);
 
   const visible = useMemo(
     () => (who === "both" ? workouts : workouts.filter((w) => w.athleteSlug === who)),
@@ -100,8 +93,6 @@ export default function CalendarPage() {
   function openAdd(date: string) {
     setEditing({ record: null, defaultDate: date, defaultAthlete: who === "both" ? lastSingle : who });
   }
-
-  if (checkingAuth) return null;
 
   return (
     <div className="flex min-h-screen flex-col bg-bg">
