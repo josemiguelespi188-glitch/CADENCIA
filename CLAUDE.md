@@ -1525,6 +1525,35 @@ finding than just "here are two URLs":
   garmin_user_id` stays null for now (the confirmed Partner API spec
   does have `GET /partner-gateway/rest/user/id` that could populate it
   later, not built yet, not needed for the push flow to work).
+
+**Confirmed working end to end live (Nov 2026)**: José clicked
+"Connect" on the real `/settings` page after setting all 5
+`GARMIN_DEV_*` env vars and running migrations 026-028 — one real bug
+found and fixed along the way (below), then a successful OAuth round
+trip: redirected to `connect.garmin.com/oauth2Confirm`, consented,
+landed back on `/settings` with the card showing **Connected**. The
+full PKCE flow (code_verifier generation, `garmin_oauth_pkce` storage,
+token exchange with `code_verifier`, row written to
+`garmin_dev_connections`) works as built, not just in theory.
+
+- **Bug found live**: the first Connect attempt failed with `"URL is
+  malformed"`, because the Vercel env var values had been pasted as
+  `GARMIN_DEV_AUTHORIZE_URL=https://connect.garmin.com/oauth2Confirm`
+  (the full `NAME=value` line) instead of just the URL in the Value
+  field. Not a code bug — flagging it here since it's an easy mistake
+  to repeat when setting the remaining Garmin/any other env var later.
+- **`GARMIN_DEV_TOKEN_URL` resolved from the JWT itself**, not a
+  portal screenshot: the real `access_token` returned by the
+  walkthrough's step 4 is a JWT whose decoded payload includes
+  `"iss":"https://diauth.garmin.com"` — used as
+  `https://diauth.garmin.com/di-oauth2-service/oauth/token`. Worth
+  re-confirming directly against the portal's own step-4 display if
+  it's ever shown, but the connect flow succeeding live is itself
+  strong evidence this value is correct.
+- **Not yet tested**: `pushStructuredWorkoutToGarmin()` (the "Push to
+  Garmin" button) against this real connection, and no real Garmin
+  push has landed in `garmin_push_events` yet either — both still
+  pending a live try.
 - **The real Health API response schemas are now known** (`ClientSleep`,
   `ClientDailySpo2Acclimation` for Pulse Ox, `ClientHRVSummary`,
   `ClientDaily`, `ClientActivity`, `ClientBloodPressure`, etc., all in
