@@ -80,6 +80,31 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
   const [pushMessage, setPushMessage] = useState<string | null>(null);
   const [garminPushBusy, setGarminPushBusy] = useState(false);
   const [garminPushMessage, setGarminPushMessage] = useState<string | null>(null);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiMessage, setAiMessage] = useState<string | null>(null);
+
+  async function generateStepsFromAI() {
+    if (!aiPrompt.trim()) return;
+    setAiBusy(true);
+    setAiMessage(null);
+    try {
+      const res = await fetch("/api/workouts/generate-steps", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: aiPrompt }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const steps: WorkoutStep[] = data.steps.map((s: Omit<WorkoutStep, "id">) => ({ ...s, id: newStepId() }));
+        setValue((v) => ({ ...v, workoutSteps: steps }));
+      } else {
+        setAiMessage(data.error);
+      }
+    } finally {
+      setAiBusy(false);
+    }
+  }
 
   async function pushToCoros(workoutId: string) {
     setPushBusy(true);
@@ -326,6 +351,19 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
                 + {t("steps_add")}
               </Button>
             </div>
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <input
+                type="text"
+                placeholder={t("steps_ai_placeholder")}
+                value={aiPrompt}
+                onChange={(e) => setAiPrompt(e.target.value)}
+                className="h-9 min-w-[240px] flex-1 rounded-xl border border-line bg-bg px-3 text-sm"
+              />
+              <Button type="button" size="sm" disabled={aiBusy || !aiPrompt.trim()} onClick={generateStepsFromAI}>
+                {aiBusy ? t("steps_ai_generating") : t("steps_ai_generate")}
+              </Button>
+            </div>
+            {aiMessage && <p className="mb-2 text-xs text-error">{aiMessage}</p>}
             {value.workoutSteps.length === 0 ? (
               <p className="text-xs text-ink-3">{t("steps_empty")}</p>
             ) : (

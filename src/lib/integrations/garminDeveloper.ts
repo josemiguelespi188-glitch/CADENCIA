@@ -65,15 +65,26 @@ import type { Workout, WorkoutStep } from "@/lib/types";
  *   any of those specs (they're all data APIs, not the OAuth server
  *   itself); get those from "OAuth2 Tools" -> "User Authorization" /
  *   "Refresh Token" specifically.
- * - **`pushStructuredWorkoutToGarmin()`'s request shape is now
- *   confirmed**, against the real Workout Portal OpenAPI spec (not a
- *   guess anymore): `POST {API_BASE}/training-api/workout/workout`
- *   creates a `Workout` (server base already includes
- *   `/training-api/workout`, the path adds another `/workout` on top —
- *   that double segment is exactly what the real spec shows, not a
- *   typo), then `POST {API_BASE}/training-api/workout/schedule` with
- *   `{workoutId, date}` assigns it to a calendar date (`WorkoutSchedule`).
- *   Two calls, not one. `Step.type` is a discriminator: `"WorkoutStep"`
+ * - **`pushStructuredWorkoutToGarmin()`'s request shape**, against the
+ *   real Workout Portal OpenAPI spec: `POST {API_BASE}/training-api/workout`
+ *   creates a `Workout`, then `POST {API_BASE}/training-api/workout/schedule`
+ *   with `{workoutId, date}` assigns it to a calendar date
+ *   (`WorkoutSchedule`). Two calls, not one.
+ *   **Live-tested and fixed (Nov 2026)**: the spec's own path for
+ *   creation is literally `/workout`, which first looked like it should
+ *   append onto `servers.url` (already ending in `/training-api/workout`)
+ *   for a double segment — but a real POST to that double-segment URL
+ *   returned `405 "This endpoint supports 'DELETE', 'GET', 'PUT'"`,
+ *   i.e. it was being routed as the single-workout-by-id resource, not
+ *   the create endpoint. The server base already IS the `/workout`
+ *   collection's URL — POST straight to `{API_BASE}/training-api/workout`
+ *   with no extra segment is the real create call. `/schedule` doesn't
+ *   have this issue (the server base doesn't already end in
+ *   `/schedule`), so that URL was correct as originally built. This
+ *   same double-prefix trap may also affect Course Portal if it's ever
+ *   built (its `servers.url` similarly ends in a segment — `/courses`
+ *   — that its own paths start with again) — verify live before
+ *   trusting naive concatenation there too. `Step.type` is a discriminator: `"WorkoutStep"`
  *   for a plain step or `"WorkoutRepeatStep"` for a repeat marker.
  *   **Still a real simplification**: the confirmed schema has no
  *   nested "child steps of a repeat" field on `WorkoutRepeatStep`
@@ -363,7 +374,7 @@ export async function pushStructuredWorkoutToGarmin(athleteId: string, workout: 
   const apiBase = requireGarminDevEnv("GARMIN_DEV_API_BASE");
   const headers = { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" };
 
-  const createRes = await fetch(`${apiBase}/training-api/workout/workout`, {
+  const createRes = await fetch(`${apiBase}/training-api/workout`, {
     method: "POST",
     headers,
     body: JSON.stringify({

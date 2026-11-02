@@ -1568,6 +1568,78 @@ token exchange with `code_verifier`, row written to
   nothing confirmed at all, even though the exact push envelope is
   still open.
 
+## AI-generated structured steps (Nov 2026)
+
+Direct, verbatim complaint while testing the structured-steps editor
+manually: "aqui debería ir un ai donde escribes y te genera el
+entrenamineto, es una huevada tener que meter manual siempre." A
+"Generate with AI" text box now sits above the manual step editor in
+`WorkoutDialog.tsx` — type a plain-language description (e.g. "10min
+warmup, 6x400m at 5K pace with 90s jog recovery, 10min cooldown") and
+it replaces the current step list with the parsed structure, still
+fully editable afterward via the existing manual row editor.
+
+- **`lib/integrations/claude.ts`'s `generateWorkoutStepsFromPrompt()`**
+  reuses the same direct-fetch-to-the-Messages-API pattern this file
+  already had (`generateActivityDescription()`) rather than introducing
+  the Anthropic SDK as a new dependency for one more call — same model
+  (`claude-sonnet-5-5`), same endpoint.
+- **A forced tool call was NOT used** — `tool_choice: {type: "any"}`/
+  `{type: "tool", name}` return a 400 on `claude-sonnet-5-5` (current
+  API behavior). Instead: `strict: true` on the one tool
+  (`set_workout_steps`, schema-validates `tool_use.input` exactly) +
+  `tool_choice: {type: "auto"}` + an explicit system instruction to
+  always call it and never reply with plain text — same practical
+  guarantee of clean structured JSON back, without the forced-choice
+  parameter Sonnet 5.5 rejects.
+- **Numeric fields use `0` as "no value" inside the tool schema, then
+  get normalized to `null`** after the call (`durationValue`/
+  `targetLow`/`targetHigh` > 0 kept, else `null`; `repeatCount` > 1
+  kept, else `null`) — `WorkoutStep`'s real fields are nullable, but a
+  JSON Schema nullable union wasn't confirmed safe under `strict: true`
+  mode, so the schema itself stays all-`number`/`string` and the
+  conversion happens in application code instead.
+- **Explicitly told not to invent a target number** when the athlete
+  names an intensity with nothing to derive it from (e.g. "5K pace",
+  "easy") — same "never invent data not given to you" rule this file's
+  `generateActivityDescription()` already follows; `targetType` falls
+  back to `"open"` in that case rather than guessing a pace/HR/power
+  value.
+- **Unlike `generateActivityDescription()`'s best-effort/silent-skip
+  pattern**, this is a direct interactive action (the athlete clicked
+  Generate and is watching) — `generateWorkoutStepsFromPrompt()`
+  throws on any failure (`ANTHROPIC_API_KEY` missing, bad response
+  shape, no tool call returned) and `POST /api/workouts/generate-steps`
+  surfaces that as a real error message under the input box, not a
+  silent no-op.
+- Returned steps carry no `id` (`Omit<WorkoutStep, "id">[]`) — the
+  dialog assigns a fresh one per step with the same `newStepId()`
+  helper a manually-added step already uses.
+- New endpoint has no special scoping (any signed-in athlete can
+  generate steps for any workout) — matches the existing "shared coach
+  log" openness this app already has for editing any workout.
+
+### Garmin workout-creation URL bug found and fixed the same session (Nov 2026)
+
+Live-testing "Push to Garmin" right after this, the real Workout Portal
+rejected the create call with `405 "This endpoint supports 'DELETE',
+'GET', 'PUT'"` — direct evidence the URL
+`pushStructuredWorkoutToGarmin()` built was wrong, overriding what the
+written OpenAPI spec seemed to say. The spec's create operation path is
+literally `/workout`, which looked like it should append onto
+`servers.url` (already ending in `/training-api/workout`) for
+`.../training-api/workout/workout` — but a real POST there routed as
+the single-workout-by-id resource (GET/PUT/DELETE), not the collection
+create endpoint. **Fixed**: the server base already IS the `/workout`
+collection URL — `POST {API_BASE}/training-api/workout` (no extra
+segment) is the real create call. `/schedule` wasn't affected (the
+server base doesn't already end in `/schedule`, so naive concatenation
+was already correct there) — only the workout-creation URL changed.
+**This same double-prefix trap may affect Course Portal if it's ever
+built** (`servers.url` ends in `/courses`, and its own documented paths
+start with `/courses` again) — verify live before trusting naive
+concatenation there too, don't assume the pattern definitely repeats.
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as
