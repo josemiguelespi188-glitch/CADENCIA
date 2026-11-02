@@ -16,6 +16,7 @@ import {
   type WorkoutStepTargetType,
 } from "@/lib/types";
 import { ymd, today } from "@/lib/dates";
+import { resolveHrZones, resolvePaceZones, resolvePowerZones, type HrZone, type PaceZone, type PowerZone, type ZoneKey } from "@/lib/zones";
 
 export type WorkoutWithSlug = Workout & { athleteSlug: AthleteSlug };
 
@@ -224,6 +225,17 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
 
   const isNew = !editing?.record;
 
+  // Real zones for whichever athlete this workout belongs to, so the
+  // structured-step editor can offer "pick a zone" instead of making the
+  // athlete look up and type their own bpm/pace/watts range by hand —
+  // see StepRow's ZonePick below.
+  const stepAthlete = athletes.find((a) => a.slug === value.athleteSlug) ?? null;
+  const stepZones = {
+    hr: stepAthlete ? resolveHrZones(stepAthlete).zones : null,
+    pace: stepAthlete ? resolvePaceZones(stepAthlete) : null,
+    power: stepAthlete ? resolvePowerZones(stepAthlete).zones : null,
+  };
+
   function handleDialogClick(e: React.MouseEvent<HTMLDialogElement>) {
     // Native <dialog> has no built-in "click outside to close" — a click
     // on the backdrop still targets the dialog element itself, so a
@@ -413,7 +425,7 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
             ) : (
               <div className="flex flex-col gap-2">
                 {value.workoutSteps.map((step) => (
-                  <StepRow key={step.id} step={step} onChange={(patch) => updateStep(step.id, patch)} onRemove={() => removeStep(step.id)} />
+                  <StepRow key={step.id} step={step} zones={stepZones} onChange={(patch) => updateStep(step.id, patch)} onRemove={() => removeStep(step.id)} />
                 ))}
               </div>
             )}
@@ -539,13 +551,71 @@ function targetUnit(targetType: WorkoutStepTargetType, t: (key: string) => strin
 }
 
 /**
+ * "Pick a zone" quick-fill for a step's HR/pace/power target — sets
+ * targetLow/targetHigh to that athlete's own real zone range (Strava's
+ * if configured, else computed from their threshold, same resolution
+ * ZoneTables uses — see lib/zones.ts's resolve*Zones()) instead of
+ * making the athlete look up and type the bpm/pace/watts range by
+ * hand. A one-shot action select, not a persistently-controlled value
+ * — picking a zone doesn't lock the field to exactly that band,
+ * targetLow/targetHigh stay freely editable in the inputs above.
+ */
+function ZonePick<Z extends { key: ZoneKey }>({
+  zones,
+  toRange,
+  onPick,
+}: {
+  zones: Z[];
+  toRange: (zone: Z) => [number | null, number | null];
+  onPick: (low: number | null, high: number | null) => void;
+}) {
+  const { t } = useLocale();
+  return (
+    <select
+      onChange={(e) => {
+        const key = e.target.value;
+        if (!key) return;
+        const zone = zones.find((z) => z.key === key);
+        if (zone) onPick(...toRange(zone));
+        e.target.value = "";
+      }}
+      defaultValue=""
+      className={stepInputCls + " col-span-2 sm:col-span-6"}
+    >
+      <option value="">{t("steps_zone_pick")}</option>
+      {zones.map((z) => (
+        <option key={z.key} value={z.key}>
+          {t(`zone_${z.key}`)}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/**
  * One row of a structured workout — a minimal, functional editor (not a
  * fancy drag/drop builder) so the "Structured Workouts and Training Plans
  * Sync" capability applied for with COROS has real Cadencia-side data to
  * push, once that integration is actually wired up. See
  * lib/integrations/coros.ts for why the push itself is still unconfirmed.
  */
-function StepRow({ step, onChange, onRemove }: { step: WorkoutStep; onChange: (patch: Partial<WorkoutStep>) => void; onRemove: () => void }) {
+interface StepZones {
+  hr: HrZone[] | null;
+  pace: PaceZone[] | null;
+  power: PowerZone[] | null;
+}
+
+function StepRow({
+  step,
+  zones,
+  onChange,
+  onRemove,
+}: {
+  step: WorkoutStep;
+  zones: StepZones;
+  onChange: (patch: Partial<WorkoutStep>) => void;
+  onRemove: () => void;
+}) {
   const { t } = useLocale();
   return (
     <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-line p-2 sm:grid-cols-6">
@@ -615,6 +685,27 @@ function StepRow({ step, onChange, onRemove }: { step: WorkoutStep; onChange: (p
             <span className="shrink-0 text-[10px] text-ink-3">{targetUnit(step.targetType, t)}</span>
           </div>
         </>
+      )}
+      {step.targetType === "hr" && zones.hr && (
+        <ZonePick
+          zones={zones.hr}
+          toRange={(z) => [z.min, z.max]}
+          onPick={(low, high) => onChange({ targetLow: low, targetHigh: high })}
+        />
+      )}
+      {step.targetType === "pace" && zones.pace && (
+        <ZonePick
+          zones={zones.pace}
+          toRange={(z) => [z.fastSecPerKm, z.slowSecPerKm]}
+          onPick={(low, high) => onChange({ targetLow: low, targetHigh: high })}
+        />
+      )}
+      {step.targetType === "power" && zones.power && (
+        <ZonePick
+          zones={zones.power}
+          toRange={(z) => [z.min, z.max]}
+          onPick={(low, high) => onChange({ targetLow: low, targetHigh: high })}
+        />
       )}
       <div className="col-span-2 flex items-center gap-1.5 sm:col-span-6">
         <input

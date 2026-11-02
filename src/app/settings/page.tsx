@@ -10,7 +10,6 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { Athlete } from "@/lib/types";
 import { parsePace } from "@/lib/dates";
-import { ZoneTables } from "@/components/ZoneTables";
 import { AthleteProfileCard } from "@/components/AthleteProfileCard";
 
 interface StravaStatus {
@@ -367,7 +366,6 @@ function AthleteZonesCard({ slug, name }: { slug: string; name: string }) {
   }
 
   return (
-    <>
     <Card>
       <CardTitle>
         {name} · {t("zones_h")}
@@ -440,13 +438,7 @@ function AthleteZonesCard({ slug, name }: { slug: string; name: string }) {
           {saved && <span className="text-xs text-ink-3">{t("zones_saved")}</span>}
         </div>
       </form>
-      </Card>
-      {athlete && (athlete.threshold_hr || athlete.threshold_pace_sec_per_km || athlete.ftp_watts || athlete.strava_hr_zones) && (
-        <div className="mt-4">
-          <ZoneTables athlete={athlete} />
-        </div>
-      )}
-    </>
+    </Card>
   );
 }
 

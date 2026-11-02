@@ -1763,6 +1763,51 @@ swim/bike/run/gym/race).
   launcher only ever appears for a brand-new workout, since the sport
   is already known once one exists.
 
+## Structured-step targets linked to the athlete's real zones (Nov 2026)
+
+Direct instruction: "esto debería estar vinculado a las zonas del
+usuario... que automáticamente diga qué zonas cardíacas se deben
+trabajar." The HR/pace/power target fields in a structured step used
+to be free-typed numbers with no connection to the athlete's own
+configured zones — now a "Use a zone…" quick-pick appears next to
+those fields (whichever target type is selected) and fills
+targetLow/targetHigh with that athlete's **real** zone range.
+
+- **`lib/zones.ts` gained `ZONE_ORDER`, `resolveHrZones()`,
+  `resolvePowerZones()`, `resolvePaceZones()`** — the exact "Strava's
+  configured zones if present, else computed from the manually-entered
+  threshold" resolution `ZoneTables.tsx` already had inline, now
+  shared so `WorkoutDialog.tsx`'s zone quick-pick uses the identical
+  real numbers, not a second guess at them. `ZoneTables.tsx` itself
+  was refactored to call these instead of duplicating the logic.
+- **`WorkoutDialog`** resolves zones for whichever athlete the workout
+  currently belongs to (`value.athleteSlug`, looked up against the
+  `athletes` prop already passed in) and threads a `{hr, pace, power}`
+  zones object down to each `StepRow`. Cadence has no zone concept in
+  this app (no FTP-style cadence threshold), so it stays manual-only.
+- **`ZonePick`** (new, generic over `HrZone | PaceZone | PowerZone`):
+  a one-shot "action select" (same pattern the template picker already
+  uses — `defaultValue=""`, resets after firing) rather than a
+  persistently-controlled value. Picking a zone fills targetLow/
+  targetHigh but doesn't lock the field to exactly that band — the
+  number inputs above it stay freely editable for fine-tuning after.
+  Only rendered when that athlete actually has the relevant zones
+  resolved (no threshold set yet = no picker, same as `ZoneTables`'
+  own "add the threshold to compute zones" fallback).
+
+## Settings: removed the duplicate zone table (Nov 2026)
+
+Direct complaint, with a screenshot of `/settings`: the heart-rate/pace
+zone tables were rendering twice in a row — once inside
+`AthleteProfileCard` (added earlier specifically as an at-a-glance
+summary, with its own caption pointing down to "Training Zones" for
+editing) and again immediately inside `AthleteZonesCard` itself, right
+after the very form that caption points to. Removed the second,
+truly-redundant render from `AthleteZonesCard` (which also dropped its
+now-unnecessary `<>...</>` fragment wrapper back to a plain `<Card>`) —
+`AthleteProfileCard`'s copy, together with the editable threshold
+inputs still in `AthleteZonesCard`, is the only one left.
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as
