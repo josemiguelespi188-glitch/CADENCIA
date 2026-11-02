@@ -12,7 +12,8 @@ export async function GET() {
     return NextResponse.redirect(`${getSiteBaseUrl()}/settings?garmindev=error`);
   }
   try {
-    return NextResponse.redirect(buildGarminDevAuthorizeUrl(athlete.id));
+    const url = await buildGarminDevAuthorizeUrl(athlete.id);
+    return NextResponse.redirect(url);
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Garmin Developer API is not configured yet." },

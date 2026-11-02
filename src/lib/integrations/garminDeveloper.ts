@@ -15,16 +15,39 @@ import type { Workout, WorkoutStep } from "@/lib/types";
  * the Personal API tier cannot do at all).
  *
  * **What's confirmed vs not, from this sandbox:**
- * - The OAuth2 authorization-code-grant SHAPE below is standard,
- *   generic OAuth2 (RFC 6749) — safe to trust as code, same reasoning
- *   already applied to Strava/COROS in this codebase.
- * - The ACTUAL authorize/token/API base URLs are NOT hardcoded here —
- *   `developer.garmin.com` is blocked from this sandbox (same standing
- *   limitation as COROS's Dropbox-hosted docs), so these are required
- *   env vars with no guessed default. Get the real values from the
- *   "Start Guide" / "Documentation" pages in the Garmin Developer
- *   Portal (the "Apps" section is also where the Client ID/Secret and
- *   the Authorized Callback Domain are registered).
+ * - **Confirmed live (Nov 2026) via Garmin's own "OAuth2 Tools"
+ *   interactive walkthrough that this is OAuth 2.0 with PKCE**
+ *   (code_verifier/code_challenge/S256) — not a plain authorization
+ *   code grant. `buildGarminDevAuthorizeUrl()` generates the verifier,
+ *   stashes it server-side in `garmin_oauth_pkce` keyed by a random
+ *   `state` (the athlete's id is no longer the state value itself —
+ *   state is now an opaque random token, looked up to get both the
+ *   athlete id and the code_verifier back in the callback), and
+ *   `exchangeGarminDevCode()` sends it back as `code_verifier` in the
+ *   token request, per the walkthrough's own step 4.
+ * - **Authorize URL confirmed**: `https://connect.garmin.com/oauth2Confirm`
+ *   — read directly from the walkthrough's own "Build the Authorization
+ *   URL" step, which showed the exact query params used
+ *   (`client_id`, `response_type=code`, `state`, `redirect_uri`,
+ *   `code_challenge`, `code_challenge_method=S256` — no `scope` param;
+ *   scope appears to be derived server-side from the app's selected
+ *   APIs, not something passed here).
+ * - **Token response shape confirmed** from the same walkthrough's
+ *   step 4 result: `access_token`, `refresh_token`, `token_type:
+ *   "bearer"`, `scope` (a space-separated string, e.g. "PARTNER_WRITE
+ *   PARTNER_READ CONNECT_READ CONNECT_WRITE"), `jti` (unused),
+ *   `expires_in`, and `refresh_token_expires_in` (refresh tokens also
+ *   expire — ~90 days seen live — not tracked separately here since
+ *   Cadencia only ever refreshes the access token proactively; a
+ *   fully-expired refresh token would surface as a failed refresh,
+ *   requiring the athlete to reconnect). **No `user_id` field in the
+ *   real response** — the earlier guessed optional field was removed;
+ *   `garmin_user_id` is left null for now. The confirmed Partner API
+ *   spec does have a `GET /partner-gateway/rest/user/id` endpoint that
+ *   could populate it later if needed.
+ * - **Token URL is still NOT confirmed** — the walkthrough's step 4
+ *   didn't show a "Base URL" the way step 2 did; `GARMIN_DEV_TOKEN_URL`
+ *   stays a required env var with no guessed default.
  * - "Delivery: Push only" (per the Starter Access screenshot) means
  *   there is NO pull/poll endpoint for Activity/Health/Training data —
  *   Garmin calls a webhook on OUR side whenever an athlete's device
@@ -85,14 +108,57 @@ function requireGarminDevEnv(name: string): string {
   return value;
 }
 
-export function buildGarminDevAuthorizeUrl(athleteId: string) {
+/** Base64url encoding (RFC 4648 §5) — no padding, `+`/`/` swapped for
+ * `-`/`_`. Used for both the PKCE code_verifier and code_challenge. */
+function base64url(bytes: Uint8Array): string {
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/** A cryptographically random, URL-safe string — used both as the PKCE
+ * code_verifier (its base64url alphabet is a valid subset of the
+ * verifier's allowed charset, A-Z a-z 0-9 -._~) and as the opaque
+ * `state` value. */
+function randomUrlSafeString(byteLength: number): string {
+  const bytes = new Uint8Array(byteLength);
+  crypto.getRandomValues(bytes);
+  return base64url(bytes);
+}
+
+/** PKCE code_challenge = BASE64URL(SHA256(code_verifier)), per RFC 7636
+ * and confirmed against Garmin's own "OAuth2 Tools" walkthrough. */
+async function codeChallengeFromVerifier(verifier: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+  return base64url(new Uint8Array(digest));
+}
+
+/**
+ * Builds Garmin's authorize URL and stashes the PKCE code_verifier
+ * server-side (keyed by a random `state`) so it survives the round trip
+ * to Garmin's consent screen and back — see this file's header for how
+ * this was confirmed. Async because it writes that row before
+ * returning the URL to redirect to.
+ */
+export async function buildGarminDevAuthorizeUrl(athleteId: string): Promise<string> {
   const authorizeUrl = requireGarminDevEnv("GARMIN_DEV_AUTHORIZE_URL");
   const clientId = requireGarminDevEnv("GARMIN_DEV_CLIENT_ID");
+
+  const codeVerifier = randomUrlSafeString(64);
+  const codeChallenge = await codeChallengeFromVerifier(codeVerifier);
+  const state = randomUrlSafeString(32);
+
+  const db = createServiceClient();
+  const { error } = await db.from("garmin_oauth_pkce").insert({ state, athlete_id: athleteId, code_verifier: codeVerifier });
+  if (error) throw new Error(`Could not start Garmin connect: ${error.message}`);
+
   const params = new URLSearchParams({
     client_id: clientId,
-    redirect_uri: `${getSiteBaseUrl()}/api/garmin-dev/callback`,
     response_type: "code",
-    state: athleteId,
+    state,
+    redirect_uri: `${getSiteBaseUrl()}/api/garmin-dev/callback`,
+    code_challenge: codeChallenge,
+    code_challenge_method: "S256",
   });
   return `${authorizeUrl}?${params.toString()}`;
 }
@@ -100,17 +166,19 @@ export function buildGarminDevAuthorizeUrl(athleteId: string) {
 interface GarminDevTokenResponse {
   access_token: string;
   refresh_token: string;
-  /** Standard OAuth2 convention (RFC 6749): seconds until expiry from
-   * now. Assumed here as the more common shape; not independently
-   * confirmed for Garmin's Developer Program specifically. */
+  token_type: string;
+  /** Space-separated scope string, e.g. "PARTNER_WRITE PARTNER_READ
+   * CONNECT_READ CONNECT_WRITE" — confirmed live. */
+  scope: string;
   expires_in: number;
-  scope?: string;
-  /** Guessed field name for Garmin's own athlete/user id in the token
-   * response — unconfirmed. */
-  user_id?: string;
+  /** Confirmed live: refresh tokens expire too (~90 days seen) — not
+   * separately tracked here, see this file's header. */
+  refresh_token_expires_in: number;
 }
 
-export async function exchangeGarminDevCode(code: string): Promise<GarminDevTokenResponse> {
+/** `codeVerifier` is the one generated in `buildGarminDevAuthorizeUrl()`
+ * for this same `state`, looked up by the callback route. */
+export async function exchangeGarminDevCode(code: string, codeVerifier: string): Promise<GarminDevTokenResponse> {
   const tokenUrl = requireGarminDevEnv("GARMIN_DEV_TOKEN_URL");
   const res = await fetch(tokenUrl, {
     method: "POST",
@@ -121,6 +189,7 @@ export async function exchangeGarminDevCode(code: string): Promise<GarminDevToke
       code,
       grant_type: "authorization_code",
       redirect_uri: `${getSiteBaseUrl()}/api/garmin-dev/callback`,
+      code_verifier: codeVerifier,
     }),
   });
   if (!res.ok) throw new Error(`Garmin Developer token exchange failed: ${res.status} ${await res.text()}`);

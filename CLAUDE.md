@@ -1474,10 +1474,57 @@ several things that were previously flagged as pure guesswork:
   entries instead of attempting an unconfirmed `WorkoutRepeatStep`
   wrapper. Functionally equivalent for the athlete, just not using
   Garmin's native repeat-block UI grouping on their end.
-- **The OAuth authorize/token URLs are still NOT confirmed** — none of
-  the 4 specs include an OAuth server (they're all data APIs). Still
-  blocking a real end-to-end connect test; check "OAuth2 Tools" ->
-  "User Authorization" / "Refresh Token" specifically for those two.
+- **The OAuth authorize/token URLs were not in those 4 specs** — none
+  of them include an OAuth server (they're all data APIs). Resolved
+  separately — see the next entry.
+
+### Real PKCE flow confirmed via Garmin's own interactive walkthrough (Nov 2026)
+
+The user then walked through Garmin's own "OAuth2 Tools" interactive
+tester (4 steps: generate code verifier/challenge, build the authorize
+URL, redirect back, exchange for a token) and shared screenshots of
+steps 1, 2, and the token result — a live, confirmed example of the
+real flow, not documentation prose. This was a meaningfully bigger
+finding than just "here are two URLs":
+
+- **Garmin's OAuth 2.0 requires PKCE** (code_verifier/code_challenge/
+  S256) — the authorization-code-grant shape `garminDeveloper.ts`
+  originally had was generic OAuth2, not wrong, but incomplete; it
+  never generated or sent a code_verifier/code_challenge at all, so it
+  would have been rejected. Rewritten: `buildGarminDevAuthorizeUrl()`
+  is now `async`, generates a real PKCE pair (`crypto.getRandomValues`
+  + `crypto.subtle.digest("SHA-256", ...)`, no external library needed),
+  and persists `{state, athlete_id, code_verifier}` in a new
+  `garmin_oauth_pkce` table (migration `028_garmin_oauth_pkce.sql`,
+  mirrored in `schema.sql` — **needs this migration run in the
+  Supabase SQL editor**) so the verifier survives the round trip to
+  Garmin's consent screen and back. `state` is now an opaque random
+  token (not the athlete id directly, unlike Strava/COROS) — the
+  callback looks it up to recover both the athlete id and the
+  verifier, then deletes the row. `exchangeGarminDevCode()` gained a
+  required `codeVerifier` parameter, sent as `code_verifier` in the
+  token request body.
+- **Authorize URL confirmed**: `https://connect.garmin.com/oauth2Confirm`
+  — read directly from the walkthrough's own displayed query params
+  (`client_id`, `response_type=code`, `state`, `redirect_uri`,
+  `code_challenge`, `code_challenge_method=S256`; no `scope` param —
+  scope is apparently derived server-side from the app's selected
+  APIs). **`GARMIN_DEV_TOKEN_URL` is still the one piece left
+  unconfirmed** — the walkthrough's step 4 only showed the token
+  *response*, not a "Base URL" the way step 2 did for the authorize
+  step; still a required env var with no guessed default.
+- **Token response shape confirmed** from the real step-4 result:
+  `access_token`, `refresh_token`, `token_type: "bearer"`, `scope`
+  (space-separated, e.g. `"PARTNER_WRITE PARTNER_READ CONNECT_READ
+  CONNECT_WRITE"`), `jti` (unused), `expires_in`, and
+  `refresh_token_expires_in` (~90 days seen live — refresh tokens
+  expire too; not separately tracked, since Cadencia only ever
+  refreshes the access token proactively with a 5-minute margin).
+  **No `user_id` field** — the earlier guessed optional field on
+  `GarminDevTokenResponse` was removed; `garmin_dev_connections.
+  garmin_user_id` stays null for now (the confirmed Partner API spec
+  does have `GET /partner-gateway/rest/user/id` that could populate it
+  later, not built yet, not needed for the push flow to work).
 - **The real Health API response schemas are now known** (`ClientSleep`,
   `ClientDailySpo2Acclimation` for Pulse Ox, `ClientHRVSummary`,
   `ClientDaily`, `ClientActivity`, `ClientBloodPressure`, etc., all in

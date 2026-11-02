@@ -281,6 +281,17 @@ create table if not exists garmin_push_events (
   processed boolean not null default false
 );
 
+-- Garmin's OAuth 2.0 authorize step requires PKCE (confirmed live, Nov
+-- 2026) — the code_verifier generated when building the authorize URL
+-- has to survive the round trip to Garmin and back, stashed here keyed
+-- by a random state. See migration 028.
+create table if not exists garmin_oauth_pkce (
+  state text primary key,
+  athlete_id uuid not null references athletes(id) on delete cascade,
+  code_verifier text not null,
+  created_at timestamptz not null default now()
+);
+
 -- ─── updated_at trigger for workouts ────────────────────────────────────────
 create or replace function set_updated_at()
 returns trigger as $$
@@ -354,6 +365,9 @@ alter table garmin_dev_connections enable row level security;
 alter table garmin_push_events enable row level security;
 -- Deliberately no policies at all — service-role only, may hold raw
 -- End User health data.
+
+alter table garmin_oauth_pkce enable row level security;
+-- Deliberately no policies at all — service-role only.
 
 alter table strava_daily_load enable row level security;
 drop policy if exists strava_daily_load_select_public on strava_daily_load;
