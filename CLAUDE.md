@@ -1686,6 +1686,49 @@ only filled `workoutSteps`; now it fills the entire workout.
   section and the Done/RPE section from what's above, instead of
   everything running together in one undifferentiated block.
 
+## WorkoutDialog usability pass + header cleanup (Nov 2026)
+
+Several direct, concrete complaints in one session:
+
+- **"no se entiende esta sección... no se si son minutos"**: the
+  structured-step duration input showed raw seconds (e.g. `2100` for
+  35 minutes) with the unit only in a placeholder — which disappears
+  the instant a value is typed, leaving a bare, unlabeled number.
+  `StepRow` in `WorkoutDialog.tsx` now displays/edits **minutes** for a
+  `"time"` step (converted to/from seconds under the hood, where the
+  data model and Garmin's API both still expect seconds) with a
+  persistent unit label next to the input (`min`, not a placeholder).
+  The same persistent-label fix was applied to the pace/HR/power/
+  cadence target fields (`sec/km`, `bpm`, `W`, `rpm`) for the identical
+  underlying bug.
+- **"falta una X para salirse o aplastar afuera"**: `WorkoutDialog`'s
+  native `<dialog>` had no close affordance besides the Cancel button
+  at the very bottom. Added an × button next to the title, and a
+  click-outside-to-close handler — native `<dialog>` has no built-in
+  version of this, and a backdrop click still targets the dialog
+  element itself, so a bounding-rect check (not `e.target` identity,
+  unreliable once the inner form's own padding is involved) tells a
+  real outside click apart from one inside the dialog's own box. Both
+  paths call the same `onClose` prop Cancel already uses (not
+  `dialogRef.current?.close()` directly), keeping the parent's
+  `editing` state as the single source of truth for whether the dialog
+  is open.
+- **"el sign out, la luna y ES deberían estar en settings"**: moved the
+  dark-mode toggle and Sign Out from `SiteHeader`'s nav into `/settings`
+  (alongside the language toggle, which was already there) — the header
+  nav now only has Calendar/Templates/Settings/Admin. The toggle-theme
+  state/logic (localStorage read, `data-theme` attribute) moved with
+  it; the inline bootstrap script in `layout.tsx` that applies the
+  saved theme before paint is unaffected either way, since it doesn't
+  depend on where the toggle button itself lives.
+- **"que salga el logo acá"**: the heartbeat/pulse mark (already used
+  as the favicon and the Garmin app submission's branding image,
+  `public/garmin/app-icon.png`) now also appears next to the
+  "cadencia" wordmark in the header — copied to `public/logo.png` as
+  the general-purpose copy, a plain `<img>` (not `next/image`, not
+  worth the extra config for one fixed small logo) at 28x28 with
+  rounded corners.
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as

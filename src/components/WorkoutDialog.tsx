@@ -223,14 +223,38 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
 
   const isNew = !editing?.record;
 
+  function handleDialogClick(e: React.MouseEvent<HTMLDialogElement>) {
+    // Native <dialog> has no built-in "click outside to close" — a click
+    // on the backdrop still targets the dialog element itself, so a
+    // bounding-rect check (not e.target identity, which is unreliable
+    // once the inner form's own padding/overflow is involved) tells a
+    // real outside click apart from one inside the dialog's own box.
+    const dialogEl = dialogRef.current;
+    if (!dialogEl || e.target !== dialogEl) return;
+    const rect = dialogEl.getBoundingClientRect();
+    const outside = e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom;
+    if (outside) onClose();
+  }
+
   return (
     <dialog
       ref={dialogRef}
       onClose={onClose}
+      onClick={handleDialogClick}
       className="rounded-2xl border border-line bg-surface p-0 text-ink backdrop:bg-ink/50 w-[min(560px,calc(100vw-24px))] max-h-[calc(100dvh-24px)]"
     >
       <form onSubmit={handleSubmit} className="flex max-h-[calc(100dvh-24px)] flex-col gap-5 overflow-y-auto p-6">
-        <h2 className="text-xl font-semibold tracking-tight">{isNew ? t("new_w") : t("edit_w")}</h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-xl font-semibold tracking-tight">{isNew ? t("new_w") : t("edit_w")}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={t("cancel")}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-lg text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink"
+          >
+            ×
+          </button>
+        </div>
 
         <div className="rounded-2xl border border-line-strong bg-surface-2 p-4">
           <label className="mb-1.5 block text-xs font-medium text-ink-2">{t("steps_ai_label")}</label>
@@ -489,6 +513,30 @@ function Field({ label, full, children }: { label: string; full?: boolean; child
 
 const stepInputCls = "h-9 rounded-lg border border-line bg-bg px-2 text-xs";
 
+/** Rounds to 1 decimal place — used to display seconds as minutes
+ * without accumulating float noise (e.g. 150s -> 2.5, not 2.4999...). */
+function round1(n: number) {
+  return Math.round(n * 10) / 10;
+}
+
+/** Persistent unit label for a target value — shown next to the input
+ * at all times (not just as a placeholder, which disappears the moment
+ * something is typed and leaves a bare number with no unit at all). */
+function targetUnit(targetType: WorkoutStepTargetType, t: (key: string) => string) {
+  switch (targetType) {
+    case "pace":
+      return t("unit_pace");
+    case "hr":
+      return t("unit_bpm");
+    case "power":
+      return t("unit_watts");
+    case "cadence":
+      return t("unit_rpm");
+    default:
+      return "";
+  }
+}
+
 /**
  * One row of a structured workout — a minimal, functional editor (not a
  * fancy drag/drop builder) so the "Structured Workouts and Training Plans
@@ -519,14 +567,22 @@ function StepRow({ step, onChange, onRemove }: { step: WorkoutStep; onChange: (p
         ))}
       </select>
       {step.durationType !== "open" && (
-        <input
-          type="number"
-          min={0}
-          placeholder={step.durationType === "time" ? t("duration_time") + " (s)" : t("duration_distance") + " (m)"}
-          value={step.durationValue ?? ""}
-          onChange={(e) => onChange({ durationValue: e.target.value ? Number(e.target.value) : null })}
-          className={stepInputCls}
-        />
+        <div className="flex items-center gap-1">
+          <input
+            type="number"
+            min={0}
+            step={step.durationType === "time" ? 0.5 : 1}
+            placeholder={step.durationType === "time" ? t("duration_time") : t("duration_distance")}
+            value={step.durationType === "time" ? (step.durationValue !== null ? round1(step.durationValue / 60) : "") : (step.durationValue ?? "")}
+            onChange={(e) => {
+              if (!e.target.value) return onChange({ durationValue: null });
+              const n = Number(e.target.value);
+              onChange({ durationValue: step.durationType === "time" ? Math.round(n * 60) : n });
+            }}
+            className={stepInputCls + " min-w-0 flex-1"}
+          />
+          <span className="shrink-0 text-[10px] text-ink-3">{step.durationType === "time" ? t("unit_min") : t("unit_m")}</span>
+        </div>
       )}
       <select value={step.targetType} onChange={(e) => onChange({ targetType: e.target.value as WorkoutStepTargetType })} className={stepInputCls}>
         {TARGET_TYPES.map((tt) => (
@@ -537,20 +593,26 @@ function StepRow({ step, onChange, onRemove }: { step: WorkoutStep; onChange: (p
       </select>
       {step.targetType !== "open" && (
         <>
-          <input
-            type="number"
-            placeholder={t("target_low")}
-            value={step.targetLow ?? ""}
-            onChange={(e) => onChange({ targetLow: e.target.value ? Number(e.target.value) : null })}
-            className={stepInputCls}
-          />
-          <input
-            type="number"
-            placeholder={t("target_high")}
-            value={step.targetHigh ?? ""}
-            onChange={(e) => onChange({ targetHigh: e.target.value ? Number(e.target.value) : null })}
-            className={stepInputCls}
-          />
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              placeholder={t("target_low")}
+              value={step.targetLow ?? ""}
+              onChange={(e) => onChange({ targetLow: e.target.value ? Number(e.target.value) : null })}
+              className={stepInputCls + " min-w-0 flex-1"}
+            />
+            <span className="shrink-0 text-[10px] text-ink-3">{targetUnit(step.targetType, t)}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              placeholder={t("target_high")}
+              value={step.targetHigh ?? ""}
+              onChange={(e) => onChange({ targetHigh: e.target.value ? Number(e.target.value) : null })}
+              className={stepInputCls + " min-w-0 flex-1"}
+            />
+            <span className="shrink-0 text-[10px] text-ink-3">{targetUnit(step.targetType, t)}</span>
+          </div>
         </>
       )}
       <div className="col-span-2 flex items-center gap-1.5 sm:col-span-6">

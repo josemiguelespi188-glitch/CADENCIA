@@ -30,9 +30,37 @@ export default function SettingsPage() {
 function SettingsContent() {
   const { t, locale, toggle: toggleLocale } = useLocale();
   const isEn = locale === "en";
-  const { me } = useAuth();
+  const { me, signOut } = useAuth();
   const searchParams = useSearchParams();
   const [toast, setToast] = useState<string | null>(null);
+  const [dark, setDark] = useState(false);
+
+  useEffect(() => {
+    try {
+      // Read in an effect, not a lazy initializer — see the same note in
+      // lib/i18n/context.tsx (avoids a server/client hydration mismatch).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (localStorage.getItem("cadencia-theme") === "dark") setDark(true);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  function toggleTheme() {
+    const next = !dark;
+    setDark(next);
+    try {
+      if (next) {
+        document.documentElement.setAttribute("data-theme", "dark");
+        localStorage.setItem("cadencia-theme", "dark");
+      } else {
+        document.documentElement.removeAttribute("data-theme");
+        localStorage.setItem("cadencia-theme", "light");
+      }
+    } catch {
+      /* ignore */
+    }
+  }
 
   useEffect(() => {
     const strava = searchParams.get("strava");
@@ -84,9 +112,37 @@ function SettingsContent() {
                 <AthleteGarminCard name={me.name} />
               </div>
 
-              <div className="mt-8">
-                <button onClick={toggleLocale} className="text-xs uppercase tracking-wide text-ink-3 hover:text-ink">
+              <div className="mt-8 flex flex-wrap items-center gap-5 border-t border-line pt-6">
+                <button onClick={toggleLocale} className="text-xs uppercase tracking-wide text-ink-3 hover:text-ink transition-colors">
                   {t("other_lang")}
+                </button>
+
+                <button
+                  onClick={toggleTheme}
+                  className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-ink-3 hover:text-ink transition-colors"
+                >
+                  {dark ? (
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <circle cx="8" cy="8" r="3.5" />
+                      <line x1="8" y1="1" x2="8" y2="2.5" />
+                      <line x1="8" y1="13.5" x2="8" y2="15" />
+                      <line x1="1" y1="8" x2="2.5" y2="8" />
+                      <line x1="13.5" y1="8" x2="15" y2="8" />
+                      <line x1="3.05" y1="3.05" x2="4.1" y2="4.1" />
+                      <line x1="11.9" y1="11.9" x2="12.95" y2="12.95" />
+                      <line x1="12.95" y1="3.05" x2="11.9" y2="4.1" />
+                      <line x1="4.1" y1="11.9" x2="3.05" y2="12.95" />
+                    </svg>
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <path d="M13.5 10A6 6 0 0 1 6 2.5a5.5 5.5 0 1 0 7.5 7.5z" />
+                    </svg>
+                  )}
+                  {dark ? (isEn ? "Light mode" : "Modo claro") : isEn ? "Dark mode" : "Modo oscuro"}
+                </button>
+
+                <button onClick={signOut} className="ml-auto text-xs uppercase tracking-wide text-ink-3 hover:text-ink transition-colors">
+                  {t("sign_out")}
                 </button>
               </div>
             </>
