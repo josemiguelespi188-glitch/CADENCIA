@@ -65,26 +65,35 @@ import type { Workout, WorkoutStep } from "@/lib/types";
  *   any of those specs (they're all data APIs, not the OAuth server
  *   itself); get those from "OAuth2 Tools" -> "User Authorization" /
  *   "Refresh Token" specifically.
- * - **`pushStructuredWorkoutToGarmin()`'s request shape**, against the
- *   real Workout Portal OpenAPI spec: `POST {API_BASE}/training-api/workout`
- *   creates a `Workout`, then `POST {API_BASE}/training-api/workout/schedule`
- *   with `{workoutId, date}` assigns it to a calendar date
- *   (`WorkoutSchedule`). Two calls, not one.
- *   **Live-tested and fixed (Nov 2026)**: the spec's own path for
- *   creation is literally `/workout`, which first looked like it should
- *   append onto `servers.url` (already ending in `/training-api/workout`)
- *   for a double segment — but a real POST to that double-segment URL
- *   returned `405 "This endpoint supports 'DELETE', 'GET', 'PUT'"`,
- *   i.e. it was being routed as the single-workout-by-id resource, not
- *   the create endpoint. The server base already IS the `/workout`
- *   collection's URL — POST straight to `{API_BASE}/training-api/workout`
- *   with no extra segment is the real create call. `/schedule` doesn't
- *   have this issue (the server base doesn't already end in
- *   `/schedule`), so that URL was correct as originally built. This
- *   same double-prefix trap may also affect Course Portal if it's ever
- *   built (its `servers.url` similarly ends in a segment — `/courses`
- *   — that its own paths start with again) — verify live before
- *   trusting naive concatenation there too. `Step.type` is a discriminator: `"WorkoutStep"`
+ * - **`pushStructuredWorkoutToGarmin()`'s request shape** — two calls,
+ *   not one: create the `Workout`, then assign it to a date
+ *   (`WorkoutSchedule`). The exact URLs have needed two live-tested
+ *   fixes so far (Nov 2026), both from the same symptom: a POST that
+ *   should hit a "create" endpoint instead got routed to the
+ *   single-resource-by-id endpoint (`405 "This endpoint supports
+ *   'DELETE', 'GET', 'PUT'"`) — meaning naive concatenation onto the
+ *   spec's documented `servers.url` doesn't reliably reach the real
+ *   create routes:
+ *   1. `POST {API_BASE}/training-api/workout` creates a `Workout` —
+ *      fixed from the spec's literal `servers.url + "/workout"` (which
+ *      duplicated the base's own trailing `/workout` segment and 405'd).
+ *   2. `POST {API_BASE}/training-api/schedule` creates a
+ *      `WorkoutSchedule` (`{workoutId, date}`) — **also fixed, same
+ *      symptom**: `{API_BASE}/training-api/workout/schedule` (naive
+ *      concatenation, matching the spec's `servers.url + "/schedule"`
+ *      literally) 405'd the same way even though it has no literal
+ *      duplicate segment, which suggests the real router treats ANY
+ *      path appended onto `.../training-api/workout` as the
+ *      by-id resource regardless of its content — so `/schedule`'s
+ *      real endpoint was guessed to live outside that base entirely,
+ *      as its own sibling resource directly under `/training-api/`.
+ *      **This second fix is NOT yet confirmed live** — if it still
+ *      404s/405s, the schedule endpoint's real location needs to come
+ *      from the portal's own docs rather than another guess.
+ *   This same trap may also affect Course Portal if it's ever built
+ *   (its `servers.url` similarly ends in a segment, `/courses`, that
+ *   its own paths start with again) — verify live, don't assume this
+ *   specific pattern repeats there. `Step.type` is a discriminator: `"WorkoutStep"`
  *   for a plain step or `"WorkoutRepeatStep"` for a repeat marker.
  *   **Still a real simplification**: the confirmed schema has no
  *   nested "child steps of a repeat" field on `WorkoutRepeatStep`
@@ -388,7 +397,7 @@ export async function pushStructuredWorkoutToGarmin(athleteId: string, workout: 
   }
   const created: GarminWorkoutCreateResponse = await createRes.json();
 
-  const scheduleRes = await fetch(`${apiBase}/training-api/workout/schedule`, {
+  const scheduleRes = await fetch(`${apiBase}/training-api/schedule`, {
     method: "POST",
     headers,
     body: JSON.stringify({ workoutId: created.workoutId, date: workout.date }),

@@ -351,19 +351,28 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
                 + {t("steps_add")}
               </Button>
             </div>
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <input
-                type="text"
+            <div className="mb-3 rounded-xl border border-line bg-surface-2 p-3">
+              <label className="mb-1.5 block text-xs font-medium text-ink-2">{t("steps_ai_label")}</label>
+              <textarea
+                rows={2}
                 placeholder={t("steps_ai_placeholder")}
                 value={aiPrompt}
                 onChange={(e) => setAiPrompt(e.target.value)}
-                className="h-9 min-w-[240px] flex-1 rounded-xl border border-line bg-bg px-3 text-sm"
+                className="w-full resize-none rounded-lg border border-line bg-bg px-3 py-2 text-sm"
               />
-              <Button type="button" size="sm" disabled={aiBusy || !aiPrompt.trim()} onClick={generateStepsFromAI}>
-                {aiBusy ? t("steps_ai_generating") : t("steps_ai_generate")}
-              </Button>
+              <div className="mt-2 flex items-center justify-end">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={aiBusy || !aiPrompt.trim()}
+                  onClick={generateStepsFromAI}
+                  className="shrink-0 whitespace-nowrap"
+                >
+                  {aiBusy ? t("steps_ai_generating") : t("steps_ai_generate")}
+                </Button>
+              </div>
+              {aiMessage && <p className="mt-2 text-xs text-error">{aiMessage}</p>}
             </div>
-            {aiMessage && <p className="mb-2 text-xs text-error">{aiMessage}</p>}
             {value.workoutSteps.length === 0 ? (
               <p className="text-xs text-ink-3">{t("steps_empty")}</p>
             ) : (
@@ -375,15 +384,33 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
             )}
             <p className="mt-1 text-xs text-ink-3">{t("steps_hint")}</p>
             {!isNew && editing?.record && value.workoutSteps.length > 0 && (
-              <div className="mt-2 flex items-center gap-2">
-                <Button type="button" variant="steel" size="sm" disabled={pushBusy} onClick={() => editing.record && pushToCoros(editing.record.id)}>
-                  {pushBusy ? "…" : t("steps_push_coros")}
-                </Button>
-                {pushMessage && <span className="text-xs text-ink-3">{pushMessage}</span>}
-                <Button type="button" variant="steel" size="sm" disabled={garminPushBusy} onClick={() => editing.record && pushToGarmin(editing.record.id)}>
-                  {garminPushBusy ? "…" : t("steps_push_garmin")}
-                </Button>
-                {garminPushMessage && <span className="text-xs text-ink-3">{garminPushMessage}</span>}
+              <div className="mt-3 flex flex-col gap-2">
+                <div className="flex items-start gap-2">
+                  <Button
+                    type="button"
+                    variant="steel"
+                    size="sm"
+                    disabled={pushBusy}
+                    onClick={() => editing.record && pushToCoros(editing.record.id)}
+                    className="shrink-0 whitespace-nowrap"
+                  >
+                    {pushBusy ? "…" : t("steps_push_coros")}
+                  </Button>
+                  {pushMessage && <span className="mt-2 text-xs text-ink-3 break-words">{pushMessage}</span>}
+                </div>
+                <div className="flex items-start gap-2">
+                  <Button
+                    type="button"
+                    variant="steel"
+                    size="sm"
+                    disabled={garminPushBusy}
+                    onClick={() => editing.record && pushToGarmin(editing.record.id)}
+                    className="shrink-0 whitespace-nowrap"
+                  >
+                    {garminPushBusy ? "…" : t("steps_push_garmin")}
+                  </Button>
+                  {garminPushMessage && <span className="mt-2 text-xs text-ink-3 break-words">{garminPushMessage}</span>}
+                </div>
               </div>
             )}
           </div>
@@ -523,7 +550,7 @@ function StepRow({ step, onChange, onRemove }: { step: WorkoutStep; onChange: (p
           placeholder={t("steps_repeat")}
           value={step.repeatCount ?? ""}
           onChange={(e) => onChange({ repeatCount: e.target.value ? Number(e.target.value) : null })}
-          className={stepInputCls + " w-24"}
+          className={stepInputCls + " w-28"}
         />
         <Button type="button" variant="danger" size="sm" onClick={onRemove} className="ml-auto">
           ×
