@@ -84,12 +84,12 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
   const [aiBusy, setAiBusy] = useState(false);
   const [aiMessage, setAiMessage] = useState<string | null>(null);
 
-  async function generateStepsFromAI() {
+  async function generateWorkoutFromAI() {
     if (!aiPrompt.trim()) return;
     setAiBusy(true);
     setAiMessage(null);
     try {
-      const res = await fetch("/api/workouts/generate-steps", {
+      const res = await fetch("/api/workouts/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: aiPrompt }),
@@ -97,7 +97,16 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
       const data = await res.json();
       if (res.ok) {
         const steps: WorkoutStep[] = data.steps.map((s: Omit<WorkoutStep, "id">) => ({ ...s, id: newStepId() }));
-        setValue((v) => ({ ...v, workoutSteps: steps }));
+        setValue((v) => ({
+          ...v,
+          sport: data.sport,
+          title: data.title,
+          workoutType: data.workoutType,
+          minutes: data.minutes,
+          km: data.km,
+          notes: data.notes,
+          workoutSteps: steps,
+        }));
       } else {
         setAiMessage(data.error);
       }
@@ -220,8 +229,31 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
       onClose={onClose}
       className="rounded-2xl border border-line bg-surface p-0 text-ink backdrop:bg-ink/50 w-[min(560px,calc(100vw-24px))] max-h-[calc(100dvh-24px)]"
     >
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4 p-6">
+      <form onSubmit={handleSubmit} className="flex max-h-[calc(100dvh-24px)] flex-col gap-5 overflow-y-auto p-6">
         <h2 className="text-xl font-semibold tracking-tight">{isNew ? t("new_w") : t("edit_w")}</h2>
+
+        <div className="rounded-2xl border border-line-strong bg-surface-2 p-4">
+          <label className="mb-1.5 block text-xs font-medium text-ink-2">{t("steps_ai_label")}</label>
+          <textarea
+            rows={2}
+            placeholder={t("steps_ai_placeholder")}
+            value={aiPrompt}
+            onChange={(e) => setAiPrompt(e.target.value)}
+            className="w-full resize-none rounded-lg border border-line bg-bg px-3 py-2 text-sm"
+          />
+          <div className="mt-2 flex items-center justify-end">
+            <Button
+              type="button"
+              size="sm"
+              disabled={aiBusy || !aiPrompt.trim()}
+              onClick={generateWorkoutFromAI}
+              className="shrink-0 whitespace-nowrap"
+            >
+              {aiBusy ? t("steps_ai_generating") : t("steps_ai_generate")}
+            </Button>
+          </div>
+          {aiMessage && <p className="mt-2 text-xs text-error">{aiMessage}</p>}
+        </div>
 
         {templates.length > 0 && isNew && (
           <div className="flex flex-col gap-1.5">
@@ -344,34 +376,12 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
             <p className="text-xs text-ink-3">{t("strava_comment_hint")}</p>
           </Field>
 
-          <div className="col-span-2">
-            <div className="mb-2 flex items-center justify-between">
-              <label className="text-xs text-ink-2">{t("steps_h")}</label>
+          <div className="col-span-2 border-t border-line pt-4">
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-ink-3">{t("steps_h")}</p>
               <Button type="button" variant="steel" size="sm" onClick={addStep}>
                 + {t("steps_add")}
               </Button>
-            </div>
-            <div className="mb-3 rounded-xl border border-line bg-surface-2 p-3">
-              <label className="mb-1.5 block text-xs font-medium text-ink-2">{t("steps_ai_label")}</label>
-              <textarea
-                rows={2}
-                placeholder={t("steps_ai_placeholder")}
-                value={aiPrompt}
-                onChange={(e) => setAiPrompt(e.target.value)}
-                className="w-full resize-none rounded-lg border border-line bg-bg px-3 py-2 text-sm"
-              />
-              <div className="mt-2 flex items-center justify-end">
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={aiBusy || !aiPrompt.trim()}
-                  onClick={generateStepsFromAI}
-                  className="shrink-0 whitespace-nowrap"
-                >
-                  {aiBusy ? t("steps_ai_generating") : t("steps_ai_generate")}
-                </Button>
-              </div>
-              {aiMessage && <p className="mt-2 text-xs text-error">{aiMessage}</p>}
             </div>
             {value.workoutSteps.length === 0 ? (
               <p className="text-xs text-ink-3">{t("steps_empty")}</p>
@@ -415,7 +425,7 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
             )}
           </div>
 
-          <div className="col-span-2 flex items-center gap-2">
+          <div className="col-span-2 flex items-center gap-2 border-t border-line pt-4">
             <input
               id="done"
               type="checkbox"

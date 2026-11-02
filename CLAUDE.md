@@ -1640,6 +1640,52 @@ built** (`servers.url` ends in `/courses`, and its own documented paths
 start with `/courses` again) — verify live before trusting naive
 concatenation there too, don't assume the pattern definitely repeats.
 
+### Widened to the whole dialog, redesigned (Nov 2026)
+
+Direct, verbatim follow-up: "mejora el diseño de todo esto. Ese ai
+debería editar absolutamente todo el pop up" — the AI generator above
+only filled `workoutSteps`; now it fills the entire workout.
+
+- **`generateWorkoutStepsFromPrompt()` → `generateWorkoutFromPrompt()`**
+  in `lib/integrations/claude.ts`: the tool (`set_workout`, still
+  `strict: true` + `tool_choice: "auto"` for the same Sonnet-5.5
+  forced-tool-use-is-rejected reason as before) now also returns
+  `sport`, `title`, `workoutType`, `minutes`, `km`, and `notes` —
+  `sport` is constrained to Cadencia's own `SPORTS` enum, defaulting to
+  `"run"` only if truly nothing in the description suggests otherwise
+  (never left blank, since `Workout.sport` is a required field).
+  `notes` is explicitly instructed to explain the workout's purpose in
+  1-3 sentences — same "this is the field that carries the workout's
+  objective" role `notes` already has for the `.ics` export (see the
+  Roadmap section above).
+- **Route renamed** `/api/workouts/generate-steps` →
+  `/api/workouts/generate` to match the wider scope.
+- **`WorkoutDialog.tsx`**: the AI box moved from inside the structured-
+  steps section to the top of the dialog, right under the title, above
+  the template picker — it's now the primary entry point for filling
+  the form, not a steps-only helper. On success it replaces `sport`,
+  `title`, `workoutType`, `minutes`, `km`, `notes`, and `workoutSteps`
+  all at once (full replace, not a merge-only-what's-mentioned) —
+  matches "edita absolutamente todo," and running it again on an
+  already-filled dialog is expected to overwrite with the new
+  description, not partially blend two descriptions together.
+  `athleteSlug`/`date`/`start`/`stravaComment`/`done`/`rpe` are left
+  alone — context the dialog itself already supplies, or (for
+  `stravaComment`) a field with its own separate "AI drafts it at sync
+  time if left blank" behavior that this generator deliberately
+  doesn't duplicate.
+- **Visual redesign** of the rest of the dialog alongside this, same
+  feedback pass: the form scrolls internally now
+  (`max-h-[calc(100dvh-24px)] overflow-y-auto` on the `<form>` itself,
+  not just the `<dialog>`) rather than only being bounded by the
+  dialog's own max-height with no internal scroll; small uppercase
+  tracked section labels (matching the Zenit-inspired micro-label
+  style already used elsewhere in this app) replace a couple of plain
+  field-style labels for section headers (Structured steps); a
+  `border-t border-line pt-4` divider separates the structured-steps
+  section and the Done/RPE section from what's above, instead of
+  everything running together in one undifferentiated block.
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as
