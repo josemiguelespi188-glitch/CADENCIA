@@ -1188,6 +1188,93 @@ athlete's behalf.
   display feature on top of this needs the real data-endpoint path
   confirmed first (same standing caveat as COROS's push payload).
 
+## Google sign-in, open self-registration (Oct 2026)
+
+Direct, urgent request: "la plataforma tiene que tener un sistema de
+autenticacion con google... que puedes crear una cuenta para entrar a
+la plataforma." This is a real reversal of the invite-only model the
+"Real auth + admin" section above deliberately built ("no self
+sign-up, only admin-sent invites"), so it was confirmed explicitly via
+`AskUserQuestion` before touching anything, given how costly guessing
+wrong would be here (open signup to a shared training log vs. a
+Google button that still requires an admin invite first are very
+different security postures). The user chose **"Auto-registro
+abierto"**: anyone with a Google account can sign in and a brand-new
+`athletes` row is created for them automatically, no invite and no
+approval step, and they immediately see the same shared training log
+every other athlete does (same "open to any signed-in athlete"
+model `workouts`/`templates` already have, per "Data model & auth"
+above).
+
+- **This does NOT replace email/password sign-in** — an
+  already-invited athlete can still sign in with the password an
+  admin's invite set up. Google is an *additional*, self-serve path
+  layered on top, not a swap.
+- **`src/app/auth/callback/route.ts`** (new) is where Supabase sends
+  the browser back after Google's consent screen. The actual flow:
+  `supabase.auth.signInWithOAuth({provider: "google"})` (in the new
+  `handleGoogleSignIn()` inside `SignInScreen`,
+  `src/lib/auth-context.tsx`) redirects to Google using a redirect URI
+  that's **Supabase's own hosted callback**
+  (`https://<project-ref>.supabase.co/auth/v1/callback`), not this
+  app's domain — Google redirects there first, Supabase does the
+  token exchange with Google, then forwards the browser to this app's
+  own `redirectTo` (`/auth/callback`) with a `?code=...` PKCE code this
+  route exchanges for a real session cookie via
+  `exchangeCodeForSession()`. Same two-hop shape Supabase's own OAuth
+  docs describe, not a custom invention.
+- **`src/lib/ensureAthlete.ts`**: right after that exchange succeeds,
+  `ensureAthleteForUser()` runs with the service-role client (bypasses
+  RLS, same as the admin invite route) and checks whether an
+  `athletes` row already exists for this `auth_user_id` OR `email`. If
+  one does (a returning Google sign-in, or an email Supabase
+  auto-linked to an existing admin-invited password account because
+  the email matched and was verified), it's a no-op. If not, it
+  inserts a brand-new row: `name` from the Google profile
+  (`user_metadata.full_name`/`name`, falling back to the email's local
+  part), a `slug` generated and deduped against the current roster,
+  `is_admin: false`. **`slugify`/`initialsFrom`/`dedupeSlug`** were
+  extracted from the admin invite route into a new shared
+  `src/lib/athleteSlug.ts` so both paths generate a new athlete's
+  slug/initials identically rather than duplicating that logic.
+- **The sign-in screen** (`SignInScreen` in `auth-context.tsx`) now
+  leads with a "Continue with Google" button (inline multi-color G
+  logo SVG, no external image/icon font) above a divider, with the
+  existing email/password form and "Forgot your password?" flow
+  unchanged below it. The old "No self sign-up. Ask an admin to invite
+  you." footer line, no longer accurate, was replaced with "New here?
+  Sign in with Google and your account is created automatically." A
+  failed OAuth attempt redirects back to
+  `/calendar?auth_error=1` (the callback route's own failure path,
+  since there's no dedicated "sign-in failed" page to land on) and
+  `SignInScreen` reads that query param once on mount to show an error
+  message, then strips it from the URL.
+- **Two manual setup steps in dashboards this app has no API for**
+  (same "this app can't create the credential itself" pattern as every
+  other OAuth integration here):
+  1. **Google Cloud Console**: create an OAuth 2.0 Client ID (OAuth
+     consent screen + Web application credentials). Its one
+     "Authorized redirect URI" is the Supabase one above
+     (`https://<project-ref>.supabase.co/auth/v1/callback` — copy the
+     exact value Supabase's own Google provider page shows, not a
+     guess), **not** `/auth/callback` on this app's domain.
+  2. **Supabase Dashboard -> Authentication -> Providers -> Google**:
+     toggle it on, paste the Client ID/Secret from step 1. Then
+     **Authentication -> URL Configuration -> Redirect URLs**: add
+     `https://<this app's domain>/auth/callback` to the allow-list
+     (same list that already has `/accept-invite`) — Supabase refuses
+     to forward the browser anywhere not on it.
+- Not yet tested against a real Google OAuth client or Supabase
+  provider config from this sandbox (no live Supabase project
+  connected here, same standing limitation as every other
+  Supabase-dependent feature) — confirm once both manual steps above
+  are done: that clicking "Continue with Google" actually lands back
+  signed in, that a brand-new Google account gets a real `athletes`
+  row with a sane name/slug, and that an already-invited athlete's
+  Google sign-in links to their EXISTING row rather than creating a
+  duplicate (relies on Supabase's own automatic identity-linking by
+  verified email, not anything this codebase controls).
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as

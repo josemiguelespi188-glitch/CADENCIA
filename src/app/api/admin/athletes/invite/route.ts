@@ -2,23 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getSiteBaseUrl } from "@/lib/integrations/strava";
-
-function slugify(name: string) {
-  return (
-    name
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[̀-ͯ]/g, "")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)/g, "") || "athlete"
-  );
-}
-
-function initialsFrom(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  const chars = parts.slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "");
-  return chars.join("") || "??";
-}
+import { slugify, initialsFrom, dedupeSlug } from "@/lib/athleteSlug";
 
 /**
  * Invites someone by email, via Supabase Auth's own invite flow (same
@@ -75,11 +59,7 @@ export async function POST(req: NextRequest) {
 
   const { data: roster } = await db.from("athletes").select("slug");
   const existingSlugs = new Set((roster ?? []).map((a) => a.slug));
-  let slug = slugify(name);
-  let i = 2;
-  while (existingSlugs.has(slug)) {
-    slug = `${slugify(name)}-${i++}`;
-  }
+  const slug = dedupeSlug(slugify(name), existingSlugs);
 
   const { data: invited, error: inviteError } = await db.auth.admin.inviteUserByEmail(email, {
     redirectTo: `${getSiteBaseUrl()}/accept-invite`,

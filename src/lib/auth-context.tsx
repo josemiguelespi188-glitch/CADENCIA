@@ -168,8 +168,32 @@ function SignInScreen() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [mode, setMode] = useState<"signin" | "reset">("signin");
   const [resetSent, setResetSent] = useState(false);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("auth_error") === "1") {
+      setError(isEn ? "Could not sign in with Google. Try again." : "No se pudo iniciar sesión con Google. Intenta de nuevo.");
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleGoogleSignIn() {
+    setError(null);
+    setGoogleLoading(true);
+    const supabase = createClient();
+    const { error: oauthError } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    });
+    if (oauthError) {
+      setGoogleLoading(false);
+      setError(isEn ? "Could not start Google sign-in." : "No se pudo iniciar sesión con Google.");
+    }
+    // On success the browser navigates away to Google — no need to clear loading.
+  }
 
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
@@ -212,11 +236,29 @@ function SignInScreen() {
           <p className="mt-1 text-[10px] uppercase tracking-[0.5em] text-ink-3">{isEn ? "training log" : "registro de entreno"}</p>
         </div>
 
+        <button
+          type="button"
+          onClick={handleGoogleSignIn}
+          disabled={googleLoading}
+          className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-line bg-surface text-sm font-medium text-ink transition-colors hover:border-line-strong disabled:opacity-60"
+        >
+          <GoogleIcon />
+          {googleLoading ? (isEn ? "Redirecting…" : "Redirigiendo…") : isEn ? "Continue with Google" : "Continuar con Google"}
+        </button>
+        {error && <p className="mt-3 text-center text-sm text-error">{error}</p>}
+
+        {mode === "signin" && (
+          <div className="my-5 flex items-center gap-3">
+            <div className="h-px flex-1 bg-line" />
+            <span className="text-[11px] uppercase tracking-[0.2em] text-ink-3">{isEn ? "or" : "o"}</span>
+            <div className="h-px flex-1 bg-line" />
+          </div>
+        )}
+
         {mode === "signin" ? (
           <form onSubmit={handleSignIn} className="flex flex-col gap-4">
             <TextField id="email" label={isEn ? "Email" : "Correo"} type="email" value={email} onChange={setEmail} />
             <TextField id="password" label={isEn ? "Password" : "Contraseña"} type="password" value={password} onChange={setPassword} />
-            {error && <p className="text-sm text-error">{error}</p>}
             <Button type="submit" disabled={loading} className="mt-2 w-full">
               {loading ? (isEn ? "Signing in…" : "Entrando…") : isEn ? "Sign In" : "Iniciar Sesión"}
             </Button>
@@ -238,7 +280,6 @@ function SignInScreen() {
         ) : (
           <form onSubmit={handleReset} className="flex flex-col gap-4">
             <TextField id="reset-email" label={isEn ? "Email" : "Correo"} type="email" value={email} onChange={setEmail} />
-            {error && <p className="text-sm text-error">{error}</p>}
             <Button type="submit" disabled={loading} className="mt-2 w-full">
               {loading ? (isEn ? "Sending…" : "Enviando…") : isEn ? "Send reset link" : "Enviar enlace"}
             </Button>
@@ -250,11 +291,31 @@ function SignInScreen() {
 
         <p className="mt-6 text-center text-xs text-ink-3">
           {isEn
-            ? "No self sign-up. Ask an admin to invite you."
-            : "No hay registro abierto. Pide a un admin que te invite."}
+            ? "New here? Sign in with Google and your account is created automatically."
+            : "¿Primera vez? Inicia sesión con Google y tu cuenta se crea automáticamente."}
         </p>
       </div>
     </div>
+  );
+}
+
+function GoogleIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+      <path
+        fill="#4285F4"
+        d="M45.1 24.5c0-1.6-.1-3.1-.4-4.6H24v8.7h11.9c-.5 2.8-2.1 5.1-4.5 6.7v5.5h7.3c4.3-3.9 6.8-9.7 6.8-16.3z"
+      />
+      <path
+        fill="#34A853"
+        d="M24 46c6.1 0 11.3-2 15-5.5l-7.3-5.5c-2 1.4-4.6 2.2-7.7 2.2-5.9 0-10.9-4-12.7-9.4H3.7v5.7C7.4 41 15 46 24 46z"
+      />
+      <path fill="#FBBC05" d="M11.3 27.8c-.5-1.4-.7-2.8-.7-4.3s.3-3 .7-4.3v-5.7H3.7C2.6 16.2 2 20 2 23.5s.6 7.3 1.7 10l7.6-5.7z" />
+      <path
+        fill="#EA4335"
+        d="M24 10.8c3.3 0 6.3 1.1 8.6 3.3l6.5-6.3C35.3 4.1 30.1 2 24 2 15 2 7.4 7 3.7 13.8l7.6 5.7c1.8-5.4 6.8-9.4 12.7-9.4z"
+      />
+    </svg>
   );
 }
 
