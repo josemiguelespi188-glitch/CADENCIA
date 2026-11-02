@@ -1729,6 +1729,40 @@ Several direct, concrete complaints in one session:
   worth the extra config for one fixed small logo) at 28x28 with
   rounded corners.
 
+## New-workout launcher, TrainingPeaks-inspired (Nov 2026)
+
+The user shared a real TrainingPeaks "add activity" screenshot as a
+reference ("así se crea una actividad en TrainingPeaks. Es mucho más
+completo"). Scope confirmed explicitly via `AskUserQuestion`: **only**
+a nicer entry screen using what Cadencia already has — not the
+reference's Goals/Metrics/Availability sections or device-file upload
+(real concepts TrainingPeaks has that this app doesn't model at all),
+and not its much larger sport-type list (Brick, Crosstrain, XC-Ski,
+Rowing, etc. — Cadencia still only has its original five:
+swim/bike/run/gym/race).
+
+- **`components/NewWorkoutLauncher.tsx`** (new): the first screen shown
+  when adding a new workout — a date heading, a "Build with AI" pill
+  button, and a grid of the five sport icons (a soft-colored circle +
+  colored dot per sport, reusing the exact `.s-<sport>`/`var(--c)`/
+  `var(--soft)` accent pattern calendar chips already use, not new
+  icon art) — instead of opening straight into a blank
+  `WorkoutDialog` form. Picking a sport or the AI option both hand off
+  to the same `WorkoutDialog` underneath (which already has its own
+  "Generate with AI" box at the top, per the earlier pass) — this is
+  purely a nicer entry point, not a second place workout data lives or
+  a new API route.
+- **`calendar/page.tsx`**: `openAdd(date)` now opens the launcher
+  (`launcherDate` state) instead of going straight to `WorkoutDialog`.
+  `pickSport(sport)` / `pickAI()` close the launcher and open
+  `WorkoutDialog` as before, now via a new `defaultSport` field on
+  `EditingState`/`WorkoutDialog`'s `editing` prop (applied in the
+  empty-workout branch of its existing "populate `value` from
+  `editing`" effect). Editing an *existing* workout
+  (`onEdit={(w) => setEditing({ record: w })}`) is unaffected — the
+  launcher only ever appears for a brand-new workout, since the sport
+  is already known once one exists.
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as

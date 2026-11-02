@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { SiteHeader } from "@/components/SiteHeader";
 import { Button } from "@/components/ui/button";
 import { WorkoutDialog, type WorkoutFormValue, type WorkoutWithSlug } from "@/components/WorkoutDialog";
+import { NewWorkoutLauncher } from "@/components/NewWorkoutLauncher";
 import { ActivityDetailDialog } from "@/components/ActivityDetailDialog";
 import { DashboardPanel } from "@/components/DashboardPanel";
 import {
@@ -14,6 +15,7 @@ import {
   type ActivityWithSlug,
   type AthleteSlug,
   type Athlete,
+  type Sport,
   type StravaActivity,
   type Template,
   type Workout,
@@ -23,7 +25,7 @@ import { buildWeekIcs, downloadIcs } from "@/lib/ics";
 import { mapStravaSportType } from "@/lib/sport";
 import { cn } from "@/lib/utils";
 
-type EditingState = { record: WorkoutWithSlug | null; defaultDate?: string; defaultAthlete?: AthleteSlug } | null;
+type EditingState = { record: WorkoutWithSlug | null; defaultDate?: string; defaultAthlete?: AthleteSlug; defaultSport?: Sport } | null;
 
 export default function CalendarPage() {
   const { t, locale } = useLocale();
@@ -36,6 +38,7 @@ export default function CalendarPage() {
   const [view, setView] = useState<"week" | "month">("week");
   const [anchor, setAnchor] = useState(() => today());
   const [editing, setEditing] = useState<EditingState>(null);
+  const [launcherDate, setLauncherDate] = useState<string | null>(null);
   const [openActivity, setOpenActivity] = useState<ActivityWithSlug | null>(null);
 
   const load = useCallback(async () => {
@@ -129,7 +132,19 @@ export default function CalendarPage() {
   }
 
   function openAdd(date: string) {
-    setEditing({ record: null, defaultDate: date, defaultAthlete: me?.slug });
+    setLauncherDate(date);
+  }
+
+  function pickSport(sport: Sport) {
+    if (!launcherDate) return;
+    setEditing({ record: null, defaultDate: launcherDate, defaultAthlete: me?.slug, defaultSport: sport });
+    setLauncherDate(null);
+  }
+
+  function pickAI() {
+    if (!launcherDate) return;
+    setEditing({ record: null, defaultDate: launcherDate, defaultAthlete: me?.slug });
+    setLauncherDate(null);
   }
 
   return (
@@ -185,6 +200,7 @@ export default function CalendarPage() {
         </div>
       </main>
 
+      <NewWorkoutLauncher date={launcherDate} onClose={() => setLauncherDate(null)} onPickSport={pickSport} onPickAI={pickAI} />
       <WorkoutDialog
         editing={editing}
         templates={templates}

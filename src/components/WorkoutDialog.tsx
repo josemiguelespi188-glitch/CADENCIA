@@ -45,7 +45,7 @@ function newStepId() {
 
 interface Props {
   /** null = closed. undefined date fields fall back to sensible defaults for a new workout. */
-  editing: { record: WorkoutWithSlug | null; defaultDate?: string; defaultAthlete?: AthleteSlug } | null;
+  editing: { record: WorkoutWithSlug | null; defaultDate?: string; defaultAthlete?: AthleteSlug; defaultSport?: Sport } | null;
   templates: Template[];
   /** Every athlete in the roster, for the athlete picker — the dynamic
    * replacement for the old hardcoded ATHLETES constant. */
@@ -179,6 +179,7 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
             ...EMPTY,
             date: editing.defaultDate ?? EMPTY.date,
             athleteSlug: editing.defaultAthlete ?? athletes[0]?.slug ?? "",
+            sport: editing.defaultSport ?? EMPTY.sport,
           }
     );
     setPushMessage(null);
