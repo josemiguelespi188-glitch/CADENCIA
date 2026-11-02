@@ -78,6 +78,8 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
   const [saving, setSaving] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
   const [pushMessage, setPushMessage] = useState<string | null>(null);
+  const [garminPushBusy, setGarminPushBusy] = useState(false);
+  const [garminPushMessage, setGarminPushMessage] = useState<string | null>(null);
 
   async function pushToCoros(workoutId: string) {
     setPushBusy(true);
@@ -92,6 +94,22 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
       setPushMessage(res.ok ? t("steps_push_ok") : data.error);
     } finally {
       setPushBusy(false);
+    }
+  }
+
+  async function pushToGarmin(workoutId: string) {
+    setGarminPushBusy(true);
+    setGarminPushMessage(null);
+    try {
+      const res = await fetch("/api/garmin-dev/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workoutId }),
+      });
+      const data = await res.json();
+      setGarminPushMessage(res.ok ? t("steps_push_garmin_ok") : data.error);
+    } finally {
+      setGarminPushBusy(false);
     }
   }
 
@@ -324,6 +342,10 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
                   {pushBusy ? "…" : t("steps_push_coros")}
                 </Button>
                 {pushMessage && <span className="text-xs text-ink-3">{pushMessage}</span>}
+                <Button type="button" variant="steel" size="sm" disabled={garminPushBusy} onClick={() => editing.record && pushToGarmin(editing.record.id)}>
+                  {garminPushBusy ? "…" : t("steps_push_garmin")}
+                </Button>
+                {garminPushMessage && <span className="text-xs text-ink-3">{garminPushMessage}</span>}
               </div>
             )}
           </div>

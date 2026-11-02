@@ -1275,6 +1275,98 @@ above).
   duplicate (relies on Supabase's own automatic identity-linking by
   verified email, not anything this codebase controls).
 
+## Garmin Connect Developer Program (real OAuth + push, Nov 2026)
+
+Starter Access confirmed granted to "LineUps FanXperience Inc." (shared
+via a real screenshot of the Garmin Developer Portal): Activity API
+(JSON & .FIT), Health API, Women's Health API, Training API, Courses
+API — **Delivery: Push only, Historical Data: not included, User
+Capacity: up to 1,000 connected users**. Direct instruction once this
+was confirmed: "ya tenemos el api de developer de garmin. Conectemosle
+a la app."
+
+**This is a completely separate integration from the Garmin Personal
+API** documented above (`lib/integrations/garmin.ts`, the
+paste-your-own-key flow) — different auth model (real OAuth here,
+`GARMIN_DEV_*` env vars, mirrors Strava/COROS exactly), different
+capability (this tier can also **push** structured workouts via the
+Training API, which the Personal API tier cannot do at all, being
+explicitly read-only). Both cards now sit side by side on `/settings`
+("Garmin (Developer API)" and "Garmin (Personal key)") rather than one
+replacing the other, since an athlete who already connected via the
+Personal API loses nothing by this addition.
+
+- **`lib/integrations/garminDeveloper.ts`**: same "generic OAuth2 shape
+  is safe, the actual URLs are not" discipline already applied to
+  COROS — `GARMIN_DEV_CLIENT_ID`/`_CLIENT_SECRET`/`_AUTHORIZE_URL`/
+  `_TOKEN_URL`/`_API_BASE` are required env vars with **no hardcoded
+  default**, since `developer.garmin.com` is blocked from this sandbox
+  (same standing limitation as COROS's Dropbox-hosted docs) — get the
+  real values from the Developer Portal's "Start Guide" /
+  "Documentation" pages, and the Client ID/Secret + Authorized Callback
+  Domain from the "Apps" section.
+- **OAuth routes mirror Strava/COROS exactly**: `/api/garmin-dev/connect`,
+  `/api/garmin-dev/callback` (this is literally the redirect_uri to
+  register in the Apps section:
+  `https://cadenciatraining.vercel.app/api/garmin-dev/callback`),
+  `/api/garmin-dev/status`, `/api/garmin-dev/disconnect`.
+- **"Delivery: Push only" means there is no pull/poll endpoint at this
+  tier** — unlike Strava's manual "Sync now" button, Garmin calls a
+  webhook on our side whenever an athlete's device syncs. New route
+  `app/api/webhooks/garmin/route.ts` — register
+  `https://cadenciatraining.vercel.app/api/webhooks/garmin` in the
+  Developer Portal's "API Tools" data-delivery settings. **The real
+  payload shape per API family (Activity/Health/Women's
+  Health/Training) is unconfirmed**, so every delivery is stored
+  verbatim first in a new `garmin_push_events` table
+  (`processed boolean default false`) rather than guessed and parsed
+  blind — same "capture now, parse later" discipline this codebase
+  already applies elsewhere to an unconfirmed third-party shape.
+  Parsing into real rows (and matching into `workouts`, mirroring
+  Strava's auto-complete) is a follow-up once a real payload has
+  actually been seen. No signature verification is implemented either
+  — Garmin's push-signing scheme wasn't found/confirmed from this
+  sandbox.
+- **`pushStructuredWorkoutToGarmin()`** reuses the exact same
+  `WorkoutStep[]` model already built for COROS — `workout_steps` was
+  never COROS-specific. The Training API endpoint path and request
+  body field names are **pure placeholders**, same "exists so the UI
+  has a stable interface to call, needs a real rewrite once the docs
+  are read" caveat already applied to COROS's push function. "Push to
+  Garmin" sits next to "Push to COROS" in `WorkoutDialog.tsx`'s
+  structured-steps section — same shown-when-steps-exist condition, no
+  connection check client-side (the server returns a clear error if
+  not connected), mirroring COROS's button exactly.
+- **Migration `026_garmin_developer_api.sql`** (mirrored in
+  `schema.sql` — **needs this migration run in the Supabase SQL
+  editor**): `garmin_dev_connections` (RLS enabled, no policies,
+  service-role only, real OAuth tokens — same strictness as every
+  other connections table) and `garmin_push_events` (RLS enabled, no
+  policies — may hold raw End User health data).
+- **Real legal constraint that governs everything built on top of
+  this, not just this file**: Section 15.11 of the Garmin Connect
+  Developer Program Agreement bars using Garmin Device Sourced Data as
+  input to any AI model/system — a plain reading covers even a single
+  Claude API inference call, not just training/fine-tuning. **Garmin-
+  sourced data (from either the Personal API or this Developer
+  Program) must never be passed into
+  `lib/integrations/claude.ts`'s `generateActivityDescription()` or
+  any future AI feature** (the still-undone Roadmap items,
+  "AI-generated training plans" and the "virtual coach agent" — both
+  explicitly plan to read an athlete's training history, which would
+  need to exclude Garmin-sourced rows specifically once either gets
+  built). Nothing today violates this (no AI feature reads Garmin data
+  yet), but it's a standing constraint on anything built later, not a
+  one-time check.
+- Not yet tested against a real OAuth flow from this sandbox (no live
+  Garmin Developer Portal app/credentials configured here, and
+  `developer.garmin.com` stays unreachable) — **confirm once deployed**:
+  set the five `GARMIN_DEV_*` env vars from the real Start
+  Guide/Apps page, register both URLs above in the Developer Portal,
+  click "Connect" on the new card, and — once a real push actually
+  arrives — read a `garmin_push_events` row to finally confirm the real
+  payload shape and start building the parser.
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as

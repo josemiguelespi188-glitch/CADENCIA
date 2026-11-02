@@ -251,6 +251,31 @@ create table if not exists garmin_connections (
   last_synced_at timestamptz
 );
 
+-- ─── garmin_dev_connections / garmin_push_events ────────────────────────────
+-- The real Garmin Connect Developer Program (Starter Access, OAuth tier) —
+-- deliberately separate from garmin_connections above. See migration 026
+-- and CLAUDE.md's "Garmin Connect Developer Program" section.
+create table if not exists garmin_dev_connections (
+  athlete_id uuid primary key references athletes(id) on delete cascade,
+  garmin_user_id text,
+  access_token text not null,
+  refresh_token text not null,
+  expires_at timestamptz not null,
+  scope text,
+  connected_at timestamptz not null default now(),
+  last_synced_at timestamptz
+);
+
+-- Starter Access is push-only delivery — Garmin calls our webhook, we
+-- store the raw payload first and parse it once its real shape is
+-- confirmed against a live delivery.
+create table if not exists garmin_push_events (
+  id uuid primary key default gen_random_uuid(),
+  received_at timestamptz not null default now(),
+  payload jsonb not null,
+  processed boolean not null default false
+);
+
 -- ─── updated_at trigger for workouts ────────────────────────────────────────
 create or replace function set_updated_at()
 returns trigger as $$
@@ -317,6 +342,13 @@ alter table coros_connections enable row level security;
 
 alter table garmin_connections enable row level security;
 -- Deliberately no policies at all — service-role only, same as strava_connections.
+
+alter table garmin_dev_connections enable row level security;
+-- Deliberately no policies at all — service-role only, real OAuth tokens.
+
+alter table garmin_push_events enable row level security;
+-- Deliberately no policies at all — service-role only, may hold raw
+-- End User health data.
 
 alter table strava_daily_load enable row level security;
 drop policy if exists strava_daily_load_select_public on strava_daily_load;

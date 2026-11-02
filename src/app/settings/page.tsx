@@ -37,13 +37,22 @@ function SettingsContent() {
   useEffect(() => {
     const strava = searchParams.get("strava");
     const coros = searchParams.get("coros");
-    // Deriving a one-time toast from the ?strava=/?coros= redirect query
-    // params — not render-derived state, so this has to live in an effect.
+    const garmindev = searchParams.get("garmindev");
+    // Deriving a one-time toast from the ?strava=/?coros=/?garmindev=
+    // redirect query params — not render-derived state, so this has to
+    // live in an effect.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (strava === "connected") setToast(isEn ? "Strava connected." : "Strava conectado.");
     else if (strava === "error") setToast(isEn ? "Could not connect Strava. Try again." : "No se pudo conectar Strava. Intenta de nuevo.");
     else if (coros === "connected") setToast(isEn ? "COROS connected." : "COROS conectado.");
     else if (coros === "error") setToast(isEn ? "Could not connect COROS. Its API may not be configured yet." : "No se pudo conectar COROS. Puede que su API todavía no esté configurada.");
+    else if (garmindev === "connected") setToast(isEn ? "Garmin connected." : "Garmin conectado.");
+    else if (garmindev === "error")
+      setToast(
+        isEn
+          ? "Could not connect Garmin. Its API may not be configured yet."
+          : "No se pudo conectar Garmin. Puede que su API todavía no esté configurada."
+      );
   }, [searchParams, isEn]);
 
   return (
@@ -70,7 +79,8 @@ function SettingsContent() {
                 <AthleteCorosCard name={me.name} />
               </div>
 
-              <div className="mt-4">
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <AthleteGarminDevCard name={me.name} />
                 <AthleteGarminCard name={me.name} />
               </div>
 
@@ -395,6 +405,70 @@ function AthleteZonesCard({ slug, name }: { slug: string; name: string }) {
  * pull-only) the way the COROS Partner API is meant to. Saving the key
  * validates it live server-side (a real token exchange) before storing.
  */
+/**
+ * The real Garmin Connect Developer Program (Starter Access, OAuth tier)
+ * — separate from AthleteGarminCard below (the Personal API key-paste
+ * flow). Mirrors AthleteCorosCard's Connect/Disconnect pattern exactly,
+ * since this is also real OAuth. See CLAUDE.md's "Garmin Connect
+ * Developer Program" section and lib/integrations/garminDeveloper.ts.
+ */
+function AthleteGarminDevCard({ name }: { name: string }) {
+  const { locale } = useLocale();
+  const isEn = locale === "en";
+  const [status, setStatus] = useState<StravaStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const loadStatus = useCallback(async () => {
+    const res = await fetch("/api/garmin-dev/status");
+    if (res.ok) setStatus(await res.json());
+  }, []);
+
+  useEffect(() => {
+    // Initial data fetch on mount — see the same note in calendar/page.tsx.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadStatus();
+  }, [loadStatus]);
+
+  async function disconnect() {
+    setBusy(true);
+    try {
+      await fetch("/api/garmin-dev/disconnect", { method: "POST" });
+      await loadStatus();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardTitle>{name} · Garmin (Developer API)</CardTitle>
+
+      <div className="mt-4 flex items-center gap-3">
+        <span className="h-2.5 w-2.5 rounded-full" style={{ background: status?.connected ? "var(--success)" : "var(--ink-3)" }} />
+        <span className="text-sm">{status?.connected ? (isEn ? "Connected" : "Conectado") : isEn ? "Not connected" : "No conectado"}</span>
+      </div>
+
+      <p className="mt-2 text-xs text-ink-3">
+        {isEn
+          ? "Real OAuth connection, can also push structured workouts to your watch. Its endpoints may not be fully configured yet. See CLAUDE.md."
+          : "Conexión OAuth real, también puede mandar entrenos estructurados a tu reloj. Puede que sus endpoints todavía no estén totalmente configurados. Ver CLAUDE.md."}
+      </p>
+
+      <div className="mt-5 flex flex-wrap gap-2">
+        {status?.connected ? (
+          <Button size="sm" variant="danger" onClick={disconnect} disabled={busy}>
+            {isEn ? "Disconnect" : "Desconectar"}
+          </Button>
+        ) : (
+          <a href="/api/garmin-dev/connect">
+            <Button size="sm">{isEn ? "Connect" : "Conectar"}</Button>
+          </a>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 function AthleteGarminCard({ name }: { name: string }) {
   const { locale } = useLocale();
   const isEn = locale === "en";
@@ -449,7 +523,7 @@ function AthleteGarminCard({ name }: { name: string }) {
 
   return (
     <Card>
-      <CardTitle>{name} · Garmin</CardTitle>
+      <CardTitle>{name} · Garmin (Personal key)</CardTitle>
 
       <div className="mt-4 flex items-center gap-3">
         <span className="h-2.5 w-2.5 rounded-full" style={{ background: status?.connected ? "var(--success)" : "var(--ink-3)" }} />
@@ -458,8 +532,8 @@ function AthleteGarminCard({ name }: { name: string }) {
 
       <p className="mt-2 text-xs text-ink-3">
         {isEn
-          ? "Read-only, personal use only: this uses your own Garmin Personal API key to read your own data. It cannot push workouts to your watch (Garmin doesn't allow that for this type of key)."
-          : "Solo lectura, uso personal: usa tu propia clave Personal API de Garmin para leer tus propios datos. No puede mandar entrenos a tu reloj (Garmin no lo permite con este tipo de clave)."}
+          ? "Read-only, personal use only: this uses your own Garmin Personal API key to read your own data. It cannot push workouts to your watch (Garmin doesn't allow that for this type of key). For pushing structured workouts, use the Garmin (Developer API) card above."
+          : "Solo lectura, uso personal: usa tu propia clave Personal API de Garmin para leer tus propios datos. No puede mandar entrenos a tu reloj (Garmin no lo permite con este tipo de clave). Para mandar entrenos estructurados, usa la tarjeta de Garmin (Developer API) arriba."}
       </p>
 
       {!status?.connected && (
