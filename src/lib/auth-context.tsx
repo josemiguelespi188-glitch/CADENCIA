@@ -11,7 +11,13 @@ import type { Athlete } from "@/lib/types";
 /** Routes reachable with no session — only the one page that CREATES a
  * session from an invite/recovery email link. Checked by prefix since
  * Next route params aren't known statically here. */
-const PUBLIC_PATHS = ["/accept-invite"];
+const PUBLIC_PATHS = [
+  "/accept-invite",
+  // Needs to be reachable with no account — e.g. for Garmin/COROS API
+  // application reviewers to read it, per the "Garmin Personal API"
+  // section in CLAUDE.md.
+  "/privacy",
+];
 
 interface AuthCtx {
   session: Session | null;
