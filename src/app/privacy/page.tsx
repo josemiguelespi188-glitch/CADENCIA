@@ -31,9 +31,19 @@ export default function PrivacyPage() {
               <li>Training data you enter: planned workouts, notes, personal bests, training zones, goal race information, and body metrics you choose to provide (e.g. height, weight, resting/max heart rate).</li>
               <li>
                 Activity data from connected fitness platforms, if and when you choose to connect them:
-                Strava, COROS, and/or Garmin Connect (via your own Garmin Personal API key). This
-                includes activity summaries such as pace, distance, duration, heart rate, cadence,
-                power, and GPS route data, as made available by each platform&apos;s API.
+                Strava, COROS, and/or Garmin Connect. This includes activity summaries such as pace,
+                distance, duration, heart rate, cadence, power, and GPS route data, as made available by
+                each platform&apos;s API.
+              </li>
+              <li>
+                If you connect Garmin Connect through the Garmin Connect Developer Program (not the
+                Personal API key), and depending on what you choose to share from your Garmin Connect
+                account: health and wellness data including sleep, daily activity/steps, heart rate
+                variability (HRV), stress, respiration rate, pulse oxygen (SpO2), skin temperature,
+                hydration, nutrition, body composition, blood pressure, and health snapshots. If you have
+                it enabled in your own Garmin Connect account, this may also include menstrual cycle
+                tracking data. You control exactly which of these categories you share from your own
+                Garmin Connect account settings, independent of Cadencia.
               </li>
             </ul>
           </section>

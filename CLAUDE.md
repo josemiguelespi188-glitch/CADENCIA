@@ -1412,6 +1412,33 @@ Check those next, rather than guessing from the generic
 `apis.garmin.com` host seen in the Endpoint Configuration page's own
 URL bar (that host alone doesn't confirm the specific OAuth paths).
 
+### Scope widened to every Health + Women's Health endpoint (Nov 2026)
+
+Direct instruction, first narrowed to "sleep pulse ox" then immediately
+widened to "quiero usar todas las posibles" — supersedes the earlier
+"Activity + Training only, deliberately not Health" scoping decision
+documented above. No code change was needed for this: `[type]/route.ts`
+already accepts any path segment generically, so every HEALTH - * and
+WOMEN_HEALTH - * row just needs its own URL registered in Endpoint
+Configuration (same `https://cadenciatraining.vercel.app/api/webhooks/
+garmin/<slug>` pattern, e.g. `/sleeps`, `/pulse-ox`, `/hrv-summary`,
+`/menstrual-cycle-tracking`) and "Health API"/"Women's Health API"
+added to the app's selected APIs via the separate "API Configuration"
+tool (not this same Endpoint Configuration page). `src/app/privacy/
+page.tsx`'s "What data we collect" section was updated to list every
+health category this can now receive, including menstrual cycle
+tracking specifically (a sensitive, reproductive-health category under
+most data protection laws, flagged here rather than silently folded
+into a generic "health data" phrase) — required reading for Garmin's
+own app-review checklist ("your privacy statement must clearly state
+how Garmin user data is used"). The existing "Garmin-sourced data
+never touches any AI system" line in that same page already covers
+every one of these new categories without needing its own restatement
+— it was never scoped to activity data specifically. Every payload
+shape across all these new types is equally unconfirmed as the
+Activity ones already noted above — still "capture raw now, parse per
+type once a real payload is seen," no exceptions for this wider set.
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as
