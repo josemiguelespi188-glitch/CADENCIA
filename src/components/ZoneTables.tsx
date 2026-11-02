@@ -8,9 +8,12 @@ const ZONE_ORDER: ZoneKey[] = ["recovery", "endurance", "tempo", "threshold", "v
 
 function ZoneRow({ label, range }: { label: string; range: string }) {
   return (
-    <div className="flex items-center justify-between py-1.5 text-sm">
-      <span className="text-ink-2">{label}</span>
-      <span className="tabular-nums font-medium" style={{ fontFamily: "var(--font-mono)" }}>
+    <div className="flex items-center justify-between gap-3 py-3">
+      <span className="text-sm font-medium text-ink">{label}</span>
+      <span
+        className="shrink-0 rounded-lg border border-line bg-surface-2 px-3 py-1.5 text-sm tabular-nums text-ink-2"
+        style={{ fontFamily: "var(--font-mono)" }}
+      >
         {range}
       </span>
     </div>
