@@ -1439,6 +1439,59 @@ shape across all these new types is equally unconfirmed as the
 Activity ones already noted above — still "capture raw now, parse per
 type once a real payload is seen," no exceptions for this wider set.
 
+### Real OpenAPI specs read, Training/Health schemas now confirmed (Nov 2026)
+
+The user pasted the actual OpenAPI JSON for all 4 of Cadencia's API
+families straight from the portal's "API Documentation" page (Partner
+API, Workout Portal, Health API, Course Portal) — a real, direct
+documentation source, not a search summary. This meaningfully upgrades
+several things that were previously flagged as pure guesswork:
+
+- **`GARMIN_DEV_API_BASE` is now confirmed**: `https://apis.garmin.com`
+  — read directly off every spec's `servers.url` (each API family adds
+  its own sub-path on top: Partner API `/partner-gateway`, Workout
+  Portal `/training-api/workout`, Health API `/wellness-api`, Course
+  Portal `/training-api/courses`). `.env.example` updated with this as
+  the actual default value, not blank — the first `GARMIN_DEV_*` var to
+  have one.
+- **`pushStructuredWorkoutToGarmin()` rewritten against the real
+  Workout Portal schema** (`lib/integrations/garminDeveloper.ts`) — no
+  longer a guess. Two confirmed calls, not one:
+  `POST {API_BASE}/training-api/workout/workout` creates a `Workout`
+  (the server base already includes `/training-api/workout`, the path
+  adds another `/workout` — a real double segment from the spec, not a
+  typo), then `POST {API_BASE}/training-api/workout/schedule` with
+  `{workoutId, date}` assigns it to a day. New `sportToGarminShape()`/
+  `kindToGarminIntensity()`/`durationTypeToGarminShape()`/
+  `targetTypeToGarminShape()` map Cadencia's own enums to Garmin's real
+  confirmed ones (`Workout.sport`, `WorkoutStep.intensity`/
+  `durationType`/`targetType`). **One real simplification kept,
+  flagged in the file**: the confirmed `WorkoutRepeatStep` schema has
+  no nested child-steps field, so how Garmin's own repeat-block
+  grouping actually works (likely `stepOrder` adjacency) isn't
+  confirmed from the spec alone — a Cadencia step with
+  `repeatCount > 1` is sent as that many duplicate plain `WorkoutStep`
+  entries instead of attempting an unconfirmed `WorkoutRepeatStep`
+  wrapper. Functionally equivalent for the athlete, just not using
+  Garmin's native repeat-block UI grouping on their end.
+- **The OAuth authorize/token URLs are still NOT confirmed** — none of
+  the 4 specs include an OAuth server (they're all data APIs). Still
+  blocking a real end-to-end connect test; check "OAuth2 Tools" ->
+  "User Authorization" / "Refresh Token" specifically for those two.
+- **The real Health API response schemas are now known** (`ClientSleep`,
+  `ClientDailySpo2Acclimation` for Pulse Ox, `ClientHRVSummary`,
+  `ClientDaily`, `ClientActivity`, `ClientBloodPressure`, etc., all in
+  the Health API spec) — not yet wired into any parser, since a push
+  webhook's actual body shape (full payload vs. a lightweight ping
+  requiring a follow-up pull) is still unconfirmed; the spec's GET
+  endpoints (`/rest/sleeps`, `/rest/pulseOx`, etc., all taking a "Pull
+  token" query param) exist for a Pull-tier integration, which Starter
+  Access's "Delivery: Push only" means this app isn't using. Once a
+  real push lands in `garmin_push_events`, these confirmed field names
+  are the reference to decode it against — a real step up from having
+  nothing confirmed at all, even though the exact push envelope is
+  still open.
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as

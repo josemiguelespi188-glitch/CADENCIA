@@ -28,13 +28,39 @@ import type { Workout, WorkoutStep } from "@/lib/types";
  * - "Delivery: Push only" (per the Starter Access screenshot) means
  *   there is NO pull/poll endpoint for Activity/Health/Training data —
  *   Garmin calls a webhook on OUR side whenever an athlete's device
- *   syncs. See app/api/webhooks/garmin/route.ts — the payload shape
- *   per API family is unconfirmed, so every push is stored raw first
- *   (garmin_push_events) and parsed later once a real payload is seen.
- * - `pushStructuredWorkoutToGarmin()`'s actual Training API endpoint
- *   and request body shape are NOT confirmed either — same "exists so
- *   the UI has a stable interface to call, needs a real rewrite once
- *   the docs are read" caveat already applied to COROS's push function.
+ *   syncs. See app/api/webhooks/garmin/[type]/route.ts — the payload
+ *   shape per API family is still unconfirmed, so every push is stored
+ *   raw first (garmin_push_events) and parsed later once a real
+ *   payload is seen.
+ * - **`GARMIN_DEV_API_BASE` is confirmed**: `https://apis.garmin.com`
+ *   — read directly off the real OpenAPI specs' `servers.url` (Partner
+ *   API `/partner-gateway`, Workout Portal `/training-api/workout`,
+ *   Health API `/wellness-api`, Course Portal `/training-api/courses`
+ *   — each family under the same host, different sub-path), via the
+ *   portal's own "API Documentation" page (Nov 2026). The
+ *   authorize/token URLs are still NOT confirmed — neither appears in
+ *   any of those specs (they're all data APIs, not the OAuth server
+ *   itself); get those from "OAuth2 Tools" -> "User Authorization" /
+ *   "Refresh Token" specifically.
+ * - **`pushStructuredWorkoutToGarmin()`'s request shape is now
+ *   confirmed**, against the real Workout Portal OpenAPI spec (not a
+ *   guess anymore): `POST {API_BASE}/training-api/workout/workout`
+ *   creates a `Workout` (server base already includes
+ *   `/training-api/workout`, the path adds another `/workout` on top —
+ *   that double segment is exactly what the real spec shows, not a
+ *   typo), then `POST {API_BASE}/training-api/workout/schedule` with
+ *   `{workoutId, date}` assigns it to a calendar date (`WorkoutSchedule`).
+ *   Two calls, not one. `Step.type` is a discriminator: `"WorkoutStep"`
+ *   for a plain step or `"WorkoutRepeatStep"` for a repeat marker.
+ *   **Still a real simplification**: the confirmed schema has no
+ *   nested "child steps of a repeat" field on `WorkoutRepeatStep`
+ *   itself (only `repeatType`/`repeatValue`/`skipLastRestStep`), so how
+ *   grouping actually works (presumably via `stepOrder` adjacency) isn't
+ *   confirmed from this spec alone — rather than guess that semantics,
+ *   a Cadencia step with `repeatCount > 1` is sent as that many
+ *   duplicate `WorkoutStep` entries in sequence instead of one
+ *   `WorkoutRepeatStep` wrapper. Functionally equivalent for the
+ *   athlete, just not using Garmin's native repeat-block UI grouping.
  *
  * **Legal constraint this file (and anything built on top of it) must
  * respect**: per Section 15.11 of the Garmin Connect Developer Program
@@ -146,33 +172,117 @@ export async function getValidGarminDevAccessToken(athleteId: string): Promise<s
   return refreshed.access_token;
 }
 
+/** Cadencia's Sport -> Garmin's confirmed Workout.sport enum
+ * (RUNNING/CYCLING/LAP_SWIMMING/STRENGTH_TRAINING/CARDIO_TRAINING/YOGA/
+ * PILATES/GENERIC/HIIT/MULTI_SPORT). Cadencia has no "race" equivalent —
+ * GENERIC is the safest fallback, not a guess at a closer-but-wrong enum
+ * value. */
+function sportToGarminShape(sport: Workout["sport"]): string {
+  switch (sport) {
+    case "run":
+      return "RUNNING";
+    case "bike":
+      return "CYCLING";
+    case "swim":
+      return "LAP_SWIMMING";
+    case "gym":
+      return "STRENGTH_TRAINING";
+    case "race":
+      return "GENERIC";
+    default:
+      return "GENERIC";
+  }
+}
+
+/** Cadencia's WorkoutStepKind -> Garmin's confirmed WorkoutStep.intensity
+ * enum (ACTIVE/REST/WARMUP/COOLDOWN/RECOVERY/INTERVAL/MAIN). */
+function kindToGarminIntensity(kind: WorkoutStep["kind"]): string {
+  switch (kind) {
+    case "warmup":
+      return "WARMUP";
+    case "work":
+      return "INTERVAL";
+    case "recovery":
+      return "RECOVERY";
+    case "cooldown":
+      return "COOLDOWN";
+    case "rest":
+      return "REST";
+  }
+}
+
+/** Cadencia's WorkoutStepDurationType -> Garmin's confirmed
+ * WorkoutStep.durationType enum (a much larger real enum; only the 3
+ * values Cadencia's own model can produce are mapped). */
+function durationTypeToGarminShape(durationType: WorkoutStep["durationType"]): string {
+  switch (durationType) {
+    case "time":
+      return "TIME";
+    case "distance":
+      return "DISTANCE";
+    case "open":
+      return "OPEN";
+  }
+}
+
+/** Cadencia's WorkoutStepTargetType -> Garmin's confirmed
+ * WorkoutStep.targetType enum. */
+function targetTypeToGarminShape(targetType: WorkoutStep["targetType"]): string {
+  switch (targetType) {
+    case "pace":
+      return "PACE";
+    case "hr":
+      return "HEART_RATE";
+    case "power":
+      return "POWER";
+    case "cadence":
+      return "CADENCE";
+    case "open":
+      return "OPEN";
+  }
+}
+
 /**
- * Maps one Cadencia WorkoutStep to Garmin's Training API shape — pure
- * guesswork at the field names below (no reference found anywhere, unlike
- * COROS's rCoros lead), kept deliberately generic/self-describing so a
- * real rewrite is a small, contained change once the API Reference is
- * actually read. **Not confirmed against official docs.**
+ * Maps one Cadencia WorkoutStep to a real Garmin `WorkoutStep` object,
+ * per the confirmed Workout Portal OpenAPI schema (Nov 2026) — field
+ * names and enum values below are no longer a guess. `repeatCount > 1`
+ * duplicates the step that many times (see this file's header for why
+ * a native `WorkoutRepeatStep` wrapper isn't attempted).
  */
-function stepToGarminShape(step: WorkoutStep) {
+function stepToGarminShape(step: WorkoutStep, stepOrder: number) {
   return {
-    stepType: step.kind,
-    durationType: step.durationType,
+    stepOrder,
+    type: "WorkoutStep",
+    intensity: kindToGarminIntensity(step.kind),
+    durationType: durationTypeToGarminShape(step.durationType),
     durationValue: step.durationValue,
-    targetType: step.targetType,
-    targetLow: step.targetLow,
-    targetHigh: step.targetHigh,
-    repeatCount: step.repeatCount ?? 1,
+    targetType: targetTypeToGarminShape(step.targetType),
+    targetValue: step.targetLow,
+    targetValueLow: step.targetLow,
+    targetValueHigh: step.targetHigh,
   };
+}
+
+function buildGarminSteps(steps: WorkoutStep[]) {
+  const expanded: WorkoutStep[] = [];
+  for (const step of steps) {
+    const times = Math.max(1, step.repeatCount ?? 1);
+    for (let i = 0; i < times; i++) expanded.push(step);
+  }
+  return expanded.map((step, i) => stepToGarminShape(step, i + 1));
+}
+
+interface GarminWorkoutCreateResponse {
+  workoutId: number;
 }
 
 /**
  * Pushes a structured workout onto the athlete's Garmin account via the
- * Training API. **Unconfirmed end-to-end** — the endpoint path, auth
- * header shape, and request/response body are all placeholders pending
- * the real API Reference (blocked from this sandbox). Exists so
- * POST /api/garmin-dev/push and the "Push to Garmin" button in
- * WorkoutDialog.tsx have a stable interface today; rewrite the body once
- * the docs are read.
+ * Training API — two confirmed calls (see this file's header): create
+ * the `Workout`, then create a `WorkoutSchedule` assigning it to
+ * `workout.date`. The request shape is now confirmed against the real
+ * Workout Portal OpenAPI spec; the response shape for errors beyond a
+ * non-2xx status is not specially parsed.
  */
 export async function pushStructuredWorkoutToGarmin(athleteId: string, workout: Workout): Promise<void> {
   if (!workout.workout_steps.length) {
@@ -182,16 +292,28 @@ export async function pushStructuredWorkoutToGarmin(athleteId: string, workout: 
   if (!accessToken) throw new Error("This athlete has no Garmin Developer connection.");
 
   const apiBase = requireGarminDevEnv("GARMIN_DEV_API_BASE");
-  const res = await fetch(`${apiBase}/training-api/workout`, {
+  const headers = { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" };
+
+  const createRes = await fetch(`${apiBase}/training-api/workout/workout`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({
       workoutName: workout.title,
-      scheduledDate: workout.date,
-      steps: workout.workout_steps.map(stepToGarminShape),
+      sport: sportToGarminShape(workout.sport),
+      steps: buildGarminSteps(workout.workout_steps),
     }),
   });
-  if (!res.ok) {
-    throw new Error(`Garmin workout push failed: ${res.status} ${await res.text()}`);
+  if (!createRes.ok) {
+    throw new Error(`Garmin workout creation failed: ${createRes.status} ${await createRes.text()}`);
+  }
+  const created: GarminWorkoutCreateResponse = await createRes.json();
+
+  const scheduleRes = await fetch(`${apiBase}/training-api/workout/schedule`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ workoutId: created.workoutId, date: workout.date }),
+  });
+  if (!scheduleRes.ok) {
+    throw new Error(`Garmin workout was created but scheduling it failed: ${scheduleRes.status} ${await scheduleRes.text()}`);
   }
 }
