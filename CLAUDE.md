@@ -1312,21 +1312,42 @@ Personal API loses nothing by this addition.
   `/api/garmin-dev/status`, `/api/garmin-dev/disconnect`.
 - **"Delivery: Push only" means there is no pull/poll endpoint at this
   tier** — unlike Strava's manual "Sync now" button, Garmin calls a
-  webhook on our side whenever an athlete's device syncs. New route
-  `app/api/webhooks/garmin/route.ts` — register
-  `https://cadenciatraining.vercel.app/api/webhooks/garmin` in the
-  Developer Portal's "API Tools" data-delivery settings. **The real
-  payload shape per API family (Activity/Health/Women's
-  Health/Training) is unconfirmed**, so every delivery is stored
-  verbatim first in a new `garmin_push_events` table
-  (`processed boolean default false`) rather than guessed and parsed
+  webhook on our side whenever an athlete's device syncs.
+  **Confirmed live (Nov 2026) that this is NOT one generic webhook** —
+  the real "API Tools -> Endpoint Configuration" page
+  (`apis.garmin.com/tools/endpoints`) registers a **separate URL per
+  data type**, each its own row with an "on hold"/"enabled" checkbox:
+  ACTIVITY - Activities, ACTIVITY - Activity Details, ACTIVITY -
+  Activity Files, ACTIVITY - Manually Updated Activities, ACTIVITY -
+  MoveIQ, COMMON - Deregistrations, COMMON - User Permissions Change,
+  plus a HEALTH - * family (not used — see below) and presumably a
+  TRAINING - * family further down the page not yet seen in full.
+  `app/api/webhooks/garmin/route.ts` was replaced with
+  `app/api/webhooks/garmin/[type]/route.ts` — a dynamic segment, so the
+  URL registered for each row encodes its own type
+  (`.../garmin/activities`, `.../garmin/activity-details`,
+  `.../garmin/deregistrations`, etc.) and a push's type is always known
+  for certain from the URL it hit, never guessed from the body.
+  **Deliberately only registering Activity/Training/the two COMMON
+  rows — not any HEALTH - * row**, matching the APIs actually requested
+  on the app (Activity + Training only, not Health/Women's
+  Health/Courses). **The real payload shape per type is still
+  unconfirmed**, so every delivery is stored verbatim first in
+  `garmin_push_events` (`endpoint_type` + `payload jsonb`,
+  `processed boolean default false`, migration
+  `027_garmin_push_endpoint_type.sql`) rather than guessed and parsed
   blind — same "capture now, parse later" discipline this codebase
   already applies elsewhere to an unconfirmed third-party shape.
   Parsing into real rows (and matching into `workouts`, mirroring
   Strava's auto-complete) is a follow-up once a real payload has
-  actually been seen. No signature verification is implemented either
-  — Garmin's push-signing scheme wasn't found/confirmed from this
-  sandbox.
+  actually been seen per type. No signature verification is
+  implemented either — Garmin's push-signing scheme wasn't
+  found/confirmed from this sandbox. **`COMMON - Deregistrations`
+  matters for real compliance, not just sync** — it's how we'd learn an
+  athlete revoked access from Garmin's own side rather than our
+  Disconnect button; a handler that actually deletes the stored
+  `garmin_dev_connections` row in response isn't built yet, only raw
+  capture.
 - **`pushStructuredWorkoutToGarmin()`** reuses the exact same
   `WorkoutStep[]` model already built for COROS — `workout_steps` was
   never COROS-specific. The Training API endpoint path and request
@@ -1362,10 +1383,34 @@ Personal API loses nothing by this addition.
   Garmin Developer Portal app/credentials configured here, and
   `developer.garmin.com` stays unreachable) — **confirm once deployed**:
   set the five `GARMIN_DEV_*` env vars from the real Start
-  Guide/Apps page, register both URLs above in the Developer Portal,
-  click "Connect" on the new card, and — once a real push actually
-  arrives — read a `garmin_push_events` row to finally confirm the real
-  payload shape and start building the parser.
+  Guide/Apps page, register the webhook URLs above in the Developer
+  Portal, click "Connect" on the new card, and — once a real push
+  actually arrives — read a `garmin_push_events` row to finally confirm
+  the real payload shape and start building the parser.
+
+### Real app created, confirmed OAuth 2.0 (Nov 2026)
+
+A real App ("Cadencia") was created in the Developer Portal under
+"LineUps FanXperience Inc." — Client ID/Secret issued, Key Status
+**Approved**, Product **Connect Developer - Starter**, Expires
+**Never**. **Confirms `Authorization: OAuth 2.0`** — the generic
+OAuth2 authorization-code-grant shape already built in
+`lib/integrations/garminDeveloper.ts` is the right shape, not OAuth
+1.0a; no code change was needed for this confirmation, only the
+standing assumption noted in that file's header is now verified
+rather than merely "the more common shape." The Client ID/Secret
+themselves go directly into Vercel's env var UI, never into chat (same
+security practice applied to every other secret in this project).
+
+**Still blocking a real end-to-end test**: the actual
+`GARMIN_DEV_AUTHORIZE_URL`/`GARMIN_DEV_TOKEN_URL`/`GARMIN_DEV_API_BASE`
+values — not yet found. The Developer Portal's left nav (seen live) has
+an "OAuth2 Tools" section with "User Authorization" and "Refresh
+Token" pages specifically, plus a separate "API Documentation" page —
+one of those should show the real endpoint URLs/example requests.
+Check those next, rather than guessing from the generic
+`apis.garmin.com` host seen in the Endpoint Configuration page's own
+URL bar (that host alone doesn't confirm the specific OAuth paths).
 
 ## Style
 

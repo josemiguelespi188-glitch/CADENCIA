@@ -266,12 +266,17 @@ create table if not exists garmin_dev_connections (
   last_synced_at timestamptz
 );
 
--- Starter Access is push-only delivery — Garmin calls our webhook, we
--- store the raw payload first and parse it once its real shape is
--- confirmed against a live delivery.
+-- Starter Access is push-only delivery — Garmin calls a different URL
+-- per data type (confirmed live, Nov 2026, via "API Tools -> Endpoint
+-- Configuration": ACTIVITY - Activities, ACTIVITY - Activity Details,
+-- COMMON - Deregistrations, etc., each its own registrable URL) rather
+-- than one generic webhook. endpoint_type records which one a given
+-- push arrived on; payload is still stored raw since the body shape
+-- itself is unconfirmed.
 create table if not exists garmin_push_events (
   id uuid primary key default gen_random_uuid(),
   received_at timestamptz not null default now(),
+  endpoint_type text,
   payload jsonb not null,
   processed boolean not null default false
 );
