@@ -182,13 +182,13 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
 
         {templates.length > 0 && isNew && (
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs text-ink-2">{t("use")} — {t("tpl_h")}</label>
+            <label className="text-xs text-ink-2">{t("use")} · {t("tpl_h")}</label>
             <select
               onChange={(e) => e.target.value && applyTemplate(e.target.value)}
               defaultValue=""
               className="h-10 rounded-xl border border-line bg-bg px-3 text-sm"
             >
-              <option value="">—</option>
+              <option value="">-</option>
               {templates.map((tpl) => (
                 <option key={tpl.id} value={tpl.id}>
                   {t(tpl.sport)} · {tpl.title}

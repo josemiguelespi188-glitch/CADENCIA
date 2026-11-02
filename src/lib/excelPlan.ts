@@ -140,16 +140,16 @@ export async function buildPlanTemplate(locale: Locale = "es", athletes: Athlete
   const lines =
     locale === "en"
       ? [
-          "One row per workout. Delete the example row (row 2) before uploading, or leave it — it will just create one more workout.",
-          "Athlete / Sport / Done have dropdowns — pick from the list so the import can match them.",
-          "Give either Start time + End time, OR just Minutes — not both. Times win if both are present.",
+          "One row per workout. Delete the example row (row 2) before uploading, or leave it: it will just create one more workout.",
+          "Athlete / Sport / Done have dropdowns, pick from the list so the import can match them.",
+          "Give either Start time + End time, OR just Minutes, not both. Times win if both are present.",
           "Date must be YYYY-MM-DD.",
           "Notes is the internal objective; Strava comment is written verbatim onto the Strava activity once it's matched (leave blank to let the AI draft one instead).",
         ]
       : [
-          "Una fila por entreno. Borra la fila de ejemplo (fila 2) antes de subir, o déjala — solo va a crear un entreno más.",
-          "Atleta / Deporte / Hecho tienen listas desplegables — elige de ahí para que la importación los reconozca.",
-          "Pon Hora inicio + Hora fin, O solo Minutos — no hace falta ambos. Si pones las dos horas, esas mandan sobre Minutos.",
+          "Una fila por entreno. Borra la fila de ejemplo (fila 2) antes de subir, o déjala: solo va a crear un entreno más.",
+          "Atleta / Deporte / Hecho tienen listas desplegables, elige de ahí para que la importación los reconozca.",
+          "Pon Hora inicio + Hora fin, O solo Minutos, no hace falta ambos. Si pones las dos horas, esas mandan sobre Minutos.",
           "La fecha debe ir como AAAA-MM-DD.",
           "Notas es el objetivo interno; Comentario para Strava se escribe tal cual en la actividad de Strava una vez que se vincule (déjalo vacío para que la IA redacte uno).",
         ];

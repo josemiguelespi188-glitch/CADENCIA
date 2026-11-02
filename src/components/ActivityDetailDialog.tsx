@@ -62,7 +62,7 @@ export function ActivityDetailDialog({ activity, onClose }: { activity: StravaAc
 
           <div className="grid grid-cols-2 gap-3">
             <Stat label={isEn ? "Duration" : "Duración"} value={hm(activity.moving_time_s / 60, locale as "es" | "en")} />
-            <Stat label={isEn ? "Distance" : "Distancia"} value={activity.distance_m ? `${(activity.distance_m / 1000).toFixed(2)} km` : "—"} />
+            <Stat label={isEn ? "Distance" : "Distancia"} value={activity.distance_m ? `${(activity.distance_m / 1000).toFixed(2)} km` : "N/A"} />
             {sport === "run" && pace && <Stat label={isEn ? "Pace" : "Ritmo"} value={paceLabel(pace)} />}
             {activity.average_speed ? <Stat label={isEn ? "Avg speed" : "Vel. prom."} value={`${(activity.average_speed * 3.6).toFixed(1)} km/h`} /> : null}
             {activity.average_heart_rate ? <Stat label={isEn ? "Avg HR" : "FC prom."} value={`${Math.round(activity.average_heart_rate)} bpm`} /> : null}
@@ -90,13 +90,13 @@ export function ActivityDetailDialog({ activity, onClose }: { activity: StravaAc
                     </tr>
                   </thead>
                   <tbody>
-                    <ComparisonRow label={isEn ? "Duration" : "Duración"} planned={matchedWorkout.minutes ? hm(matchedWorkout.minutes, locale as "es" | "en") : "—"} completed={hm(activity.moving_time_s / 60, locale as "es" | "en")} />
+                    <ComparisonRow label={isEn ? "Duration" : "Duración"} planned={matchedWorkout.minutes ? hm(matchedWorkout.minutes, locale as "es" | "en") : "N/A"} completed={hm(activity.moving_time_s / 60, locale as "es" | "en")} />
                     <ComparisonRow
                       label={isEn ? "Distance" : "Distancia"}
-                      planned={matchedWorkout.km ? `${matchedWorkout.km} km` : "—"}
-                      completed={activity.distance_m ? `${(activity.distance_m / 1000).toFixed(2)} km` : "—"}
+                      planned={matchedWorkout.km ? `${matchedWorkout.km} km` : "N/A"}
+                      completed={activity.distance_m ? `${(activity.distance_m / 1000).toFixed(2)} km` : "N/A"}
                     />
-                    {matchedWorkout.rpe !== null && <ComparisonRow label={t("rpe")} planned="—" completed={String(matchedWorkout.rpe)} />}
+                    {matchedWorkout.rpe !== null && <ComparisonRow label={t("rpe")} planned="N/A" completed={String(matchedWorkout.rpe)} />}
                   </tbody>
                 </table>
                 {matchedWorkout.notes && (

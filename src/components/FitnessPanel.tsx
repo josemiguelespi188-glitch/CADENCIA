@@ -46,8 +46,8 @@ export function FitnessPanel({ athleteId }: { athleteId: string }) {
         <h3 className="text-lg font-semibold tracking-tight">{isEn ? "Fitness / Fatigue / Form" : "Forma Física / Fatiga / Forma"}</h3>
         <p className="mt-2 text-sm text-ink-3">
           {isEn
-            ? "No training-load history synced yet — sync Strava to start building this up."
-            : "Todavía no hay historial de carga de entrenamiento sincronizado — sincroniza Strava para empezar a acumularlo."}
+            ? "No training-load history synced yet. Sync Strava to start building this up."
+            : "Todavía no hay historial de carga de entrenamiento sincronizado. Sincroniza Strava para empezar a acumularlo."}
         </p>
       </Card>
     );
@@ -68,8 +68,8 @@ export function FitnessPanel({ athleteId }: { athleteId: string }) {
       {!warmedUp && (
         <p className="mt-2 rounded-lg bg-surface-2 px-3 py-2 text-xs text-ink-2">
           {isEn
-            ? `Still warming up — only ${daysOfHistory} day(s) of history so far. Fitness (CTL) needs ~42 days to settle; these numbers will understate it until then.`
-            : `Todavía calentando — solo ${daysOfHistory} día(s) de historial hasta ahora. La Forma Física (CTL) necesita ~42 días para estabilizarse; estos números la subestiman hasta entonces.`}
+            ? `Still warming up, only ${daysOfHistory} day(s) of history so far. Fitness (CTL) needs ~42 days to settle; these numbers will understate it until then.`
+            : `Todavía calentando, solo ${daysOfHistory} día(s) de historial hasta ahora. La Forma Física (CTL) necesita ~42 días para estabilizarse; estos números la subestiman hasta entonces.`}
         </p>
       )}
 

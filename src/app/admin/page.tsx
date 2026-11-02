@@ -209,7 +209,7 @@ function AthleteRow({ athlete, me, onChange }: { athlete: Athlete; me: Athlete; 
             {athlete.name}
             {athlete.id === me.id && <span className="ml-1.5 text-xs text-ink-3">(you)</span>}
           </p>
-          <p className="text-xs text-ink-3">{athlete.email ?? "—"}</p>
+          <p className="text-xs text-ink-3">{athlete.email ?? "No email"}</p>
         </div>
         {athlete.is_admin && (
           <span className="rounded-full bg-ink px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-bg">Admin</span>

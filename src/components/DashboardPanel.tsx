@@ -189,7 +189,7 @@ export function DashboardPanel({
                 </p>
               </>
             ) : (
-              <p className="mt-1 text-sm text-ink-3">—</p>
+              <p className="mt-1 text-sm text-ink-3">N/A</p>
             )}
           </Card>
         ))}
@@ -246,12 +246,12 @@ export function DashboardPanel({
                     {isMultiple && <td className="px-2 py-2.5 font-medium">{athleteBySlug[a.athleteSlug]?.initials ?? "?"}</td>}
                     <td className="max-w-[220px] truncate px-2 py-2.5">{a.name}</td>
                     <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums">{hm(a.moving_time_s / 60, locale as "es" | "en")}</td>
-                    <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums">{a.distance_m ? `${(a.distance_m / 1000).toFixed(1)} km` : "—"}</td>
+                    <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums">{a.distance_m ? `${(a.distance_m / 1000).toFixed(1)} km` : "N/A"}</td>
                     <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums">
-                      {a.average_heart_rate ? `${Math.round(a.average_heart_rate)} bpm${pctThreshold ? ` (${pctThreshold}%)` : ""}` : "—"}
+                      {a.average_heart_rate ? `${Math.round(a.average_heart_rate)} bpm${pctThreshold ? ` (${pctThreshold}%)` : ""}` : "N/A"}
                     </td>
-                    <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums">{a.average_cadence ? Math.round(a.average_cadence) : "—"}</td>
-                    <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums">{a.relative_effort ?? "—"}</td>
+                    <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums">{a.average_cadence ? Math.round(a.average_cadence) : "N/A"}</td>
+                    <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums">{a.relative_effort ?? "N/A"}</td>
                   </tr>
                 );
               })}

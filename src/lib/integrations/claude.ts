@@ -24,7 +24,7 @@ export async function generateActivityDescription(
     activity.distance_m ? `Distance: ${(activity.distance_m / 1000).toFixed(2)} km` : null,
     activity.average_cadence ? `Average cadence: ${Math.round(activity.average_cadence)}` : null,
     activity.average_speed ? `Average speed: ${activity.average_speed.toFixed(2)} m/s` : null,
-    matchedWorkout ? `Planned workout: "${matchedWorkout.title}" — objective: ${matchedWorkout.notes || "(no notes)"}` : null,
+    matchedWorkout ? `Planned workout: "${matchedWorkout.title}", objective: ${matchedWorkout.notes || "(no notes)"}` : null,
   ].filter(Boolean);
 
   try {

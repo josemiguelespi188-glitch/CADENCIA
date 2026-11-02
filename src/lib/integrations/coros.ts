@@ -33,7 +33,7 @@ function requireCorosEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
     throw new Error(
-      `${name} is not set. COROS's real API endpoints are unconfirmed in this codebase — see the top of lib/integrations/coros.ts.`
+      `${name} is not set. COROS's real API endpoints are unconfirmed in this codebase, see the top of lib/integrations/coros.ts.`
     );
   }
   return value;

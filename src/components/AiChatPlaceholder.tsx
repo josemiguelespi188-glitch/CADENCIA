@@ -32,8 +32,8 @@ export function AiChatPlaceholder() {
       id: "intro",
       role: "assistant",
       text: isEn
-        ? "Hi! I'll be your AI training coach — ask me to help plan or adjust your training once I'm connected. For now this chat isn't wired up to a real model yet, but you can try it out."
-        : "¡Hola! Seré tu entrenador de IA — podrás pedirme ayuda para planear o ajustar tu entrenamiento una vez que esté conectado. Por ahora este chat todavía no está conectado a un modelo real, pero puedes probarlo.",
+        ? "Hi! I'll be your AI training coach, able to help plan or adjust your training once I'm connected. For now this chat isn't wired up to a real model yet, but you can try it out."
+        : "¡Hola! Seré tu entrenador de IA, podré ayudarte a planear o ajustar tu entrenamiento una vez que esté conectado. Por ahora este chat todavía no está conectado a un modelo real, pero puedes probarlo.",
     },
   ]);
   const [draft, setDraft] = useState("");
@@ -55,7 +55,7 @@ export function AiChatPlaceholder() {
       <div>
         <h3 className="text-lg font-semibold tracking-tight">{isEn ? "AI Training Chat" : "Chat de Entrenamiento con IA"}</h3>
         <p className="text-xs text-ink-3">
-          {isEn ? "Not connected to a real AI yet — coming soon." : "Todavía no conectado a una IA real — próximamente."}
+          {isEn ? "Not connected to a real AI yet, coming soon." : "Todavía no conectado a una IA real, próximamente."}
         </p>
       </div>
 

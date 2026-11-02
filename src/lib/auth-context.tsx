@@ -250,8 +250,8 @@ function SignInScreen() {
 
         <p className="mt-6 text-center text-xs text-ink-3">
           {isEn
-            ? "No self sign-up — ask an admin to invite you."
-            : "No hay registro abierto — pide a un admin que te invite."}
+            ? "No self sign-up. Ask an admin to invite you."
+            : "No hay registro abierto. Pide a un admin que te invite."}
         </p>
       </div>
     </div>

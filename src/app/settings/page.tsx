@@ -43,7 +43,7 @@ function SettingsContent() {
     if (strava === "connected") setToast(isEn ? "Strava connected." : "Strava conectado.");
     else if (strava === "error") setToast(isEn ? "Could not connect Strava. Try again." : "No se pudo conectar Strava. Intenta de nuevo.");
     else if (coros === "connected") setToast(isEn ? "COROS connected." : "COROS conectado.");
-    else if (coros === "error") setToast(isEn ? "Could not connect COROS — its API may not be configured yet." : "No se pudo conectar COROS — puede que su API todavía no esté configurada.");
+    else if (coros === "error") setToast(isEn ? "Could not connect COROS. Its API may not be configured yet." : "No se pudo conectar COROS. Puede que su API todavía no esté configurada.");
   }, [searchParams, isEn]);
 
   return (
@@ -229,8 +229,8 @@ function AthleteCorosCard({ name }: { name: string }) {
 
       <p className="mt-2 text-xs text-ink-3">
         {isEn
-          ? "COROS's real API is still pending approval — connecting may not work yet. See CLAUDE.md."
-          : "La API real de COROS todavía está pendiente de aprobación — puede que conectar no funcione todavía. Ver CLAUDE.md."}
+          ? "COROS's real API is still pending approval. Connecting may not work yet. See CLAUDE.md."
+          : "La API real de COROS todavía está pendiente de aprobación. Puede que conectar no funcione todavía. Ver CLAUDE.md."}
       </p>
 
       <div className="mt-5 flex flex-wrap gap-2">
@@ -458,8 +458,8 @@ function AthleteGarminCard({ name }: { name: string }) {
 
       <p className="mt-2 text-xs text-ink-3">
         {isEn
-          ? "Read-only, personal use only — this uses your own Garmin Personal API key to read your own data. It cannot push workouts to your watch (Garmin doesn't allow that for this type of key)."
-          : "Solo lectura, uso personal — usa tu propia clave Personal API de Garmin para leer tus propios datos. No puede mandar entrenos a tu reloj (Garmin no lo permite con este tipo de clave)."}
+          ? "Read-only, personal use only: this uses your own Garmin Personal API key to read your own data. It cannot push workouts to your watch (Garmin doesn't allow that for this type of key)."
+          : "Solo lectura, uso personal: usa tu propia clave Personal API de Garmin para leer tus propios datos. No puede mandar entrenos a tu reloj (Garmin no lo permite con este tipo de clave)."}
       </p>
 
       {!status?.connected && (
@@ -474,8 +474,8 @@ function AthleteGarminCard({ name }: { name: string }) {
           <li>{isEn ? "Click to generate a new Personal API key." : "Genera una nueva clave Personal API."}</li>
           <li>
             {isEn
-              ? "Copy it immediately — Garmin only shows it once."
-              : "Cópiala de inmediato — Garmin solo la muestra una vez."}
+              ? "Copy it immediately, Garmin only shows it once."
+              : "Cópiala de inmediato, Garmin solo la muestra una vez."}
           </li>
           <li>{isEn ? "Paste it below and save." : "Pégala abajo y guarda."}</li>
         </ol>

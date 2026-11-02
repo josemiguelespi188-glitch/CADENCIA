@@ -132,7 +132,7 @@ export function AthleteProfileCard({ slug }: { slug: AthleteSlug }) {
             </Field>
             <Field label={isEn ? "Sex" : "Sexo"}>
               <select value={sex} onChange={(e) => setSex(e.target.value as typeof sex)} className={inputCls}>
-                <option value="">—</option>
+                <option value="">-</option>
                 <option value="male">{isEn ? "Male" : "Masculino"}</option>
                 <option value="female">{isEn ? "Female" : "Femenino"}</option>
                 <option value="other">{isEn ? "Other" : "Otro"}</option>

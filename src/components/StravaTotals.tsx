@@ -9,7 +9,7 @@ const ROWS: { key: "run" | "ride" | "swim"; label: string }[] = [
 ];
 
 function cell(t: Totals | undefined) {
-  if (!t || !t.count) return "—";
+  if (!t || !t.count) return "N/A";
   const km = (t.distance / 1000).toFixed(0);
   const hrs = Math.round(t.moving_time / 3600);
   return `${km} km · ${hrs} h`;

@@ -49,10 +49,10 @@ export default function PrivacyPage() {
           <section>
             <h2 className="mb-1 text-base font-semibold text-ink">4. Third parties we use</h2>
             <ul className="ml-5 list-disc space-y-1">
-              <li><strong>Supabase</strong> — our database and authentication provider. All application data is stored there.</li>
-              <li><strong>Vercel</strong> — hosts this application.</li>
-              <li><strong>Strava, COROS, and Garmin</strong> — only for the specific athlete who connects their own account with that platform, to sync their own activity data.</li>
-              <li><strong>Anthropic (Claude API)</strong> — used in a best-effort way to generate short written summaries of a completed workout, written back onto the matching Strava activity. Only the specific activity&apos;s own summary data (duration, distance, pace, etc.) is sent for this purpose.</li>
+              <li><strong>Supabase</strong>: our database and authentication provider. All application data is stored there.</li>
+              <li><strong>Vercel</strong>: hosts this application.</li>
+              <li><strong>Strava, COROS, and Garmin</strong>: only for the specific athlete who connects their own account with that platform, to sync their own activity data.</li>
+              <li><strong>Anthropic (Claude API)</strong>: used in a best-effort way to generate short written summaries of a completed workout, written back onto the matching Strava activity. Only the specific activity&apos;s own summary data (duration, distance, pace, etc.) is sent for this purpose.</li>
             </ul>
             <p className="mt-2">We do not use any advertising, tracking, or analytics platforms.</p>
           </section>
@@ -61,7 +61,7 @@ export default function PrivacyPage() {
             <h2 className="mb-1 text-base font-semibold text-ink">5. Sharing within the app</h2>
             <p>
               Cadencia is a shared training log among a small, trusted, invite-only group. Other
-              athletes in your group can see your training calendar and activity data — this is a
+              athletes in your group can see your training calendar and activity data. This is a
               core, intentional feature of the app, not an accidental exposure. Nobody outside your
               invited group can access your data.
             </p>
