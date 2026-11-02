@@ -117,6 +117,11 @@ create table if not exists workouts (
   workout_type text not null default '',
   -- Rating of Perceived Exertion, Borg CR10 (0-10) — see migration 010.
   rpe integer check (rpe is null or (rpe >= 0 and rpe <= 10)),
+  -- Structured steps (warmup/work/recovery/cooldown, each with a duration
+  -- + target, one level of repeat grouping) — see migration 014 and
+  -- src/lib/types.ts's WorkoutStep. Empty array = no structure, notes/
+  -- workout_type (free text) are unaffected either way.
+  workout_steps jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -215,6 +220,23 @@ create table if not exists strava_connections (
   last_synced_at timestamptz
 );
 
+-- ─── coros_connections ──────────────────────────────────────────────────────
+-- Mirrors strava_connections exactly — see migration 014. Prep work for the
+-- "Structured Workouts and Training Plans Sync" COROS Partner API
+-- capability applied for; COROS's real OAuth endpoints are unconfirmed
+-- (see CLAUDE.md), so the client id/secret/base URLs are env-var-only
+-- with no baked-in defaults.
+create table if not exists coros_connections (
+  athlete_id uuid primary key references athletes(id) on delete cascade,
+  coros_athlete_id text,
+  access_token text not null,
+  refresh_token text not null,
+  expires_at timestamptz not null,
+  scope text,
+  connected_at timestamptz not null default now(),
+  last_synced_at timestamptz
+);
+
 -- ─── updated_at trigger for workouts ────────────────────────────────────────
 create or replace function set_updated_at()
 returns trigger as $$
@@ -275,6 +297,9 @@ create policy strava_activities_select_authenticated on strava_activities
 
 alter table strava_connections enable row level security;
 -- Deliberately no policies at all — service-role only.
+
+alter table coros_connections enable row level security;
+-- Deliberately no policies at all — service-role only, same as strava_connections.
 
 alter table strava_daily_load enable row level security;
 drop policy if exists strava_daily_load_select_public on strava_daily_load;

@@ -106,6 +106,7 @@ export default function CalendarPage() {
       strava_comment: value.stravaComment,
       done: value.done,
       rpe: value.rpe,
+      workout_steps: value.workoutSteps,
     };
     if (existingId) {
       await supabase.from("workouts").update(payload).eq("id", existingId);

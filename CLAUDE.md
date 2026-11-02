@@ -1039,6 +1039,94 @@ that every page behind it.
    the page as a fallback (harmless, just unused once the templates are
    switched), not ripped out.
 
+## COROS structured-workout push (prep work, Oct 2026)
+
+Built per explicit instruction, ahead of COROS's response to the Partner
+API application (see the "COROS / Garmin structured-workout push —
+researched, not built" section above for the research this follows up
+on) — specifically to prepare the two things promised in that
+application's email: the OAuth redirect URI actually existing, and real
+(if still unconfirmed) Cadencia-side capability to sync structured
+workouts. **Everything COROS-API-specific here is unconfirmed** — this
+sandbox never reached COROS's real docs (Dropbox blocked). Read
+`lib/integrations/coros.ts`'s file header before touching any of this;
+it says the same thing in more detail.
+
+- **`coros_connections` table** (migration
+  `014_coros_structured_workouts.sql`, mirrored in `schema.sql` —
+  **needs this migration run in the Supabase SQL editor**) — exact
+  mirror of `strava_connections`: real OAuth tokens, RLS enabled with
+  no policies at all, service-role only.
+- **`workouts.workout_steps`** (same migration): the structured-
+  workout data model this whole feature was missing, per the earlier
+  research's own conclusion ("the actual biggest gap... isn't COROS or
+  Garmin at all — it's Cadencia's own data model"). `WorkoutStep`
+  (`lib/types.ts`): `{id, kind: warmup|work|recovery|cooldown|rest,
+  durationType: time|distance|open, durationValue, targetType:
+  pace|hr|power|cadence|open, targetLow, targetHigh, repeatCount}` —
+  deliberately flat with at most ONE level of repeat grouping (no
+  nested repeat-of-repeats), matching COROS's own documented
+  constraint from the earlier research ("does not support nested
+  repeat blocks"). A minimal add/remove step-row editor was added to
+  `WorkoutDialog.tsx` (reusing the Personal Bests list-editor pattern
+  from `AthleteProfileCard.tsx` for visual consistency) — functional,
+  not a fancy drag/drop builder; this is genuinely useful on its own
+  (a real interval structure attached to a workout) independent of
+  whether COROS ever actually receives it.
+- **`lib/integrations/coros.ts`**: OAuth URL building + token exchange/
+  refresh follow standard OAuth2 (RFC 6749) conventions — safe to trust
+  as code, same shape as the already-working Strava integration. **But
+  the actual base URLs are env vars with NO hardcoded default**
+  (`COROS_AUTHORIZE_URL`, `COROS_TOKEN_URL`, `COROS_API_BASE`,
+  alongside `COROS_CLIENT_ID`/`COROS_CLIENT_SECRET`) — guessing COROS's
+  real domain would have silently pointed at a wrong URL; leaving it
+  unset instead throws a clear "not configured" error, same maturation
+  path `STRAVA_CLIENT_ID` went through before it was set. The token
+  response's `expires_in` (seconds-from-now) is assumed rather than
+  Strava's absolute `expires_at` — the more common OAuth2 convention,
+  but still unconfirmed for COROS specifically.
+- **`pushStructuredWorkoutToCoros()`**: the actual push call target
+  (`POST {API_BASE}/tp/list/push`) and request body shape are the
+  least-confirmed part of this whole feature — `tp/list/push` is only
+  a third-party forum mention, not official docs, and the body's field
+  names (`step_name`, `duration_s`, `power_low_w`, `power_high_w`,
+  `sets`) come from the unofficial `rCoros` R package's own reverse-
+  engineering of COROS's internal data, already noted (not newly
+  found) in the earlier research section. **Do not treat this as
+  working code** — it exists so `POST /api/coros/push` and the
+  "Push to COROS" button in `WorkoutDialog.tsx` (shown once a workout
+  has at least one structured step) have a stable interface to call
+  today; the function body needs a real rewrite once the Partner API
+  Reference Guide is actually read.
+- **OAuth routes mirror Strava's exactly**: `/api/coros/connect`,
+  `/api/coros/callback` (this is literally the URL given to COROS as
+  the Redirect URI — it now really exists and accepts the redirect,
+  it just can't complete the token exchange until the env vars above
+  are real), `/api/coros/status`, `/api/coros/disconnect`. No
+  `/api/coros/sync` — COROS only has a push capability planned here
+  (per-workout, from the workout dialog), not a Strava-style pull/sync
+  of COROS's own data.
+- **`/settings`'s "Connect COROS/Garmin" card is no longer a disabled
+  placeholder** — it's a real Connect/Disconnect card now (mirroring
+  the Strava card), with an explicit note that COROS's API is still
+  pending approval and connecting may not work yet. This replaces,
+  rather than coexists with, the earlier honest-placeholder version.
+- **`POST /api/coros/push`** deliberately lets any signed-in athlete
+  push any workout (not scoped to "my own COROS connection" the way
+  Strava connect/sync is) — matches the existing "shared coach log"
+  openness `workouts` already has (any signed-in athlete can edit/
+  delete any other athlete's workout), since the workout being pushed
+  may belong to a teammate being coached, not necessarily the person
+  clicking the button.
+- Not tested against anything real — there is no real COROS account,
+  API access, or even confirmed documentation to test against from
+  this sandbox. **Before relying on any of this**: get the real
+  Partner API Reference Guide (from a machine that can reach Dropbox,
+  per the earlier research section's own note), confirm the OAuth
+  endpoints and `tp/list/push` payload shape against it, update
+  `lib/integrations/coros.ts` accordingly, then set the real
+  `COROS_*` env vars on Vercel.
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as

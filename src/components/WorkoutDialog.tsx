@@ -3,7 +3,18 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocale } from "@/lib/i18n/context";
 import { Button } from "@/components/ui/button";
-import { SPORTS, type Athlete, type AthleteSlug, type Sport, type Template, type Workout } from "@/lib/types";
+import {
+  SPORTS,
+  type Athlete,
+  type AthleteSlug,
+  type Sport,
+  type Template,
+  type Workout,
+  type WorkoutStep,
+  type WorkoutStepDurationType,
+  type WorkoutStepKind,
+  type WorkoutStepTargetType,
+} from "@/lib/types";
 import { ymd, today } from "@/lib/dates";
 
 export type WorkoutWithSlug = Workout & { athleteSlug: AthleteSlug };
@@ -21,6 +32,15 @@ export interface WorkoutFormValue {
   stravaComment: string;
   done: boolean;
   rpe: number | null;
+  workoutSteps: WorkoutStep[];
+}
+
+const STEP_KINDS: WorkoutStepKind[] = ["warmup", "work", "recovery", "cooldown", "rest"];
+const DURATION_TYPES: WorkoutStepDurationType[] = ["time", "distance", "open"];
+const TARGET_TYPES: WorkoutStepTargetType[] = ["pace", "hr", "power", "cadence", "open"];
+
+function newStepId() {
+  return typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 }
 
 interface Props {
@@ -48,6 +68,7 @@ const EMPTY: WorkoutFormValue = {
   stravaComment: "",
   done: false,
   rpe: null,
+  workoutSteps: [],
 };
 
 export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, onDelete }: Props) {
@@ -55,6 +76,24 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [value, setValue] = useState<WorkoutFormValue>(EMPTY);
   const [saving, setSaving] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushMessage, setPushMessage] = useState<string | null>(null);
+
+  async function pushToCoros(workoutId: string) {
+    setPushBusy(true);
+    setPushMessage(null);
+    try {
+      const res = await fetch("/api/coros/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workoutId }),
+      });
+      const data = await res.json();
+      setPushMessage(res.ok ? t("steps_push_ok") : data.error);
+    } finally {
+      setPushBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (!editing) {
@@ -82,6 +121,7 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
             stravaComment: r.strava_comment,
             done: r.done,
             rpe: r.rpe,
+            workoutSteps: r.workout_steps ?? [],
           }
         : {
             ...EMPTY,
@@ -89,6 +129,7 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
             athleteSlug: editing.defaultAthlete ?? athletes[0]?.slug ?? "",
           }
     );
+    setPushMessage(null);
     dialogRef.current?.showModal();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
@@ -97,6 +138,24 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
     const tpl = templates.find((x) => x.id === id);
     if (!tpl) return;
     setValue((v) => ({ ...v, sport: tpl.sport, title: tpl.title, minutes: tpl.minutes, km: tpl.km, notes: tpl.notes }));
+  }
+
+  function addStep() {
+    setValue((v) => ({
+      ...v,
+      workoutSteps: [
+        ...v.workoutSteps,
+        { id: newStepId(), kind: "work", durationType: "time", durationValue: 300, targetType: "open", targetLow: null, targetHigh: null, repeatCount: null },
+      ],
+    }));
+  }
+
+  function updateStep(id: string, patch: Partial<WorkoutStep>) {
+    setValue((v) => ({ ...v, workoutSteps: v.workoutSteps.map((s) => (s.id === id ? { ...s, ...patch } : s)) }));
+  }
+
+  function removeStep(id: string) {
+    setValue((v) => ({ ...v, workoutSteps: v.workoutSteps.filter((s) => s.id !== id) }));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -241,6 +300,34 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
             />
             <p className="text-xs text-ink-3">{t("strava_comment_hint")}</p>
           </Field>
+
+          <div className="col-span-2">
+            <div className="mb-2 flex items-center justify-between">
+              <label className="text-xs text-ink-2">{t("steps_h")}</label>
+              <Button type="button" variant="steel" size="sm" onClick={addStep}>
+                + {t("steps_add")}
+              </Button>
+            </div>
+            {value.workoutSteps.length === 0 ? (
+              <p className="text-xs text-ink-3">{t("steps_empty")}</p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {value.workoutSteps.map((step) => (
+                  <StepRow key={step.id} step={step} onChange={(patch) => updateStep(step.id, patch)} onRemove={() => removeStep(step.id)} />
+                ))}
+              </div>
+            )}
+            <p className="mt-1 text-xs text-ink-3">{t("steps_hint")}</p>
+            {!isNew && editing?.record && value.workoutSteps.length > 0 && (
+              <div className="mt-2 flex items-center gap-2">
+                <Button type="button" variant="steel" size="sm" disabled={pushBusy} onClick={() => editing.record && pushToCoros(editing.record.id)}>
+                  {pushBusy ? "…" : t("steps_push_coros")}
+                </Button>
+                {pushMessage && <span className="text-xs text-ink-3">{pushMessage}</span>}
+              </div>
+            )}
+          </div>
+
           <div className="col-span-2 flex items-center gap-2">
             <input
               id="done"
@@ -299,6 +386,89 @@ function Field({ label, full, children }: { label: string; full?: boolean; child
     <div className={`flex flex-col gap-1.5 ${full ? "col-span-2" : ""}`}>
       <label className="text-xs text-ink-2">{label}</label>
       {children}
+    </div>
+  );
+}
+
+const stepInputCls = "h-9 rounded-lg border border-line bg-bg px-2 text-xs";
+
+/**
+ * One row of a structured workout — a minimal, functional editor (not a
+ * fancy drag/drop builder) so the "Structured Workouts and Training Plans
+ * Sync" capability applied for with COROS has real Cadencia-side data to
+ * push, once that integration is actually wired up. See
+ * lib/integrations/coros.ts for why the push itself is still unconfirmed.
+ */
+function StepRow({ step, onChange, onRemove }: { step: WorkoutStep; onChange: (patch: Partial<WorkoutStep>) => void; onRemove: () => void }) {
+  const { t } = useLocale();
+  return (
+    <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-line p-2 sm:grid-cols-6">
+      <select value={step.kind} onChange={(e) => onChange({ kind: e.target.value as WorkoutStepKind })} className={stepInputCls}>
+        {STEP_KINDS.map((k) => (
+          <option key={k} value={k}>
+            {t(`step_${k}`)}
+          </option>
+        ))}
+      </select>
+      <select
+        value={step.durationType}
+        onChange={(e) => onChange({ durationType: e.target.value as WorkoutStepDurationType, durationValue: e.target.value === "open" ? null : step.durationValue })}
+        className={stepInputCls}
+      >
+        {DURATION_TYPES.map((d) => (
+          <option key={d} value={d}>
+            {t(`duration_${d}`)}
+          </option>
+        ))}
+      </select>
+      {step.durationType !== "open" && (
+        <input
+          type="number"
+          min={0}
+          placeholder={step.durationType === "time" ? t("duration_time") + " (s)" : t("duration_distance") + " (m)"}
+          value={step.durationValue ?? ""}
+          onChange={(e) => onChange({ durationValue: e.target.value ? Number(e.target.value) : null })}
+          className={stepInputCls}
+        />
+      )}
+      <select value={step.targetType} onChange={(e) => onChange({ targetType: e.target.value as WorkoutStepTargetType })} className={stepInputCls}>
+        {TARGET_TYPES.map((tt) => (
+          <option key={tt} value={tt}>
+            {t(`target_${tt}`)}
+          </option>
+        ))}
+      </select>
+      {step.targetType !== "open" && (
+        <>
+          <input
+            type="number"
+            placeholder={t("target_low")}
+            value={step.targetLow ?? ""}
+            onChange={(e) => onChange({ targetLow: e.target.value ? Number(e.target.value) : null })}
+            className={stepInputCls}
+          />
+          <input
+            type="number"
+            placeholder={t("target_high")}
+            value={step.targetHigh ?? ""}
+            onChange={(e) => onChange({ targetHigh: e.target.value ? Number(e.target.value) : null })}
+            className={stepInputCls}
+          />
+        </>
+      )}
+      <div className="col-span-2 flex items-center gap-1.5 sm:col-span-6">
+        <input
+          type="number"
+          min={1}
+          placeholder={t("steps_repeat")}
+          value={step.repeatCount ?? ""}
+          onChange={(e) => onChange({ repeatCount: e.target.value ? Number(e.target.value) : null })}
+          className={stepInputCls + " w-24"}
+        />
+        <Button type="button" variant="danger" size="sm" onClick={onRemove} className="ml-auto">
+          ×
+        </Button>
+      </div>
     </div>
   );
 }

@@ -36,11 +36,14 @@ function SettingsContent() {
 
   useEffect(() => {
     const strava = searchParams.get("strava");
-    // Deriving a one-time toast from the ?strava= redirect query param —
-    // not render-derived state, so this has to live in an effect.
+    const coros = searchParams.get("coros");
+    // Deriving a one-time toast from the ?strava=/?coros= redirect query
+    // params — not render-derived state, so this has to live in an effect.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (strava === "connected") setToast(isEn ? "Strava connected." : "Strava conectado.");
     else if (strava === "error") setToast(isEn ? "Could not connect Strava. Try again." : "No se pudo conectar Strava. Intenta de nuevo.");
+    else if (coros === "connected") setToast(isEn ? "COROS connected." : "COROS conectado.");
+    else if (coros === "error") setToast(isEn ? "Could not connect COROS — its API may not be configured yet." : "No se pudo conectar COROS — puede que su API todavía no esté configurada.");
   }, [searchParams, isEn]);
 
   return (
@@ -64,7 +67,7 @@ function SettingsContent() {
 
               <div className="mt-8 grid gap-4 sm:grid-cols-2">
                 <AthleteStravaCard name={me.name} />
-                <ComingSoonConnectCard title="COROS / Garmin" />
+                <AthleteCorosCard name={me.name} />
               </div>
 
               <div className="mt-8">
@@ -174,25 +177,68 @@ function AthleteStravaCard({ name }: { name: string }) {
  * research note: it's real scope of its own, not something to fake a
  * working button for).
  */
-function ComingSoonConnectCard({ title }: { title: string }) {
+/**
+ * Real Connect/Disconnect UI now (not the disabled placeholder it used
+ * to be) — but COROS's real API endpoints are still unconfirmed (see
+ * lib/integrations/coros.ts's file header), so clicking Connect before
+ * COROS_CLIENT_ID/COROS_AUTHORIZE_URL/etc. are set on Vercel returns a
+ * clear "not configured" error, same maturation path Strava went through
+ * before its own env vars were set. No "Sync now" button here — COROS
+ * only has a push capability planned (per-workout, from the workout
+ * dialog), not a pull/sync like Strava's.
+ */
+function AthleteCorosCard({ name }: { name: string }) {
   const { locale } = useLocale();
   const isEn = locale === "en";
+  const [status, setStatus] = useState<StravaStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const loadStatus = useCallback(async () => {
+    const res = await fetch("/api/coros/status");
+    if (res.ok) setStatus(await res.json());
+  }, []);
+
+  useEffect(() => {
+    // Initial data fetch on mount — see the same note in calendar/page.tsx.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadStatus();
+  }, [loadStatus]);
+
+  async function disconnect() {
+    setBusy(true);
+    try {
+      await fetch("/api/coros/disconnect", { method: "POST" });
+      await loadStatus();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <Card className="opacity-70">
-      <CardTitle>{title}</CardTitle>
+    <Card>
+      <CardTitle>{name} · COROS</CardTitle>
+
       <div className="mt-4 flex items-center gap-3">
-        <span className="h-2.5 w-2.5 rounded-full bg-ink-3" />
-        <span className="text-sm text-ink-2">{isEn ? "Not available yet" : "Todavía no disponible"}</span>
+        <span className="h-2.5 w-2.5 rounded-full" style={{ background: status?.connected ? "var(--success)" : "var(--ink-3)" }} />
+        <span className="text-sm">{status?.connected ? (isEn ? "Connected" : "Conectado") : isEn ? "Not connected" : "No conectado"}</span>
       </div>
+
       <p className="mt-2 text-xs text-ink-3">
         {isEn
-          ? "Coming soon — see CLAUDE.md for the research on what this needs."
-          : "Próximamente — ver CLAUDE.md para la investigación de lo que esto necesita."}
+          ? "COROS's real API is still pending approval — connecting may not work yet. See CLAUDE.md."
+          : "La API real de COROS todavía está pendiente de aprobación — puede que conectar no funcione todavía. Ver CLAUDE.md."}
       </p>
-      <div className="mt-5">
-        <Button size="sm" disabled>
-          {isEn ? "Connect" : "Conectar"}
-        </Button>
+
+      <div className="mt-5 flex flex-wrap gap-2">
+        {status?.connected ? (
+          <Button size="sm" variant="danger" onClick={disconnect} disabled={busy}>
+            {isEn ? "Disconnect" : "Desconectar"}
+          </Button>
+        ) : (
+          <a href="/api/coros/connect">
+            <Button size="sm">{isEn ? "Connect" : "Conectar"}</Button>
+          </a>
+        )}
       </div>
     </Card>
   );

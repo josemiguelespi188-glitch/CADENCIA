@@ -101,8 +101,44 @@ export interface Workout {
   workout_type: string;
   /** Rating of Perceived Exertion, Borg CR10 (0-10). */
   rpe: number | null;
+  /** Structured steps — see WorkoutStep below. Empty array = no structure yet. */
+  workout_steps: WorkoutStep[];
   created_at: string;
   updated_at: string;
+}
+
+export type WorkoutStepKind = "warmup" | "work" | "recovery" | "cooldown" | "rest";
+export type WorkoutStepDurationType = "time" | "distance" | "open";
+export type WorkoutStepTargetType = "pace" | "hr" | "power" | "cadence" | "open";
+
+/**
+ * One step of a structured workout (e.g. one interval of "6x400m @ 5K
+ * pace, 90s easy recovery"). Deliberately flat with at most ONE level of
+ * repeat grouping — COROS's own push API reportedly does not support
+ * nested repeat blocks (see CLAUDE.md's COROS research note), so modeling
+ * it that way from the start avoids needing to flatten a richer structure
+ * later just to fit their API.
+ */
+export interface WorkoutStep {
+  id: string;
+  kind: WorkoutStepKind;
+  durationType: WorkoutStepDurationType;
+  /** Seconds if durationType is "time", meters if "distance", null if "open". */
+  durationValue: number | null;
+  targetType: WorkoutStepTargetType;
+  /** Unit depends on targetType: sec/km for pace, bpm for hr, watts for power, rpm for cadence. Null for "open". */
+  targetLow: number | null;
+  targetHigh: number | null;
+  /** When set, this step repeats this many times (e.g. 6 for "6x400m") — the one level of repeat grouping this model supports. */
+  repeatCount: number | null;
+}
+
+export interface CorosConnection {
+  athlete_id: string;
+  coros_athlete_id: string | null;
+  connected_at: string;
+  last_synced_at: string | null;
+  scope: string | null;
 }
 
 export interface Template {
