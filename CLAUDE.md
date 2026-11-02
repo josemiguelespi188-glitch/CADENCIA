@@ -1127,6 +1127,67 @@ it says the same thing in more detail.
   `lib/integrations/coros.ts` accordingly, then set the real
   `COROS_*` env vars on Vercel.
 
+## Garmin Personal API (read-only, per-athlete, Oct 2026)
+
+A real, working piece of Garmin integration — **deliberately not** the
+OAuth/push model built for COROS. The user pasted a real Garmin
+"Personal API Token" (from
+`connect.garmin.com/app/settings/personalApiToken`) directly into chat
+asking for a shared place to store COROS + Garmin keys so the platform
+could connect "internally" to any athlete's account. Investigated first
+rather than building blind: Garmin's own developer docs (found via
+search; `developer.garmin.com` is blocked from this sandbox, same as
+COROS's Dropbox) say the Personal API is **"meant for individual Garmin
+users... not intended for commercial applications serving multiple end
+users"** and is **explicitly read-only, pull-only** — it cannot push
+workouts (that needs Garmin's paid Starter/Enterprise Training API, a
+formal business application like COROS's). Flagged both of these to the
+user (plus that the pasted key was now exposed and should be rotated)
+before building anything; confirmed via `AskUserQuestion` to build the
+one thing this API tier is actually meant for: each athlete connecting
+their own key, for their own data, not something Cadencia uses on an
+athlete's behalf.
+
+- **`garmin_connections` table** (migration
+  `015_garmin_personal_api.sql`, mirrored in `schema.sql` — **needs
+  this migration run in the Supabase SQL editor**) — intentionally a
+  different shape from `strava_connections`/`coros_connections`: no
+  `refresh_token` (Garmin's FAQ: "Garmin does not issue refresh
+  tokens"), just the long-lived `personal_api_key` the athlete pastes
+  in, plus a cached `access_token`/`access_token_expires_at` re-derived
+  from it on demand. Same RLS strictness as the other two (service-role
+  only, no policies).
+- **`lib/integrations/garmin.ts`**: the token-exchange endpoint
+  (`POST https://personal.connectapi.garmin.com/personalapitoken-
+  service/personal-api/personal-api-key/token`, `Authorization: ApiKey
+  <key>` header) was found via web search of Garmin's own FAQ page
+  content plus a community MCP server using the identical pattern —
+  meaningfully more confirmed than anything found for COROS, but still
+  not read directly from Garmin's own docs. The response's token field
+  name (`access_token`) is read defensively (a few likely variants
+  tried) since no raw sample response was ever found. **No data-
+  fetching function exists** (e.g. "list my activities") — every
+  source describes those as private, undocumented endpoints that can
+  change without notice, and none could be found with any confidence.
+  Saving a key calls this exchange live first, so an invalid/typo'd key
+  is rejected immediately instead of stored blind.
+- **`/api/garmin/{connect,status,disconnect}`** — no `/callback`
+  (there's no OAuth redirect here, it's a plain form POST) and no
+  `/push` (read-only). `connect` is scoped to the **signed-in
+  athlete's own key only** — unlike `/api/coros/push`, which
+  deliberately lets any athlete act on any workout, this never accepts
+  another athlete's id, matching Garmin's own "your key, your data"
+  framing.
+- **`/settings`'s Garmin card** includes an inline, numbered guide
+  (go to the Personal API Token page, generate, copy immediately since
+  Garmin shows it only once, paste below) — the one onboarding guide
+  the user explicitly asked for, built directly into the card rather
+  than a separate page since the whole flow is short.
+- **Still nothing actually pulls or displays Garmin activity data** —
+  only the key storage + live validation is real. Building a sync/
+  display feature on top of this needs the real data-endpoint path
+  confirmed first (same standing caveat as COROS's push payload).
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as

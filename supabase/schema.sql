@@ -237,6 +237,20 @@ create table if not exists coros_connections (
   last_synced_at timestamptz
 );
 
+-- ─── garmin_connections ─────────────────────────────────────────────────────
+-- A long-lived self-generated Personal API key per athlete (NOT an OAuth
+-- authorize/callback flow like Strava/COROS above) — see migration 015
+-- and CLAUDE.md's "Garmin Personal API" section. Explicitly read-only,
+-- personal-data-only per Garmin's own terms for this API tier.
+create table if not exists garmin_connections (
+  athlete_id uuid primary key references athletes(id) on delete cascade,
+  personal_api_key text not null,
+  access_token text,
+  access_token_expires_at timestamptz,
+  connected_at timestamptz not null default now(),
+  last_synced_at timestamptz
+);
+
 -- ─── updated_at trigger for workouts ────────────────────────────────────────
 create or replace function set_updated_at()
 returns trigger as $$
@@ -299,6 +313,9 @@ alter table strava_connections enable row level security;
 -- Deliberately no policies at all — service-role only.
 
 alter table coros_connections enable row level security;
+-- Deliberately no policies at all — service-role only, same as strava_connections.
+
+alter table garmin_connections enable row level security;
 -- Deliberately no policies at all — service-role only, same as strava_connections.
 
 alter table strava_daily_load enable row level security;
