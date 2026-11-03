@@ -2175,6 +2175,18 @@ organización de las cosas" / "mejora la barra de arriba").
   key last — so if 5 cards in a 3-column grid ever leaves an orphan
   cell on a wide screen, it falls on one of the two least-essential
   cards, not a primary one.
+- **Found live (Nov 2026), same pass**: every one of those 5 cards'
+  titles repeated the athlete's name ("José Miguel · WHOOP", "José
+  Miguel · COROS", etc.) even though `/settings` is provably always
+  scoped to exactly one athlete (`useAuth().me` — see "Settings
+  simplified to always show only the signed-in athlete's own data"
+  above), so the name added nothing and just cluttered the page —
+  direct complaint with a screenshot ("etoda esta pagina dice mill
+  veces jose miguel"). Dropped the `{name} · ` prefix from all 5 card
+  titles plus `AthleteZonesCard`'s (6 total), and removed the now-
+  unused `name` prop from each of those 6 components' signatures and
+  their call sites in `SettingsContent` — `AthleteZonesCard` still
+  takes `slug` (needed for its Supabase query), just not `name`.
 
 ## Full codebase audit — 31 findings, 29 fixed (Nov 2026)
 

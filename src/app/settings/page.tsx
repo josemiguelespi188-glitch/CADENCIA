@@ -104,7 +104,7 @@ function SettingsContent() {
               <AthleteProfileCard slug={me.slug} />
 
               <div className="mt-8">
-                <AthleteZonesCard slug={me.slug} name={me.name} />
+                <AthleteZonesCard slug={me.slug} />
               </div>
 
               {/* Found live (Nov 2026, direct feedback: "la organización de
@@ -123,11 +123,11 @@ function SettingsContent() {
                 {isEn ? "Connections" : "Conexiones"}
               </h2>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <AthleteStravaCard name={me.name} />
-                <AthleteWhoopCard name={me.name} />
-                <AthleteGarminDevCard name={me.name} />
-                <AthleteCorosCard name={me.name} />
-                <AthleteGarminCard name={me.name} />
+                <AthleteStravaCard />
+                <AthleteWhoopCard />
+                <AthleteGarminDevCard />
+                <AthleteCorosCard />
+                <AthleteGarminCard />
               </div>
 
               <div className="mt-8 flex flex-wrap items-center gap-5 border-t border-line pt-6">
@@ -177,7 +177,7 @@ function SettingsContent() {
  * see lib/integrations/whoop.ts's file header), so "Sync now" is the
  * only path, same as Strava.
  */
-function AthleteWhoopCard({ name }: { name: string }) {
+function AthleteWhoopCard() {
   const { locale } = useLocale();
   const isEn = locale === "en";
   const [status, setStatus] = useState<StravaStatus | null>(null);
@@ -228,7 +228,7 @@ function AthleteWhoopCard({ name }: { name: string }) {
 
   return (
     <Card>
-      <CardTitle>{name} · WHOOP</CardTitle>
+      <CardTitle>WHOOP</CardTitle>
 
       <div className="mt-4 flex items-center gap-3">
         <span className="h-2.5 w-2.5 rounded-full" style={{ background: status?.connected ? "var(--success)" : "var(--ink-3)" }} />
@@ -263,7 +263,7 @@ function AthleteWhoopCard({ name }: { name: string }) {
   );
 }
 
-function AthleteStravaCard({ name }: { name: string }) {
+function AthleteStravaCard() {
   const { t, locale } = useLocale();
   const isEn = locale === "en";
   const [status, setStatus] = useState<StravaStatus | null>(null);
@@ -312,7 +312,7 @@ function AthleteStravaCard({ name }: { name: string }) {
 
   return (
     <Card>
-      <CardTitle>{name} · Strava</CardTitle>
+      <CardTitle>Strava</CardTitle>
 
       <div className="mt-4 flex items-center gap-3">
         <span
@@ -367,7 +367,7 @@ function AthleteStravaCard({ name }: { name: string }) {
  * only has a push capability planned (per-workout, from the workout
  * dialog), not a pull/sync like Strava's.
  */
-function AthleteCorosCard({ name }: { name: string }) {
+function AthleteCorosCard() {
   const { locale } = useLocale();
   const isEn = locale === "en";
   const [status, setStatus] = useState<StravaStatus | null>(null);
@@ -396,7 +396,7 @@ function AthleteCorosCard({ name }: { name: string }) {
 
   return (
     <Card>
-      <CardTitle>{name} · COROS</CardTitle>
+      <CardTitle>COROS</CardTitle>
 
       <div className="mt-4 flex items-center gap-3">
         <span className="h-2.5 w-2.5 rounded-full" style={{ background: status?.connected ? "var(--success)" : "var(--ink-3)" }} />
@@ -424,7 +424,7 @@ function AthleteCorosCard({ name }: { name: string }) {
   );
 }
 
-function AthleteZonesCard({ slug, name }: { slug: string; name: string }) {
+function AthleteZonesCard({ slug }: { slug: string }) {
   const { t } = useLocale();
   const [athlete, setAthlete] = useState<Athlete | null>(null);
   const [lthr, setLthr] = useState("");
@@ -481,9 +481,7 @@ function AthleteZonesCard({ slug, name }: { slug: string; name: string }) {
 
   return (
     <Card>
-      <CardTitle>
-        {name} · {t("zones_h")}
-      </CardTitle>
+      <CardTitle>{t("zones_h")}</CardTitle>
 
       <form onSubmit={save} className="mt-4 grid grid-cols-2 gap-3">
         <div className="flex flex-col gap-1.5">
@@ -574,7 +572,7 @@ function AthleteZonesCard({ slug, name }: { slug: string; name: string }) {
  * since this is also real OAuth. See CLAUDE.md's "Garmin Connect
  * Developer Program" section and lib/integrations/garminDeveloper.ts.
  */
-function AthleteGarminDevCard({ name }: { name: string }) {
+function AthleteGarminDevCard() {
   const { locale } = useLocale();
   const isEn = locale === "en";
   const [status, setStatus] = useState<StravaStatus | null>(null);
@@ -603,7 +601,7 @@ function AthleteGarminDevCard({ name }: { name: string }) {
 
   return (
     <Card>
-      <CardTitle>{name} · Garmin (Developer API)</CardTitle>
+      <CardTitle>Garmin (Developer API)</CardTitle>
 
       <div className="mt-4 flex items-center gap-3">
         <span className="h-2.5 w-2.5 rounded-full" style={{ background: status?.connected ? "var(--success)" : "var(--ink-3)" }} />
@@ -631,7 +629,7 @@ function AthleteGarminDevCard({ name }: { name: string }) {
   );
 }
 
-function AthleteGarminCard({ name }: { name: string }) {
+function AthleteGarminCard() {
   const { locale } = useLocale();
   const isEn = locale === "en";
   const [status, setStatus] = useState<StravaStatus | null>(null);
@@ -685,7 +683,7 @@ function AthleteGarminCard({ name }: { name: string }) {
 
   return (
     <Card>
-      <CardTitle>{name} · Garmin (Personal key)</CardTitle>
+      <CardTitle>Garmin (Personal key)</CardTitle>
 
       <div className="mt-4 flex items-center gap-3">
         <span className="h-2.5 w-2.5 rounded-full" style={{ background: status?.connected ? "var(--success)" : "var(--ink-3)" }} />
