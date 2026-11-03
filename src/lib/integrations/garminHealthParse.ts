@@ -68,9 +68,13 @@ function calendarDateOf(r: Json): string | null {
   return (
     pickString(r, ["calendarDate", "summaryDate", "date"]) ??
     // Some push objects only carry a start-of-day epoch in seconds.
+    // Found live (Nov 2026, full codebase audit): `epoch ? ... : null`
+    // treated a legitimate epoch of 0 (1970-01-01) as "no value" — an
+    // explicit null check is correct since pickNumber already returns
+    // null for a genuinely missing field.
     (() => {
       const epoch = pickNumber(r, ["startTimeInSeconds", "calendarDateEpoch"]);
-      return epoch ? new Date(epoch * 1000).toISOString().slice(0, 10) : null;
+      return epoch !== null ? new Date(epoch * 1000).toISOString().slice(0, 10) : null;
     })()
   );
 }
@@ -78,6 +82,13 @@ function calendarDateOf(r: Json): string | null {
 function garminUserIdOf(r: Json): string | null {
   return pickString(r, ["userId", "garminUserId", "userAccessToken"]);
 }
+
+/** Resolves a Garmin user id to a Cadencia athlete id, memoized per
+ * `processGarminPushEvent()` call via `cache` — found live (Nov 2026,
+ * full codebase audit) that every decode* function previously did this
+ * DB round trip once PER RECORD even though every record in one push
+ * almost always shares the same Garmin user id. */
+type AthleteIdCache = Map<string, string | null>;
 
 /**
  * The push envelope itself is unconfirmed (array of records? wrapped
@@ -96,23 +107,26 @@ function extractRecords(payload: unknown): Json[] {
   return [];
 }
 
-async function resolveAthleteId(garminUserId: string | null): Promise<string | null> {
+async function resolveAthleteId(garminUserId: string | null, cache: AthleteIdCache): Promise<string | null> {
   if (!garminUserId) return null;
+  if (cache.has(garminUserId)) return cache.get(garminUserId) ?? null;
   const db = createServiceClient();
   const { data } = await db
     .from("garmin_dev_connections")
     .select("athlete_id")
     .eq("garmin_user_id", garminUserId)
     .maybeSingle();
-  return data?.athlete_id ?? null;
+  const athleteId = data?.athlete_id ?? null;
+  cache.set(garminUserId, athleteId);
+  return athleteId;
 }
 
 type Decoded = Record<string, unknown> & { athlete_id: string; calendar_date?: string; raw: Json };
 
-async function decodeDailyHealth(records: Json[]): Promise<Decoded[]> {
+async function decodeDailyHealth(records: Json[], cache: AthleteIdCache): Promise<Decoded[]> {
   const out: Decoded[] = [];
   for (const r of records) {
-    const athleteId = await resolveAthleteId(garminUserIdOf(r));
+    const athleteId = await resolveAthleteId(garminUserIdOf(r), cache);
     const calendarDate = calendarDateOf(r);
     if (!athleteId || !calendarDate) continue;
     out.push({
@@ -133,10 +147,10 @@ async function decodeDailyHealth(records: Json[]): Promise<Decoded[]> {
   return out;
 }
 
-async function decodeSleep(records: Json[]): Promise<Decoded[]> {
+async function decodeSleep(records: Json[], cache: AthleteIdCache): Promise<Decoded[]> {
   const out: Decoded[] = [];
   for (const r of records) {
-    const athleteId = await resolveAthleteId(garminUserIdOf(r));
+    const athleteId = await resolveAthleteId(garminUserIdOf(r), cache);
     const calendarDate = calendarDateOf(r);
     if (!athleteId || !calendarDate) continue;
     out.push({
@@ -154,10 +168,10 @@ async function decodeSleep(records: Json[]): Promise<Decoded[]> {
   return out;
 }
 
-async function decodeHrv(records: Json[]): Promise<Decoded[]> {
+async function decodeHrv(records: Json[], cache: AthleteIdCache): Promise<Decoded[]> {
   const out: Decoded[] = [];
   for (const r of records) {
-    const athleteId = await resolveAthleteId(garminUserIdOf(r));
+    const athleteId = await resolveAthleteId(garminUserIdOf(r), cache);
     const calendarDate = calendarDateOf(r);
     if (!athleteId || !calendarDate) continue;
     out.push({
@@ -181,10 +195,10 @@ function averageOfEpochMap(v: unknown): number | null {
   return values.reduce((a, b) => a + b, 0) / values.length;
 }
 
-async function decodePulseOx(records: Json[]): Promise<Decoded[]> {
+async function decodePulseOx(records: Json[], cache: AthleteIdCache): Promise<Decoded[]> {
   const out: Decoded[] = [];
   for (const r of records) {
-    const athleteId = await resolveAthleteId(garminUserIdOf(r));
+    const athleteId = await resolveAthleteId(garminUserIdOf(r), cache);
     const calendarDate = calendarDateOf(r);
     if (!athleteId || !calendarDate) continue;
     const epochMap = pick(r, ["timeOffsetSpo2Values"]);
@@ -201,10 +215,10 @@ async function decodePulseOx(records: Json[]): Promise<Decoded[]> {
   return out;
 }
 
-async function decodeRespiration(records: Json[]): Promise<Decoded[]> {
+async function decodeRespiration(records: Json[], cache: AthleteIdCache): Promise<Decoded[]> {
   const out: Decoded[] = [];
   for (const r of records) {
-    const athleteId = await resolveAthleteId(garminUserIdOf(r));
+    const athleteId = await resolveAthleteId(garminUserIdOf(r), cache);
     const calendarDate = calendarDateOf(r);
     if (!athleteId || !calendarDate) continue;
     const fromEpoch = averageOfEpochMap(pick(r, ["timeOffsetEpochToBreaths"]));
@@ -221,13 +235,15 @@ async function decodeRespiration(records: Json[]): Promise<Decoded[]> {
 /** Garmin's Body Composition push is documented to report mass fields
  * in grams, not kg — converted here; a `*Kg` variant is also checked
  * defensively in case the real payload differs. */
-async function decodeBodyComp(records: Json[]): Promise<(Decoded & { measured_at: string })[]> {
+async function decodeBodyComp(records: Json[], cache: AthleteIdCache): Promise<(Decoded & { measured_at: string })[]> {
   const out: (Decoded & { measured_at: string })[] = [];
   for (const r of records) {
-    const athleteId = await resolveAthleteId(garminUserIdOf(r));
+    const athleteId = await resolveAthleteId(garminUserIdOf(r), cache);
     if (!athleteId) continue;
     const epoch = pickNumber(r, ["measurementTimeInSeconds", "startTimeInSeconds"]);
-    const measuredAt = epoch ? new Date(epoch * 1000).toISOString() : new Date().toISOString();
+    // Explicit null check, not truthy — a real epoch of 0 (1970-01-01)
+    // would otherwise be treated as "no timestamp" and fall back to "now".
+    const measuredAt = epoch !== null ? new Date(epoch * 1000).toISOString() : new Date().toISOString();
     const weightG = pickNumber(r, ["weightInGrams"]);
     const muscleG = pickNumber(r, ["muscleMassInGrams"]);
     const boneG = pickNumber(r, ["boneMassInGrams"]);
@@ -246,10 +262,10 @@ async function decodeBodyComp(records: Json[]): Promise<(Decoded & { measured_at
   return out;
 }
 
-async function decodeHydration(records: Json[]): Promise<Decoded[]> {
+async function decodeHydration(records: Json[], cache: AthleteIdCache): Promise<Decoded[]> {
   const out: Decoded[] = [];
   for (const r of records) {
-    const athleteId = await resolveAthleteId(garminUserIdOf(r));
+    const athleteId = await resolveAthleteId(garminUserIdOf(r), cache);
     const calendarDate = calendarDateOf(r);
     if (!athleteId || !calendarDate) continue;
     out.push({
@@ -262,10 +278,10 @@ async function decodeHydration(records: Json[]): Promise<Decoded[]> {
   return out;
 }
 
-async function decodeHealthSnapshot(records: Json[]): Promise<Decoded[]> {
+async function decodeHealthSnapshot(records: Json[], cache: AthleteIdCache): Promise<Decoded[]> {
   const out: Decoded[] = [];
   for (const r of records) {
-    const athleteId = await resolveAthleteId(garminUserIdOf(r));
+    const athleteId = await resolveAthleteId(garminUserIdOf(r), cache);
     const calendarDate = calendarDateOf(r) ?? new Date().toISOString().slice(0, 10);
     if (!athleteId) continue;
     const summaries = pick(r, ["summaries", "summaryList"]);
@@ -280,32 +296,62 @@ async function decodeHealthSnapshot(records: Json[]): Promise<Decoded[]> {
 }
 
 /** "user-metrics" push — updates athletes.garmin_vo2max/_cycling/fitness_age
- * directly (latest value only, no history table — see migration 029). */
-async function applyUserMetrics(records: Json[]): Promise<void> {
+ * directly (latest value only, no history table — see migration 029).
+ *
+ * Found live (Nov 2026, full codebase audit): this used to write all
+ * three fields unconditionally, so a push carrying only one of them
+ * (plausible — Garmin may deliver VO2max and Fitness Age as separate
+ * pushes at different times) nulled out the other two previously-synced
+ * values. Now only includes a field in the update when this push
+ * actually carried it. */
+async function applyUserMetrics(records: Json[], cache: AthleteIdCache): Promise<void> {
   const db = createServiceClient();
   for (const r of records) {
-    const athleteId = await resolveAthleteId(garminUserIdOf(r));
+    const athleteId = await resolveAthleteId(garminUserIdOf(r), cache);
     if (!athleteId) continue;
     const vo2max = pickNumber(r, ["vo2Max", "vo2MaxRunning"]);
     const vo2maxCycling = pickNumber(r, ["vo2MaxCycling"]);
     const fitnessAge = pickNumber(r, ["fitnessAge"]);
-    await db
-      .from("athletes")
-      .update({
-        garmin_vo2max: vo2max,
-        garmin_vo2max_cycling: vo2maxCycling,
-        garmin_fitness_age: fitnessAge,
-        garmin_health_synced_at: new Date().toISOString(),
-      })
-      .eq("id", athleteId);
+    const updates: Record<string, unknown> = { garmin_health_synced_at: new Date().toISOString() };
+    if (vo2max !== null) updates.garmin_vo2max = vo2max;
+    if (vo2maxCycling !== null) updates.garmin_vo2max_cycling = vo2maxCycling;
+    if (fitnessAge !== null) updates.garmin_fitness_age = fitnessAge;
+    await db.from("athletes").update(updates).eq("id", athleteId);
   }
+}
+
+/**
+ * Found live (Nov 2026, full codebase audit): `.upsert(..., {onConflict})`
+ * does a full-row replace on conflict — a later same-day push with
+ * fewer populated fields than an earlier push for that day silently
+ * nulled out columns the earlier push had already filled. Fetches
+ * whatever row already exists for each (athlete_id, calendar_date) in
+ * this batch and fills any null field in the new row from it, so a
+ * sparse push never erases data a fuller earlier push already stored.
+ */
+async function mergeWithExisting(db: ReturnType<typeof createServiceClient>, table: string, rows: Decoded[]): Promise<Decoded[]> {
+  if (!rows.length) return rows;
+  const athleteIds = Array.from(new Set(rows.map((r) => r.athlete_id)));
+  const dates = Array.from(new Set(rows.map((r) => r.calendar_date).filter((d): d is string => !!d)));
+  const { data: existing } = await db.from(table).select("*").in("athlete_id", athleteIds).in("calendar_date", dates);
+  const existingByKey = new Map((existing ?? []).map((e: Json) => [`${e.athlete_id}|${e.calendar_date}`, e]));
+  return rows.map((r) => {
+    const prev = existingByKey.get(`${r.athlete_id}|${r.calendar_date}`);
+    if (!prev) return r;
+    const merged: Decoded = { ...r };
+    for (const key of Object.keys(r)) {
+      if (key === "athlete_id" || key === "calendar_date" || key === "raw" || key === "synced_at") continue;
+      if (merged[key] === null && prev[key] !== null && prev[key] !== undefined) merged[key] = prev[key];
+    }
+    return merged;
+  });
 }
 
 /** Endpoint-type slug aliases -> handler. Matched case-insensitively
  * against the `[type]` path segment the push actually hit, so this
  * codebase's own guessed URL naming (see the webhook route's own
  * header) doesn't have to match Garmin's internal names exactly. */
-const HANDLERS: { match: string[]; table: string | null; decode: (records: Json[]) => Promise<Decoded[]> }[] = [
+const HANDLERS: { match: string[]; table: string | null; decode: (records: Json[], cache: AthleteIdCache) => Promise<Decoded[]> }[] = [
   { match: ["dailies", "daily", "daily-health"], table: "garmin_daily_health", decode: decodeDailyHealth },
   { match: ["sleeps", "sleep"], table: "garmin_sleep", decode: decodeSleep },
   { match: ["hrv-summary", "hrv-summaries", "hrv"], table: "garmin_hrv", decode: decodeHrv },
@@ -329,9 +375,11 @@ export async function processGarminPushEvent(endpointType: string, payload: unkn
     const slug = endpointType.toLowerCase();
     const records = extractRecords(payload);
     if (!records.length) return;
+    // One athlete-id cache per push — see resolveAthleteId()'s own comment.
+    const cache: AthleteIdCache = new Map();
 
     if (["body-compositions", "body-composition", "body-comp"].includes(slug)) {
-      const decoded = await decodeBodyComp(records);
+      const decoded = await decodeBodyComp(records, cache);
       if (!decoded.length) return;
       const db = createServiceClient();
       const { error } = await db.from("garmin_body_comp").insert(decoded);
@@ -340,18 +388,19 @@ export async function processGarminPushEvent(endpointType: string, payload: unkn
     }
 
     if (["user-metrics", "user-metric"].includes(slug)) {
-      await applyUserMetrics(records);
+      await applyUserMetrics(records, cache);
       return;
     }
 
     const handler = HANDLERS.find((h) => h.match.includes(slug));
     if (!handler || !handler.table) return;
 
-    const decoded = await handler.decode(records);
+    const decoded = await handler.decode(records, cache);
     if (!decoded.length) return;
 
     const db = createServiceClient();
-    const { error } = await db.from(handler.table).upsert(decoded, { onConflict: "athlete_id,calendar_date" });
+    const merged = await mergeWithExisting(db, handler.table, decoded);
+    const { error } = await db.from(handler.table).upsert(merged, { onConflict: "athlete_id,calendar_date" });
     if (error) console.error(`Failed to upsert ${handler.table} rows`, error);
   } catch (e) {
     console.error(`processGarminPushEvent threw for endpoint_type=${endpointType}`, e);

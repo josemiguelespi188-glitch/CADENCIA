@@ -70,14 +70,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => sub.subscription.unsubscribe();
   }, []);
 
+  // Found live (Nov 2026, full codebase audit): this used to depend on
+  // the whole `session` object, which gets a brand-new reference on
+  // every Supabase token auto-refresh (roughly hourly) — each one fired
+  // this effect and re-queried the full athletes table for every open
+  // tab with nothing actually changed. Depends on the user id (a
+  // stable string) instead, so it only re-fires on a real sign-in/
+  // sign-out, not a background token refresh.
+  const userId = session?.user.id ?? null;
   useEffect(() => {
-    if (session) {
+    if (userId) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       loadAthletes();
     } else {
       setAthletes([]);
     }
-  }, [session, loadAthletes]);
+  }, [userId, loadAthletes]);
 
   const me = useMemo(() => {
     if (!session) return null;

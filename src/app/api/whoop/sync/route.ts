@@ -66,8 +66,15 @@ export async function POST() {
     fetchWhoopWorkouts(accessToken, start),
   ]);
 
+  // Found live (Nov 2026, full codebase audit): none of these four
+  // upserts checked {error} — Supabase returns that rather than
+  // throwing, so a failed write used to still report success counts
+  // (from the fetched array lengths) and stamp last_synced_at. Now
+  // collected and surfaced in the response + server logs.
+  const syncErrors: string[] = [];
+
   if (cycles.length) {
-    await db.from("whoop_cycles").upsert(
+    const { error } = await db.from("whoop_cycles").upsert(
       cycles.map((c) => ({
         athlete_id: athlete.id,
         whoop_cycle_id: c.id,
@@ -83,10 +90,14 @@ export async function POST() {
       })),
       { onConflict: "athlete_id,whoop_cycle_id" }
     );
+    if (error) {
+      console.error("WHOOP cycles upsert failed", error);
+      syncErrors.push(`cycles: ${error.message}`);
+    }
   }
 
   if (sleeps.length) {
-    await db.from("whoop_sleep").upsert(
+    const { error } = await db.from("whoop_sleep").upsert(
       sleeps.map((s) => ({
         athlete_id: athlete.id,
         whoop_sleep_id: s.id,
@@ -110,10 +121,14 @@ export async function POST() {
       })),
       { onConflict: "athlete_id,whoop_sleep_id" }
     );
+    if (error) {
+      console.error("WHOOP sleep upsert failed", error);
+      syncErrors.push(`sleep: ${error.message}`);
+    }
   }
 
   if (recoveries.length) {
-    await db.from("whoop_recovery").upsert(
+    const { error } = await db.from("whoop_recovery").upsert(
       recoveries.map((r) => ({
         athlete_id: athlete.id,
         whoop_cycle_id: r.cycle_id,
@@ -128,10 +143,14 @@ export async function POST() {
       })),
       { onConflict: "athlete_id,whoop_cycle_id" }
     );
+    if (error) {
+      console.error("WHOOP recovery upsert failed", error);
+      syncErrors.push(`recovery: ${error.message}`);
+    }
   }
 
   if (workouts.length) {
-    await db.from("whoop_workouts").upsert(
+    const { error } = await db.from("whoop_workouts").upsert(
       workouts.map((w) => ({
         athlete_id: athlete.id,
         whoop_workout_id: w.id,
@@ -150,6 +169,10 @@ export async function POST() {
       })),
       { onConflict: "athlete_id,whoop_workout_id" }
     );
+    if (error) {
+      console.error("WHOOP workouts upsert failed", error);
+      syncErrors.push(`workouts: ${error.message}`);
+    }
   }
 
   await db.from("whoop_connections").update({ last_synced_at: new Date().toISOString() }).eq("athlete_id", athlete.id);
@@ -159,5 +182,6 @@ export async function POST() {
     sleeps: sleeps.length,
     recoveries: recoveries.length,
     workouts: workouts.length,
+    errors: syncErrors.length ? syncErrors : undefined,
   });
 }

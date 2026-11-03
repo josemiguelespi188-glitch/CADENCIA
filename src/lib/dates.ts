@@ -47,6 +47,14 @@ export function paceLabel(secPerKm: number | null) {
 
 /** Parses "M:SS" (or "MM:SS") into total seconds, or null if not a valid pace. */
 export function parsePace(min: string, sec: string): number | null {
+  // Found live (Nov 2026, full codebase audit): Number("") is 0, not
+  // NaN — a blank field used to be silently treated as "0" rather than
+  // "not entered." Checked explicitly here rather than relying on the
+  // m===0&&s===0 guard below, which only ever caught the case where
+  // BOTH fields were blank — leaving minutes blank while typing only
+  // seconds (e.g. "42") used to save an impossible pace instead of
+  // being rejected.
+  if (min.trim() === "" || sec.trim() === "") return null;
   const m = Number(min);
   const s = Number(sec);
   if (!Number.isFinite(m) || !Number.isFinite(s) || m < 0 || s < 0 || s >= 60) return null;

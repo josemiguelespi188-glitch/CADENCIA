@@ -81,16 +81,35 @@ export async function getValidAccessToken(athleteId: string): Promise<string | n
     return conn.access_token;
   }
 
-  const refreshed = await refreshStravaToken(conn.refresh_token);
-  await db
-    .from("strava_connections")
-    .update({
-      access_token: refreshed.access_token,
-      refresh_token: refreshed.refresh_token,
-      expires_at: new Date(refreshed.expires_at * 1000).toISOString(),
-    })
-    .eq("athlete_id", athleteId);
-  return refreshed.access_token;
+  try {
+    const refreshed = await refreshStravaToken(conn.refresh_token);
+    await db
+      .from("strava_connections")
+      .update({
+        access_token: refreshed.access_token,
+        refresh_token: refreshed.refresh_token,
+        expires_at: new Date(refreshed.expires_at * 1000).toISOString(),
+      })
+      .eq("athlete_id", athleteId);
+    return refreshed.access_token;
+  } catch (e) {
+    // Found live (Nov 2026, full codebase audit): two near-simultaneous
+    // calls for the same athlete near expiry both read the same
+    // refresh_token and both call Strava's refresh endpoint with it; if
+    // Strava rotates the refresh token on use, the second call gets a
+    // real error even though the connection is healthy. Before giving
+    // up, re-fetch the row once — a concurrent call may have already
+    // refreshed it — and use that if it's now valid.
+    const { data: latest } = await db
+      .from("strava_connections")
+      .select("access_token, expires_at")
+      .eq("athlete_id", athleteId)
+      .maybeSingle();
+    if (latest && new Date(latest.expires_at).getTime() - Date.now() > 5 * 60 * 1000) {
+      return latest.access_token;
+    }
+    throw e;
+  }
 }
 
 export interface StravaSummaryActivity {

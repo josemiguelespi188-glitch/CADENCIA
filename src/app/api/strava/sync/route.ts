@@ -83,7 +83,12 @@ export async function POST() {
       updated_at: new Date().toISOString(),
     }));
     if (loadRows.length) {
-      await db.from("strava_daily_load").upsert(loadRows, { onConflict: "athlete_id,date" });
+      const { error } = await db.from("strava_daily_load").upsert(loadRows, { onConflict: "athlete_id,date" });
+      // Found live (Nov 2026, full codebase audit): this was never
+      // checked — the surrounding try/catch can't catch it, since
+      // Supabase returns {error} rather than throwing, so a failed
+      // write used to leave FitnessPanel's CTL/ATL/TSB silently stale.
+      if (error) console.error("Failed to upsert strava_daily_load", error);
     }
   } catch (e) {
     console.error("Failed to sync Strava daily training load history", e);
@@ -152,7 +157,19 @@ export async function POST() {
   let matched = 0;
   let described = 0;
 
-  for (const act of (pending as StravaActivity[]) ?? []) {
+  /** Found live (Nov 2026, full codebase audit): this ran fully
+   * sequentially (DB query + possible DB update + a Claude call + a
+   * Strava PUT, per activity), risking a serverless timeout on a large
+   * backlog (up to 200 pending activities). Processed in small
+   * concurrent batches instead — bounded, not fully parallel, so this
+   * still doesn't hammer the Claude/Strava APIs with 200 simultaneous
+   * requests. */
+  const CONCURRENCY = 5;
+
+  // athleteId/token passed explicitly (not read off the outer `athlete`/
+  // `accessToken` closure) because TS doesn't propagate null-narrowing
+  // into a nested `function` declaration's body.
+  async function processActivity(act: StravaActivity, athleteId: string, token: string): Promise<{ matched: boolean; described: boolean }> {
     const mappedSport = mapStravaSportType(act.sport_type);
     let matchedWorkout: Workout | null = null;
 
@@ -165,7 +182,7 @@ export async function POST() {
       const { data: candidates } = await db
         .from("workouts")
         .select("*")
-        .eq("athlete_id", athlete.id)
+        .eq("athlete_id", athleteId)
         .eq("date", act.local_date)
         .eq("sport", mappedSport)
         .is("strava_activity_id", null);
@@ -174,12 +191,13 @@ export async function POST() {
       }
     }
 
+    let didMatch = false;
     if (matchedWorkout) {
       await db
         .from("workouts")
         .update({ done: true, strava_activity_id: act.id })
         .eq("id", matchedWorkout.id);
-      matched++;
+      didMatch = true;
     }
 
     // A human-written strava_comment on the matched workout wins verbatim
@@ -190,16 +208,28 @@ export async function POST() {
     const description = matchedWorkout?.strava_comment
       ? matchedWorkout.strava_comment
       : await generateActivityDescription(act, matchedWorkout).catch(() => null);
+    let didDescribe = false;
     if (description) {
       try {
-        await updateStravaActivityDescription(accessToken, act.id, description);
-        described++;
+        await updateStravaActivityDescription(token, act.id, description);
+        didDescribe = true;
       } catch (e) {
         console.error("Failed to write description back to Strava", act.id, e);
       }
     }
 
     await db.from("strava_activities").update({ description_written_at: new Date().toISOString() }).eq("id", act.id);
+    return { matched: didMatch, described: didDescribe };
+  }
+
+  const pendingActivities = (pending as StravaActivity[]) ?? [];
+  for (let i = 0; i < pendingActivities.length; i += CONCURRENCY) {
+    const batch = pendingActivities.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(batch.map((act) => processActivity(act, athlete.id, accessToken)));
+    for (const r of results) {
+      if (r.matched) matched++;
+      if (r.described) described++;
+    }
   }
 
   return NextResponse.json({

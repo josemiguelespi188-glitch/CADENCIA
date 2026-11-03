@@ -25,6 +25,11 @@ export function ActivityDetailDialog({ activity, onClose }: { activity: StravaAc
   const [matchedWorkout, setMatchedWorkout] = useState<Workout | null>(null);
 
   useEffect(() => {
+    // Found live (Nov 2026, full codebase audit): this had no staleness
+    // guard, unlike ActivityMap.tsx's own correct `cancelled` pattern —
+    // opening activity A then quickly B before A's fetch resolved could
+    // overwrite matchedWorkout with A's data while B's dialog was shown.
+    let cancelled = false;
     if (activity) {
       dialogRef.current?.showModal();
       const supabase = createClient();
@@ -33,7 +38,9 @@ export function ActivityDetailDialog({ activity, onClose }: { activity: StravaAc
         .select("*")
         .eq("strava_activity_id", activity.id)
         .maybeSingle()
-        .then(({ data }) => setMatchedWorkout((data as Workout) ?? null));
+        .then(({ data }) => {
+          if (!cancelled) setMatchedWorkout((data as Workout) ?? null);
+        });
     } else {
       dialogRef.current?.close();
       // Resetting local state to match the `activity` prop going null —
@@ -41,6 +48,9 @@ export function ActivityDetailDialog({ activity, onClose }: { activity: StravaAc
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setMatchedWorkout(null);
     }
+    return () => {
+      cancelled = true;
+    };
   }, [activity]);
 
   const sport = activity ? mapStravaSportType(activity.sport_type) : null;

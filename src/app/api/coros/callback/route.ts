@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
   try {
     const token = await exchangeCorosCode(code);
     const db = createServiceClient();
-    await db.from("coros_connections").upsert(
+    const { error: upsertError } = await db.from("coros_connections").upsert(
       {
         athlete_id: athleteId,
         coros_athlete_id: token.athlete_id ?? null,
@@ -39,6 +39,12 @@ export async function GET(req: NextRequest) {
       },
       { onConflict: "athlete_id" }
     );
+    // Found live (Nov 2026, full codebase audit): same unchecked-upsert
+    // bug class already fixed in whoop/callback.
+    if (upsertError) {
+      console.error("COROS connection upsert failed", upsertError);
+      return NextResponse.redirect(`${base}/settings?coros=error`);
+    }
     return NextResponse.redirect(`${base}/settings?coros=connected`);
   } catch (e) {
     console.error("COROS callback failed", e);

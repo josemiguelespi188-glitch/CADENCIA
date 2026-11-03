@@ -626,9 +626,15 @@ function StepRow({
           </option>
         ))}
       </select>
+      {/* Found live (Nov 2026, full codebase audit): switching between
+          "time" and "distance" used to keep durationValue's raw number
+          unchanged, silently reinterpreting its unit (e.g. 5000 meters
+          became "5000 seconds" the instant the dropdown flipped to
+          "time"). Always resets on a type change now — the old value's
+          unit no longer applies, so there's nothing safe to carry over. */}
       <select
         value={step.durationType}
-        onChange={(e) => onChange({ durationType: e.target.value as WorkoutStepDurationType, durationValue: e.target.value === "open" ? null : step.durationValue })}
+        onChange={(e) => onChange({ durationType: e.target.value as WorkoutStepDurationType, durationValue: null })}
         className={stepInputCls}
       >
         {DURATION_TYPES.map((d) => (
@@ -655,7 +661,14 @@ function StepRow({
           <span className="shrink-0 text-[10px] text-ink-3">{step.durationType === "time" ? t("unit_min") : t("unit_m")}</span>
         </div>
       )}
-      <select value={step.targetType} onChange={(e) => onChange({ targetType: e.target.value as WorkoutStepTargetType })} className={stepInputCls}>
+      {/* Same reset-on-type-change fix as durationType above — a pace of
+          "300" (sec/km) must not survive as "HR 300 bpm" when the
+          dropdown switches. */}
+      <select
+        value={step.targetType}
+        onChange={(e) => onChange({ targetType: e.target.value as WorkoutStepTargetType, targetLow: null, targetHigh: null })}
+        className={stepInputCls}
+      >
         {TARGET_TYPES.map((tt) => (
           <option key={tt} value={tt}>
             {t(`target_${tt}`)}

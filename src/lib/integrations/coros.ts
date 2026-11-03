@@ -114,17 +114,31 @@ export async function getValidCorosAccessToken(athleteId: string): Promise<strin
     return conn.access_token;
   }
 
-  const refreshed = await refreshCorosToken(conn.refresh_token);
-  const newExpiresAt = new Date(Date.now() + refreshed.expires_in * 1000).toISOString();
-  await db
-    .from("coros_connections")
-    .update({
-      access_token: refreshed.access_token,
-      refresh_token: refreshed.refresh_token,
-      expires_at: newExpiresAt,
-    })
-    .eq("athlete_id", athleteId);
-  return refreshed.access_token;
+  try {
+    const refreshed = await refreshCorosToken(conn.refresh_token);
+    const newExpiresAt = new Date(Date.now() + refreshed.expires_in * 1000).toISOString();
+    await db
+      .from("coros_connections")
+      .update({
+        access_token: refreshed.access_token,
+        refresh_token: refreshed.refresh_token,
+        expires_at: newExpiresAt,
+      })
+      .eq("athlete_id", athleteId);
+    return refreshed.access_token;
+  } catch (e) {
+    // Same concurrent-refresh race already fixed in strava.ts — see its
+    // getValidAccessToken for the full rationale.
+    const { data: latest } = await db
+      .from("coros_connections")
+      .select("access_token, expires_at")
+      .eq("athlete_id", athleteId)
+      .maybeSingle();
+    if (latest && new Date(latest.expires_at).getTime() - Date.now() > 5 * 60 * 1000) {
+      return latest.access_token;
+    }
+    throw e;
+  }
 }
 
 /**

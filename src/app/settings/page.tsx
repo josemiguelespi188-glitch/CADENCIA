@@ -191,13 +191,16 @@ function AthleteWhoopCard({ name }: { name: string }) {
     try {
       const res = await fetch("/api/whoop/sync", { method: "POST" });
       const data = await res.json();
-      setMessage(
-        res.ok
-          ? isEn
-            ? `Synced ${data.cycles} cycles · ${data.sleeps} sleeps · ${data.recoveries} recoveries · ${data.workouts} workouts.`
-            : `${data.cycles} ciclos · ${data.sleeps} sueños · ${data.recoveries} recuperaciones · ${data.workouts} entrenos sincronizados.`
-          : data.error
-      );
+      const summary = res.ok
+        ? isEn
+          ? `Synced ${data.cycles} cycles · ${data.sleeps} sleeps · ${data.recoveries} recoveries · ${data.workouts} workouts.`
+          : `${data.cycles} ciclos · ${data.sleeps} sueños · ${data.recoveries} recuperaciones · ${data.workouts} entrenos sincronizados.`
+        : data.error;
+      // Surfaces per-table write failures the sync route now reports
+      // instead of silently reporting a clean success — see CLAUDE.md's
+      // "unchecked upsert error" fixes.
+      const errorSuffix = data.errors?.length ? ` ${isEn ? "Some writes failed:" : "Algunas escrituras fallaron:"} ${data.errors.join(", ")}` : "";
+      setMessage(summary + errorSuffix);
       await loadStatus();
     } finally {
       setBusy(false);
@@ -452,7 +455,10 @@ function AthleteZonesCard({ slug, name }: { slug: string; name: string }) {
         .from("athletes")
         .update({
           threshold_hr: lthr ? Number(lthr) : null,
-          threshold_pace_sec_per_km: parsePace(paceMin || "0", paceSec || "0"),
+          // Pass the raw values, not pre-defaulted to "0" — parsePace()
+          // now distinguishes a genuinely blank field (invalid, rejects)
+          // from a real 0; pre-defaulting here would defeat that check.
+          threshold_pace_sec_per_km: parsePace(paceMin, paceSec),
           ftp_watts: ftp ? Number(ftp) : null,
           vo2max: vo2max ? Number(vo2max) : null,
         })

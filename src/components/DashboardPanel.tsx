@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocale } from "@/lib/i18n/context";
 import { Card } from "@/components/ui/card";
 import { StravaTotals } from "@/components/StravaTotals";
@@ -77,9 +77,34 @@ export function DashboardPanel({
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 
   const thresholdHr = soloAthlete?.threshold_hr ?? null;
+
+  // Found live (Nov 2026, full codebase audit): activities arrives
+  // sorted ascending by local_date (calendar/page.tsx's own fetch), so
+  // slicing it directly for "Recent activities" showed the OLDEST
+  // entries in the 30-day window first, not the newest — the opposite
+  // of what the header/pagination implies. Sort a copy descending here
+  // instead of relying on the caller's fetch order.
+  const recentActivities = useMemo(
+    () => [...visibleActivities].sort((a, b) => (a.start_date < b.start_date ? 1 : a.start_date > b.start_date ? -1 : 0)),
+    [visibleActivities]
+  );
+
+  // Found live (Nov 2026, full codebase audit): recentPage never reset
+  // when the athlete/Friends filter changed — switching to someone with
+  // fewer synced activities while on page 2+ rendered an empty table
+  // (recentSlice === [] while visibleActivities.length > 0) instead of
+  // the empty state or a reset first page.
+  useEffect(() => {
+    // Resetting pagination to match a prop change — same accepted
+    // pattern this codebase already uses elsewhere (e.g. WorkoutDialog's
+    // own form-reset effect) for "local state must follow a prop."
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRecentPage(0);
+  }, [viewing]);
+
   const recentStart = recentPage * RECENT_PAGE_SIZE;
-  const recentSlice = visibleActivities.slice(recentStart, recentStart + RECENT_PAGE_SIZE);
-  const hasMoreRecent = visibleActivities.length > recentStart + RECENT_PAGE_SIZE;
+  const recentSlice = recentActivities.slice(recentStart, recentStart + RECENT_PAGE_SIZE);
+  const hasMoreRecent = recentActivities.length > recentStart + RECENT_PAGE_SIZE;
 
   return (
     <div className="mt-10 border-t border-line pt-8">
@@ -110,7 +135,7 @@ export function DashboardPanel({
       <div className="mt-6 grid gap-5 lg:grid-cols-[3fr_2fr]">
         <Card>
           <h3 className="mb-3 text-lg font-semibold tracking-tight">{t("vol")}</h3>
-          <VolumeChart workouts={visible} />
+          <VolumeChart workouts={visible} locale={locale} />
         </Card>
         <div className="flex flex-col gap-4">
           <Card>
@@ -293,7 +318,7 @@ function niceMax(v: number) {
   return Math.ceil(v / 10) * 10;
 }
 
-function VolumeChart({ workouts }: { workouts: WorkoutWithSlug[] }) {
+function VolumeChart({ workouts, locale }: { workouts: WorkoutWithSlug[]; locale: string }) {
   const n = 12;
   const st = addDays(monday(today()), -28);
   const W = 720;
@@ -378,7 +403,10 @@ function VolumeChart({ workouts }: { workouts: WorkoutWithSlug[] }) {
               </text>
             )}
             <text x={x0 + bw / 2} y={H - 6} textAnchor="middle" fontSize={10} fill="var(--ink-3)" fontWeight={isCurrent ? 700 : 400}>
-              {fmt(w.d, "es", { day: "numeric", month: "short" })}
+              {/* Found live (Nov 2026, full codebase audit): this was
+                  hardcoded to "es", so an English-locale viewer still saw
+                  Spanish month abbreviations under every weekly bar. */}
+              {fmt(w.d, locale, { day: "numeric", month: "short" })}
             </text>
           </g>
         );

@@ -45,7 +45,16 @@ export function computeFitnessForm(loads: DailyLoad[]): FitnessFormResult | null
   const byDate = new Map(loads.map((l) => [l.date, l.stress]));
   const dates = loads.map((l) => parseYmd(l.date));
   const start = dates.reduce((a, b) => (b < a ? b : a));
-  const end = today();
+  // Found live (Nov 2026, full codebase audit): no guard ensured
+  // start <= end — a source whose date derivation can land a day ahead
+  // of the viewer's local today() (e.g. FitnessPanel's naive UTC-date
+  // slice of a WHOOP cycle's start_at) could make the earliest load
+  // date later than today(), making totalDays <= 0, the loop below
+  // never run, series stay empty, and `current` (typed non-optional)
+  // actually be undefined — a real crash at `result.current.ctl` in
+  // every caller. Clamping end to at least `start` guarantees the loop
+  // always runs at least once.
+  const end = today() < start ? start : today();
   const totalDays = dayDiff(start, end) + 1;
 
   const alphaCtl = 2 / (CTL_DAYS + 1);
@@ -64,6 +73,10 @@ export function computeFitnessForm(loads: DailyLoad[]): FitnessFormResult | null
     series.push({ date: key, ctl, atl, tsb });
   }
 
+  // Defense in depth — should be unreachable now that `end` is clamped
+  // above, but never return a result whose non-optional `current` would
+  // actually be undefined.
+  if (!series.length) return null;
   const current = series[series.length - 1];
   return { current, series, daysOfHistory: totalDays, warmedUp: totalDays >= CTL_DAYS };
 }

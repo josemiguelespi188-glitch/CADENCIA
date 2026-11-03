@@ -2143,6 +2143,167 @@ Connect on the WHOOP card:
   row (not another silent failure), and a `Sync now` click populates
   all four data tables plus the body-measurement columns on `athletes`.
 
+## Full codebase audit — 31 findings, 29 fixed (Nov 2026)
+
+Direct instruction to run a structured multi-angle code review across
+the entire codebase (correctness, security, performance, readability,
+error handling, test coverage) and fix as much as possible directly,
+flagging only genuine judgment calls. Done via the `code-review` skill
+at `xhigh` effort, split into 6 parallel area reviews (API routes,
+`lib/integrations/**`, components, Supabase migrations/RLS, core `lib/`
+utilities, auth/admin/pages) since this was a whole-codebase review, not
+a diff. 31 verified findings came back; 29 were fixed directly, 2 were
+deliberately left alone (explained below).
+
+**Two real unauthenticated endpoints (the most severe findings)**:
+`GET /api/plan/template` and `POST /api/plan/import` had no auth check
+at all — `template` returned every athlete's full PII (birth date,
+height/weight, resting/max HR, goal race, personal bests) to anyone who
+hit the URL signed in or not; `import` let an anonymous POST insert
+arbitrary `workouts` rows for any athlete. Both now call
+`getSignedInAthlete()` first, same gate every other non-admin route in
+this app already has.
+
+**The "unchecked Supabase write error" bug class — the single most
+repeated issue, found independently in 8+ places**: Supabase's client
+returns `{error}` rather than throwing, so a failed write used to look
+identical to a successful one everywhere this wasn't checked. Already
+fixed once in `whoop/callback` (see that section above); this pass found
+and fixed the same pattern in `garmin-dev/callback`, `strava/callback`,
+`coros/callback`, `strava/sync`'s daily-load upsert, `whoop/sync`'s four
+batch upserts (now returns an `errors` array the Settings card surfaces
+in its sync message), `AthleteProfileCard`'s profile save (now shows a
+real error instead of silently claiming "Saved"), `ensureAthleteForUser`'s
+athlete-row insert, and `calendar/page.tsx`'s `toggleDone` (now rolls
+back the optimistic UI update on a real failure).
+
+**Other real bugs fixed**:
+- `WorkoutDialog.tsx`'s structured-step duration/target type dropdowns
+  now reset the value on a type change — switching a 5000m distance
+  step to "time" used to silently reinterpret the same number as 83.3
+  minutes instead of resetting it.
+- `DashboardPanel.tsx`'s "Recent activities" was sorting ascending
+  (oldest-first) since `activities` arrives pre-sorted that way from
+  `calendar/page.tsx` — now sorts a copy descending by real `start_date`
+  before slicing, independent of any activity's own title/name.
+  `VolumeChart`'s week labels were hardcoded to Spanish regardless of
+  the app's locale. `recentPage` wasn't reset when the athlete/Friends
+  filter changed, which could render a blank table instead of the empty
+  state.
+- `garminHealthParse.ts`: the per-day upsert did a full-row replace on
+  conflict, so a later same-day push with fewer populated fields could
+  null out columns an earlier, fuller push for that day had already set
+  — fixed with a `mergeWithExisting()` helper that fetches the existing
+  row first and fills any null field in the new row from it, for all 7
+  per-day tables. `applyUserMetrics` had the identical bug for
+  `athletes.garmin_vo2max`/`_cycling`/`garmin_fitness_age` — now only
+  includes a field in the update when that specific push actually
+  carried it. The athlete-id lookup also ran once per record instead of
+  once per push (now cached per `processGarminPushEvent()` call via a
+  `Map`). `calendarDateOf()`/`decodeBodyComp()`'s epoch fallbacks used a
+  truthy check (`epoch ? ... : null`), which would have treated a
+  legitimate epoch of 0 as "no timestamp" — now an explicit `!== null`
+  check.
+- `strava.ts`/`coros.ts`/`garminDeveloper.ts`/`whoop.ts`'s
+  `getValid*AccessToken()` functions had an unsynchronized read-check-
+  refresh-persist race: two near-simultaneous calls near expiry both
+  read the same refresh_token and both call the provider's refresh
+  endpoint; if the provider rotates the refresh token on use, the
+  second call gets a real error even though the connection is healthy.
+  All four now catch that failure and re-fetch the connection row once
+  before giving up — a concurrent call may have already refreshed it.
+- `excelPlan.ts`'s `cellToString()` didn't handle ExcelJS rich-text
+  cells (Excel's real shape for anything pasted with mixed formatting),
+  stringifying them to the literal `"[object Object]"` with no error —
+  now extracts and joins the rich-text runs. `timeDiffMinutes()`
+  silently returned null (falling back unreported to the Minutes
+  column) whenever the end time was numerically before the start —
+  a real scenario for an overnight workout (e.g. 22:00-02:00) — now
+  wraps past midnight when end is strictly before start, and reports a
+  real import error when both the time pair AND the Minutes column are
+  unusable, instead of silently importing a 0-minute row.
+- `dates.ts`'s `parsePace()` couldn't distinguish a genuinely blank
+  field from a real 0, since its caller in `settings/page.tsx`
+  pre-defaulted blanks to `"0"` — leaving minutes blank while typing
+  only seconds used to save an impossible pace. Fixed in both places:
+  `parsePace` now rejects an explicitly blank min/sec string, and the
+  call site stopped pre-defaulting to `"0"`.
+- `i18n/context.tsx`'s English `nav_templates` entry never got the
+  "Generate" rename the Spanish entry (and `tpl_h`, both locales)
+  already had — every first-time visitor (default locale is English)
+  saw the stale "Templates" label.
+- `fitnessForm.ts`'s `computeFitnessForm()` had no guard ensuring its
+  internal `start <= end` — if the earliest load date ever landed after
+  `today()` (plausible from `FitnessPanel`'s own naive UTC-date slice of
+  a WHOOP cycle's `start_at`), the day-loop would never run, `series`
+  would stay empty, and the non-optional `current` field would actually
+  be `undefined` — a real crash at `result.current.ctl` in every
+  caller. `end` is now clamped to at least `start`, plus a defense-in-
+  depth empty-series guard before returning.
+- `ensureAthlete.ts`: the existing-athlete lookup matched email with a
+  case-sensitive `eq`, so an admin-seeded row with `JohnDoe@gmail.com`
+  (no `auth_user_id` yet) wouldn't match a later Google sign-in
+  normalized to lowercase, inserting a duplicate identity instead of
+  linking to the existing row — switched to `ilike`. The row-insert's
+  own error was never checked either: two near-simultaneous sign-ups
+  with colliding names/emails can both pass the "no existing row" check
+  before either insert commits, and the second insert then fails the
+  unique slug/email constraint — unchecked, this silently stranded that
+  user signed in with `me === null` forever. Now checks the error,
+  swallows only a real unique-violation (Postgres `23505` — a
+  concurrent call already created the row this one needed, not a real
+  failure), and rethrows anything else; `/auth/callback/route.ts` wraps
+  the call in try/catch so a genuine failure still redirects to the
+  existing `?auth_error=1` path instead of an unhandled 500.
+- `admin/athletes/[id]/route.ts`'s last-admin demotion guard read the
+  admin count and the target row's own flag in two separate,
+  unsynchronized queries before writing — with exactly 2 admins, two
+  concurrent demotions of different admins could both pass the check
+  and leave zero admins. A true fix needs a single atomic check-and-
+  write this codebase's plain Supabase client calls can't express, so
+  this is a compensating check instead: re-verify the admin count
+  actually held zero afterward, and revert the one write if it didn't
+  (409), rather than leaving the roster locked out.
+- `auth-context.tsx`'s athlete-roster refetch effect depended on the
+  whole `session` object, which gets a new reference on every Supabase
+  token auto-refresh (roughly hourly) — re-querying the full `athletes`
+  table for every open tab with nothing actually changed. Now depends
+  on `session?.user.id` (a stable string) instead.
+- Migrations `029_garmin_health_metrics.sql` and
+  `030_whoop_integration.sql` had `create policy` statements with no
+  `drop policy if exists` guard, unlike every other policy-creating
+  migration in this codebase — re-running either file a second time
+  would error "policy already exists" and abort the rest of the file.
+  **Needs these two migrations re-run in the Supabase SQL editor** —
+  the added `drop policy if exists` lines are themselves idempotent, so
+  re-running is safe even if 029/030 already ran once before this fix.
+
+**Two findings deliberately left as-is**:
+1. `garminHealthParse.ts`'s `decodeRespiration()` stores waking and
+   sleep respiration rate under one undifferentiated
+   `avg_breaths_per_min` column, even though they're genuinely
+   different metrics, not alternate spellings of the same value —
+   fixing this properly needs a schema decision (two columns, or a
+   "which kind" flag) rather than a pure code fix, and the panel
+   already labels this whole metric as computed/estimated rather than
+   a precise Garmin-reported number. Flagged for a future pass rather
+   than guessed at.
+2. `strava/sync`'s auto-complete/AI-write-back loop was fully
+   sequential (DB query + possible update + a Claude call + a Strava
+   PUT per activity, up to 200 pending) — now processed in concurrent
+   batches of 5 (`CONCURRENCY` in `app/api/strava/sync/route.ts`)
+   rather than either fully sequential (the original timeout risk) or
+   fully parallel (which would risk hammering the Claude/Strava APIs
+   with 200 simultaneous requests) — a deliberate middle ground, not
+   fully "fixed" in the sense of eliminating the risk entirely for a
+   truly enormous backlog.
+
+Not yet tested against a real Supabase project/live traffic from this
+sandbox — confirm once deployed, in particular: the two unauthenticated
+endpoints are actually closed, a real concurrent WHOOP/Garmin/Strava
+sync doesn't hit the token-refresh race in practice, and re-running
+migrations 029/030 in the SQL editor is actually a no-op now.
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as

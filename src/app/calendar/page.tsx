@@ -128,7 +128,16 @@ export default function CalendarPage() {
   async function toggleDone(w: WorkoutWithSlug) {
     setWorkouts((prev) => prev.map((x) => (x.id === w.id ? { ...x, done: !x.done } : x)));
     const supabase = createClient();
-    await supabase.from("workouts").update({ done: !w.done }).eq("id", w.id);
+    const { error } = await supabase.from("workouts").update({ done: !w.done }).eq("id", w.id);
+    // Found live (Nov 2026, full codebase audit): this optimistic update
+    // was never checked for a write failure or rolled back — a failed
+    // write left the checkbox showing "done" in the UI while the
+    // database row stayed untouched, silently reverting on the next
+    // reload with no error ever shown.
+    if (error) {
+      console.error("Failed to toggle workout done", error);
+      setWorkouts((prev) => prev.map((x) => (x.id === w.id ? { ...x, done: w.done } : x)));
+    }
   }
 
   function openAdd(date: string) {

@@ -141,13 +141,27 @@ alter table garmin_health_snapshot enable row level security;
 -- Readable by any signed-in athlete (same "shared coach log" openness
 -- strava_activities/strava_daily_load already have), written only by
 -- the service-role webhook/parser — never from the browser.
+-- Found live (Nov 2026, full codebase audit): these 8 CREATE POLICY
+-- statements had no drop-policy-if-exists guard, unlike every other
+-- policy-creating migration in this codebase (002/012/013) and unlike
+-- schema.sql's own mirror of these same policies — re-running this
+-- file a second time would error "policy already exists" on the first
+-- statement and abort the rest of the file.
+drop policy if exists garmin_daily_health_select on garmin_daily_health;
 create policy garmin_daily_health_select on garmin_daily_health for select to authenticated using (true);
+drop policy if exists garmin_sleep_select on garmin_sleep;
 create policy garmin_sleep_select on garmin_sleep for select to authenticated using (true);
+drop policy if exists garmin_hrv_select on garmin_hrv;
 create policy garmin_hrv_select on garmin_hrv for select to authenticated using (true);
+drop policy if exists garmin_pulse_ox_select on garmin_pulse_ox;
 create policy garmin_pulse_ox_select on garmin_pulse_ox for select to authenticated using (true);
+drop policy if exists garmin_respiration_select on garmin_respiration;
 create policy garmin_respiration_select on garmin_respiration for select to authenticated using (true);
+drop policy if exists garmin_body_comp_select on garmin_body_comp;
 create policy garmin_body_comp_select on garmin_body_comp for select to authenticated using (true);
+drop policy if exists garmin_hydration_select on garmin_hydration;
 create policy garmin_hydration_select on garmin_hydration for select to authenticated using (true);
+drop policy if exists garmin_health_snapshot_select on garmin_health_snapshot;
 create policy garmin_health_snapshot_select on garmin_health_snapshot for select to authenticated using (true);
 
 -- Device-measured VO2max/Fitness Age ("user-metrics" push,

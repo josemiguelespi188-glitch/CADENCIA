@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { parsePlanWorkbook } from "@/lib/excelPlan";
+import { getSignedInAthlete } from "@/lib/auth";
 
 /**
  * Bulk-creates workouts from an uploaded plan spreadsheet. Always
@@ -9,8 +10,16 @@ import { parsePlanWorkbook } from "@/lib/excelPlan";
  * this is meant for loading a week once; edit duplicates away in the
  * calendar UI if it happens. See CLAUDE.md's "Excel weekly-plan import"
  * section.
+ *
+ * Found live (Nov 2026, full codebase audit): this route had NO auth
+ * check — an anonymous POST could insert arbitrary workouts rows for
+ * any athlete slug in the roster. Gated the same way every other
+ * non-admin route in this app is.
  */
 export async function POST(req: NextRequest) {
+  const athlete = await getSignedInAthlete();
+  if (!athlete) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+
   const form = await req.formData();
   const file = form.get("file");
   if (!(file instanceof File)) {

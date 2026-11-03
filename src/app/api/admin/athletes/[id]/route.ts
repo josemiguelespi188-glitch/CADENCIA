@@ -33,5 +33,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const { error } = await db.from("athletes").update({ is_admin: isAdmin }).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  if (!isAdmin) {
+    // Found live (Nov 2026, full codebase audit): the guard above reads
+    // the admin count and this row's own flag in two separate,
+    // unsynchronized queries before writing — with exactly 2 admins,
+    // two concurrent PATCH requests demoting different admins can both
+    // read count=2 before either write lands, both pass the check, and
+    // the roster ends up with zero admins. A true fix needs a single
+    // atomic check-and-write (a DB transaction/advisory lock), which
+    // this codebase's plain Supabase client calls can't express — this
+    // is a compensating check instead: re-verify the invariant actually
+    // held AFTER the write, and revert this one write if it didn't,
+    // rather than leaving the roster locked out.
+    const { count: remaining } = await db.from("athletes").select("id", { count: "exact", head: true }).eq("is_admin", true);
+    if ((remaining ?? 0) === 0) {
+      await db.from("athletes").update({ is_admin: true }).eq("id", id);
+      return NextResponse.json({ error: "Can't remove the last admin." }, { status: 409 });
+    }
+  }
+
   return NextResponse.json({ ok: true });
 }

@@ -287,6 +287,21 @@ export interface ParsePlanResult {
 
 function cellToString(v: ExcelJS.CellValue): string {
   if (v === null || v === undefined) return "";
+  // Found live (Nov 2026, full codebase audit): a rich-text cell (Excel's
+  // real shape for anything pasted with mixed formatting, e.g. from Word
+  // or a web page) matched neither the "text" nor "result" check below
+  // and fell through to String(v), producing the literal "[object
+  // Object]" with no error — directly against this file's own
+  // documented "every invalid row is reported, never silently dropped
+  // or guessed" guarantee. Checked first since a rich-text cell object
+  // doesn't carry "text"/"result" at its own top level.
+  if (typeof v === "object" && "richText" in (v as unknown as Record<string, unknown>)) {
+    const runs = (v as unknown as { richText: { text?: unknown }[] }).richText;
+    return (Array.isArray(runs) ? runs : [])
+      .map((r) => String(r?.text ?? ""))
+      .join("")
+      .trim();
+  }
   if (typeof v === "object" && "text" in (v as unknown as Record<string, unknown>)) {
     return String((v as unknown as { text: unknown }).text ?? "").trim();
   }
@@ -336,7 +351,16 @@ function matchSport(raw: string): Sport | null {
 function timeDiffMinutes(start: string, end: string): number | null {
   const [sh, sm] = start.split(":").map(Number);
   const [eh, em] = end.split(":").map(Number);
-  const diff = eh * 60 + em - (sh * 60 + sm);
+  let diff = eh * 60 + em - (sh * 60 + sm);
+  // Found live (Nov 2026, full codebase audit): an end time numerically
+  // before the start time used to return null unconditionally, so an
+  // overnight workout (e.g. 22:00-02:00, a real scenario for long/ultra
+  // sessions) silently imported with minutes=0 and no reported error —
+  // against this file's own "never silently dropped or guessed"
+  // guarantee. Only wraps when end is strictly before start (spanning
+  // midnight); start === end (diff 0) stays invalid rather than being
+  // read as an implausible 24-hour workout.
+  if (diff < 0) diff += 24 * 60;
   return diff > 0 ? diff : null;
 }
 
@@ -368,7 +392,16 @@ export async function parsePlanWorkbook(buffer: ArrayBuffer, roster: { slug: str
     const start = cellToTimeStr(get(4));
     const end = cellToTimeStr(get(5));
     const minutesCol = Number(cellToString(get(6))) || 0;
-    const minutes = start && end ? (timeDiffMinutes(start, end) ?? minutesCol) : minutesCol;
+    const timeDiff = start && end ? timeDiffMinutes(start, end) : null;
+    const minutes = timeDiff ?? minutesCol;
+    // Found live (Nov 2026, full codebase audit): a start/end pair
+    // timeDiffMinutes rejected (identical times) used to silently fall
+    // back to the Minutes column with no reported error — if that
+    // column was also left blank (the documented default when using
+    // Start/End), the row imported with minutes=0 and nobody was told.
+    if (start && end && timeDiff === null && minutesCol === 0) {
+      return void errors.push({ rowNumber, message: `Hora inicio y fin inválidas o idénticas ("${start}"-"${end}") y no se indicaron Minutos` });
+    }
 
     const doneRaw = cellToString(get(12)).toLowerCase();
     const done = ["sí", "si", "yes", "true", "1"].includes(doneRaw);

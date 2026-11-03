@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
     if (!token.athlete?.id) throw new Error("Strava did not return an athlete id");
 
     const db = createServiceClient();
-    await db.from("strava_connections").upsert(
+    const { error: upsertError } = await db.from("strava_connections").upsert(
       {
         athlete_id: athleteId,
         strava_athlete_id: token.athlete.id,
@@ -37,6 +37,12 @@ export async function GET(req: NextRequest) {
       },
       { onConflict: "athlete_id" }
     );
+    // Found live (Nov 2026, full codebase audit): same unchecked-upsert
+    // bug class already fixed in whoop/callback.
+    if (upsertError) {
+      console.error("Strava connection upsert failed", upsertError);
+      return NextResponse.redirect(`${base}/settings?strava=error`);
+    }
     return NextResponse.redirect(`${base}/settings?strava=connected`);
   } catch (e) {
     console.error("Strava callback failed", e);

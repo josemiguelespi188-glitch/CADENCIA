@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
     // Best-effort — see fetchGarminUserId()'s own doc comment for why a
     // failure here must never block the connect itself.
     const garminUserId = await fetchGarminUserId(token.access_token);
-    await db.from("garmin_dev_connections").upsert(
+    const { error: upsertError } = await db.from("garmin_dev_connections").upsert(
       {
         athlete_id: pkce.athlete_id,
         garmin_user_id: garminUserId,
@@ -57,6 +57,14 @@ export async function GET(req: NextRequest) {
       },
       { onConflict: "athlete_id" }
     );
+    // Found live (Nov 2026, full codebase audit): same unchecked-upsert
+    // bug class already fixed in whoop/callback — Supabase returns
+    // {error} rather than throwing, so a failed write used to still
+    // redirect to ?garmindev=connected.
+    if (upsertError) {
+      console.error("Garmin Developer connection upsert failed", upsertError);
+      return NextResponse.redirect(`${base}/settings?garmindev=error`);
+    }
     await db.from("garmin_oauth_pkce").delete().eq("state", state);
     return NextResponse.redirect(`${base}/settings?garmindev=connected`);
   } catch (e) {

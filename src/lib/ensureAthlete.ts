@@ -21,10 +21,16 @@ import { slugify, initialsFrom, dedupeSlug } from "@/lib/athleteSlug";
 export async function ensureAthleteForUser(user: User): Promise<void> {
   const db = createServiceClient();
 
+  // Found live (Nov 2026, full codebase audit): `email.eq.` is
+  // case-sensitive on this plain `text` column — an admin-seeded row
+  // with email "JohnDoe@gmail.com" (no auth_user_id yet) wouldn't match
+  // a later Google sign-in normalized to "johndoe@gmail.com", inserting
+  // a duplicate identity instead of linking to the existing row. `ilike`
+  // (no wildcards — an exact case-insensitive match) fixes that.
   const { data: existing } = await db
     .from("athletes")
     .select("id")
-    .or(`auth_user_id.eq.${user.id}${user.email ? `,email.eq.${user.email}` : ""}`)
+    .or(`auth_user_id.eq.${user.id}${user.email ? `,email.ilike.${user.email}` : ""}`)
     .maybeSingle();
   if (existing) return;
 
@@ -38,11 +44,25 @@ export async function ensureAthleteForUser(user: User): Promise<void> {
   const existingSlugs = new Set((roster ?? []).map((a) => a.slug));
   const slug = dedupeSlug(slugify(displayName), existingSlugs);
 
-  await db.from("athletes").insert({
+  const { error } = await db.from("athletes").insert({
     slug,
     name: displayName,
     initials: initialsFrom(displayName),
     auth_user_id: user.id,
     email: user.email,
   });
+  // Found live (Nov 2026, full codebase audit): this error was never
+  // checked. Two near-simultaneous sign-ups with colliding names/emails
+  // can both pass the "no existing row" check above before either
+  // insert commits — the second insert then fails `athletes`' unique
+  // slug/email constraint and, unchecked, silently stranded that user
+  // signed in with no athlete row (me === null forever, stuck on a
+  // perpetual loading screen). A unique-violation here specifically
+  // means a concurrent call already created the row this one needs —
+  // not a real failure, so it's swallowed; any other error is still
+  // surfaced so a genuine problem doesn't vanish silently.
+  if (error && error.code !== "23505") {
+    console.error("Failed to create athlete row for new sign-in", error);
+    throw error;
+  }
 }

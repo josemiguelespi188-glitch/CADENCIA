@@ -104,9 +104,15 @@ alter table whoop_workouts enable row level security;
 -- Readable by any signed-in athlete (same "shared coach log" openness
 -- strava_activities already has), written only by the service-role
 -- sync route.
+-- Found live (Nov 2026, full codebase audit): same missing idempotency
+-- guard as migration 029 — see its own comment for the full rationale.
+drop policy if exists whoop_cycles_select on whoop_cycles;
 create policy whoop_cycles_select on whoop_cycles for select to authenticated using (true);
+drop policy if exists whoop_sleep_select on whoop_sleep;
 create policy whoop_sleep_select on whoop_sleep for select to authenticated using (true);
+drop policy if exists whoop_recovery_select on whoop_recovery;
 create policy whoop_recovery_select on whoop_recovery for select to authenticated using (true);
+drop policy if exists whoop_workouts_select on whoop_workouts;
 create policy whoop_workouts_select on whoop_workouts for select to authenticated using (true);
 
 -- Body measurement, from GET /v2/user/measurement/body — latest value

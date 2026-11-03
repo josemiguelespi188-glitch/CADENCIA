@@ -165,7 +165,13 @@ const DICT: Record<Locale, Record<string, string>> = {
     both: "Both",
     nav_calendar: "Calendar",
     nav_dashboard: "Dashboard",
-    nav_templates: "Templates",
+    // Found live (Nov 2026, full codebase audit): this never got the
+    // "Generate" rename the Spanish entry (and tpl_h, both locales)
+    // already have — "Generate" is treated as the section's actual
+    // name, not a word to translate (see CLAUDE.md's "Templates
+    // renamed to Generate" note), so every first-time visitor (default
+    // locale is English) saw the stale "Templates" label in the nav.
+    nav_templates: "Generate",
     nav_settings: "Settings",
     sign_in: "Sign In",
     sign_out: "Sign Out",

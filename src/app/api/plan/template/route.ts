@@ -1,9 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildPlanTemplate, type AthleteProfileExport } from "@/lib/excelPlan";
 import { createServiceClient } from "@/lib/supabase/server";
+import { getSignedInAthlete } from "@/lib/auth";
 import type { Athlete } from "@/lib/types";
 
+/**
+ * Found live (Nov 2026, full codebase audit): this route had NO auth
+ * check at all — it reads every athlete's row with the service-role
+ * client (birth date, resting/max HR, goal race, personal bests) and
+ * returned it to anyone who hit the URL, signed in or not. Gated the
+ * same way every other non-admin route in this app is — any signed-in
+ * athlete, not requireAdmin() — since the Weekly Plan Excel is a
+ * shared-coach-log tool any athlete can already use from /templates.
+ */
 export async function GET(req: NextRequest) {
+  const athlete = await getSignedInAthlete();
+  if (!athlete) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+
   const locale = req.nextUrl.searchParams.get("locale") === "en" ? "en" : "es";
 
   const db = createServiceClient();

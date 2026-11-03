@@ -45,6 +45,7 @@ export function AthleteProfileCard({ slug }: { slug: AthleteSlug }) {
   const [bests, setBests] = useState<PersonalBest[]>([]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const supabase = createClient();
@@ -90,9 +91,10 @@ export function AthleteProfileCard({ slug }: { slug: AthleteSlug }) {
     if (!athlete) return;
     setSaving(true);
     setSaved(false);
+    setSaveError(null);
     try {
       const supabase = createClient();
-      await supabase
+      const { error } = await supabase
         .from("athletes")
         .update({
           birth_date: birthDate || null,
@@ -108,8 +110,15 @@ export function AthleteProfileCard({ slug }: { slug: AthleteSlug }) {
           personal_bests: bests.filter((b) => b.timeSec > 0),
         })
         .eq("id", athlete.id);
-      setSaved(true);
-      await load();
+      // Found live (Nov 2026, full codebase audit): this was never
+      // checked — a failed write still showed "Saved" with no error.
+      if (error) {
+        console.error("Failed to save athlete profile", error);
+        setSaveError(error.message);
+      } else {
+        setSaved(true);
+        await load();
+      }
     } finally {
       setSaving(false);
     }
@@ -249,6 +258,7 @@ export function AthleteProfileCard({ slug }: { slug: AthleteSlug }) {
             {t("save")}
           </Button>
           {saved && <span className="text-xs text-ink-3">{t("saved")}</span>}
+          {saveError && <span className="text-xs text-error">{saveError}</span>}
         </div>
       </form>
     </Card>
@@ -323,12 +333,18 @@ function PersonalBestRow({
         </Field>
       )}
       <Field label={isEn ? "Time (H:M:S)" : "Tiempo (H:M:S)"}>
+        {/* Found live (Nov 2026, full codebase audit): `value={m || ""}`
+            hid a real 0 — a PB of exactly 1:00:00 showed blank minutes/
+            seconds boxes instead of "0". Only the row-level "nothing
+            entered yet" state (timeSec === 0 overall) should render
+            blank; once any time is set, every field shows its real
+            digit, zero included. */}
         <div className="flex items-center gap-1">
-          <input type="number" min={0} placeholder="H" value={h || ""} onChange={(e) => setTime(e.target.value, String(m), String(s))} className={inputCls + " w-14"} />
+          <input type="number" min={0} placeholder="H" value={best.timeSec > 0 ? h : ""} onChange={(e) => setTime(e.target.value, String(m), String(s))} className={inputCls + " w-14"} />
           <span className="text-ink-3">:</span>
-          <input type="number" min={0} max={59} placeholder="M" value={m || ""} onChange={(e) => setTime(String(h), e.target.value, String(s))} className={inputCls + " w-14"} />
+          <input type="number" min={0} max={59} placeholder="M" value={best.timeSec > 0 ? m : ""} onChange={(e) => setTime(String(h), e.target.value, String(s))} className={inputCls + " w-14"} />
           <span className="text-ink-3">:</span>
-          <input type="number" min={0} max={59} placeholder="S" value={s || ""} onChange={(e) => setTime(String(h), String(m), e.target.value)} className={inputCls + " w-14"} />
+          <input type="number" min={0} max={59} placeholder="S" value={best.timeSec > 0 ? s : ""} onChange={(e) => setTime(String(h), String(m), e.target.value)} className={inputCls + " w-14"} />
         </div>
       </Field>
       <Field label={isEn ? "Date" : "Fecha"}>

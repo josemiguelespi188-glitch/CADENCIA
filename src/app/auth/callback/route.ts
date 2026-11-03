@@ -23,8 +23,15 @@ export async function GET(request: NextRequest) {
     const supabase = await createClient();
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error && data.user) {
-      await ensureAthleteForUser(data.user);
-      return NextResponse.redirect(`${origin}${next}`);
+      try {
+        await ensureAthleteForUser(data.user);
+        return NextResponse.redirect(`${origin}${next}`);
+      } catch (e) {
+        // ensureAthleteForUser now throws on a genuine (non-duplicate)
+        // failure to create the athlete row — route to the existing
+        // error path instead of an unhandled 500.
+        console.error("ensureAthleteForUser failed", e);
+      }
     }
   }
 
