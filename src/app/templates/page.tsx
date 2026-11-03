@@ -69,6 +69,18 @@ export default function TemplatesPage() {
     await load();
   }
 
+  function handleDialogClick(e: React.MouseEvent<HTMLDialogElement>) {
+    // Same click-outside-to-close handler as WorkoutDialog/
+    // ActivityDetailDialog/NewWorkoutLauncher — see WorkoutDialog.tsx's
+    // own comment for why this needs a bounding-rect check rather than
+    // e.target identity.
+    const dialogEl = dialogRef.current;
+    if (!dialogEl || e.target !== dialogEl) return;
+    const rect = dialogEl.getBoundingClientRect();
+    const outside = e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom;
+    if (outside) setEditing(null);
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-bg">
       <SiteHeader />
@@ -124,10 +136,21 @@ export default function TemplatesPage() {
       <dialog
         ref={dialogRef}
         onClose={() => setEditing(null)}
+        onClick={handleDialogClick}
         className="rounded-2xl border border-line bg-surface p-0 text-ink backdrop:bg-ink/50 w-[min(480px,calc(100vw-24px))]"
       >
         <form onSubmit={save} className="flex flex-col gap-4 p-6">
-          <h2 className="text-xl font-semibold tracking-tight">{editing?.record ? t("edit_t") : t("new_t")}</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-xl font-semibold tracking-tight">{editing?.record ? t("edit_t") : t("new_t")}</h2>
+            <button
+              type="button"
+              onClick={() => setEditing(null)}
+              aria-label={t("cancel")}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-lg text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink"
+            >
+              ×
+            </button>
+          </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs text-ink-2">{t("sport")}</label>
             <select

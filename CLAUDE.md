@@ -1956,6 +1956,33 @@ with real UI/UX thinking.
   match, and confirm the Dashboard panel renders real numbers instead
   of the empty state.
 
+## Every dialog gets a close X + click-outside (Nov 2026)
+
+Direct instruction, with a screenshot of `ActivityDetailDialog` open
+with no visible way to close it besides the Cancel button at the very
+bottom: "asegurate que haya x para salir en todos los popups de la app
+y si aplastas afuera igual" — make sure every popup in the app has an
+X to close, and that clicking outside closes it too. `WorkoutDialog`
+and `NewWorkoutLauncher` already had both (see the "WorkoutDialog
+usability pass" section above); audited every `<dialog>` in the app
+(`grep -rl "<dialog"`) and found two that didn't:
+
+- **`ActivityDetailDialog.tsx`** — added the same `handleDialogClick`
+  bounding-rect click-outside handler and an × button next to the
+  title row (the title block is 3 lines — eyebrow/name/date — so the
+  header row uses `items-start`, not `items-center`, to keep the ×
+  aligned with the top line rather than vertically centered against
+  the whole block).
+- **The inline template editor dialog on `/templates`**
+  (`app/templates/page.tsx`) — same fix, same pattern. This one had
+  neither an × nor a click-outside handler at all before this pass.
+
+Both reuse the exact same bounding-rect check `WorkoutDialog.tsx`
+established (comment there explains why: a backdrop click still
+targets the `<dialog>` element itself, so `e.target` identity alone
+can't tell an outside click from an inside one once the inner
+form/content has its own padding).
+
 ## WHOOP integration (Nov 2026)
 
 Built immediately after the Garmin Health pass above, per direct

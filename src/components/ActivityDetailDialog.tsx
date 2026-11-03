@@ -46,18 +46,40 @@ export function ActivityDetailDialog({ activity, onClose }: { activity: StravaAc
   const sport = activity ? mapStravaSportType(activity.sport_type) : null;
   const pace = activity && activity.distance_m ? Math.round(activity.moving_time_s / (activity.distance_m / 1000)) : null;
 
+  function handleDialogClick(e: React.MouseEvent<HTMLDialogElement>) {
+    // Same click-outside-to-close handler as WorkoutDialog/NewWorkoutLauncher
+    // — see WorkoutDialog.tsx's own comment for why this needs a
+    // bounding-rect check rather than e.target identity.
+    const dialogEl = dialogRef.current;
+    if (!dialogEl || e.target !== dialogEl) return;
+    const rect = dialogEl.getBoundingClientRect();
+    const outside = e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom;
+    if (outside) onClose();
+  }
+
   return (
     <dialog
       ref={dialogRef}
       onClose={onClose}
+      onClick={handleDialogClick}
       className="rounded-2xl border border-line bg-surface p-0 text-ink backdrop:bg-ink/50 w-[min(520px,calc(100vw-24px))] max-h-[calc(100dvh-24px)]"
     >
       {activity && (
         <div className="flex flex-col gap-4 p-6">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-ink-3">{activity.sport_type}</p>
-            <h2 className="text-xl font-semibold tracking-tight">{activity.name}</h2>
-            <p className="mt-0.5 text-xs text-ink-3">{fmt(new Date(activity.start_date), locale, { weekday: "long", day: "numeric", month: "long" })}</p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-widest text-ink-3">{activity.sport_type}</p>
+              <h2 className="text-xl font-semibold tracking-tight">{activity.name}</h2>
+              <p className="mt-0.5 text-xs text-ink-3">{fmt(new Date(activity.start_date), locale, { weekday: "long", day: "numeric", month: "long" })}</p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label={t("cancel")}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-lg text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink"
+            >
+              ×
+            </button>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
