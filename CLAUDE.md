@@ -2349,6 +2349,40 @@ endpoints are actually closed, a real concurrent WHOOP/Garmin/Strava
 sync doesn't hit the token-refresh race in practice, and re-running
 migrations 029/030 in the SQL editor is actually a no-op now.
 
+## Seeded Base workouts presets (Nov 2026)
+
+The `/templates` ("Generate") page's "Base workouts" preset grid
+started empty (`templates` has no seed data of its own — presets were
+always athlete-created). Per direct request ("carga entrenamientos al
+base workouts"), seeded 20 starting presets from two sources the user
+shared in chat:
+
+- **10 run presets** adapted from a fljuga.co.uk article pasted
+  directly into chat ("Entrenamientos de carrera Ironman 70.3: 10
+  ejemplos de sesiones de entrenamiento") — these were already
+  structured as standalone, reusable sessions (purpose, warmup, main
+  set with zones, cooldown), a close match for what a preset is.
+- **10 swim/bike presets** adapted from an uploaded Garmin 12-week
+  Olympic-distance triathlon plan PDF — this one is a full dated,
+  periodized calendar (84 sessions across 12 weeks), not a preset
+  library, so rather than dump every weekly numeric variant, pulled
+  out the genuinely distinct session *types* that recur throughout it
+  (technique swim, continuous swim, race-pace swim, open-water swim,
+  progressive swim, easy spin, hill repeats, time trial, strong
+  intervals, bike-to-run brick) and generalized each into a reusable
+  template. Run session types from the PDF were skipped since the
+  fljuga article already covers that discipline.
+- `minutes`/`km` on each preset are approximate (derived from the
+  source's own block breakdown, e.g. summing warmup + main set +
+  cooldown) — these are starting points an athlete edits per use when
+  dropped onto a day, not a fixed prescription.
+- `supabase/migrations/031_seed_base_workout_templates.sql` (mirrored
+  in `schema.sql`) — idempotent per row (`where not exists (select 1
+  from templates where title = '...')`, matched by title, since
+  `templates` has no unique constraint and an athlete creating their
+  own duplicate-titled preset later is legitimate) — **needs this
+  migration run in the Supabase SQL editor**.
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as
