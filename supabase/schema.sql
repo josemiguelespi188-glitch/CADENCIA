@@ -51,6 +51,13 @@ create table if not exists athletes (
   goal_distance text,
   goal_notes text,
   personal_bests jsonb not null default '[]'::jsonb,
+  -- Device-measured, from the Garmin Developer Program's "user-metrics"
+  -- push — distinct from the manually-entered vo2max above. See
+  -- migration 029 and lib/integrations/garminHealthParse.ts.
+  garmin_vo2max numeric,
+  garmin_vo2max_cycling numeric,
+  garmin_fitness_age integer,
+  garmin_health_synced_at timestamptz,
   created_at timestamptz not null default now()
 );
 
@@ -292,6 +299,105 @@ create table if not exists garmin_oauth_pkce (
   created_at timestamptz not null default now()
 );
 
+-- ─── Garmin Health API metrics, parsed from garmin_push_events ─────────────
+-- See migration 029 and lib/integrations/garminHealthParse.ts's own file
+-- header for what's confirmed (object names) vs reconstructed (individual
+-- field names) in the parser that fills these.
+create table if not exists garmin_daily_health (
+  athlete_id uuid not null references athletes(id) on delete cascade,
+  calendar_date date not null,
+  steps integer,
+  active_kilocalories integer,
+  body_battery_charged integer,
+  body_battery_drained integer,
+  average_stress_level integer,
+  max_stress_level integer,
+  resting_heart_rate integer,
+  average_heart_rate integer,
+  max_heart_rate integer,
+  raw jsonb not null,
+  synced_at timestamptz not null default now(),
+  primary key (athlete_id, calendar_date)
+);
+
+create table if not exists garmin_sleep (
+  athlete_id uuid not null references athletes(id) on delete cascade,
+  calendar_date date not null,
+  duration_s integer,
+  deep_s integer,
+  light_s integer,
+  rem_s integer,
+  awake_s integer,
+  overall_score integer,
+  raw jsonb not null,
+  synced_at timestamptz not null default now(),
+  primary key (athlete_id, calendar_date)
+);
+
+create table if not exists garmin_hrv (
+  athlete_id uuid not null references athletes(id) on delete cascade,
+  calendar_date date not null,
+  last_night_avg integer,
+  last_night_5min_high integer,
+  raw jsonb not null,
+  synced_at timestamptz not null default now(),
+  primary key (athlete_id, calendar_date)
+);
+
+-- avg/min computed by this app from raw per-epoch readings, not a
+-- Garmin-reported daily summary number — labeled that way in the UI.
+create table if not exists garmin_pulse_ox (
+  athlete_id uuid not null references athletes(id) on delete cascade,
+  calendar_date date not null,
+  avg_spo2 numeric,
+  min_spo2 numeric,
+  raw jsonb not null,
+  synced_at timestamptz not null default now(),
+  primary key (athlete_id, calendar_date)
+);
+
+create table if not exists garmin_respiration (
+  athlete_id uuid not null references athletes(id) on delete cascade,
+  calendar_date date not null,
+  avg_breaths_per_min numeric,
+  raw jsonb not null,
+  synced_at timestamptz not null default now(),
+  primary key (athlete_id, calendar_date)
+);
+
+-- A measurement EVENT, not a daily aggregate — append-only.
+create table if not exists garmin_body_comp (
+  id uuid primary key default gen_random_uuid(),
+  athlete_id uuid not null references athletes(id) on delete cascade,
+  measured_at timestamptz not null,
+  weight_kg numeric,
+  body_fat_pct numeric,
+  body_water_pct numeric,
+  muscle_mass_kg numeric,
+  bone_mass_kg numeric,
+  bmi numeric,
+  raw jsonb not null,
+  synced_at timestamptz not null default now()
+);
+
+create table if not exists garmin_hydration (
+  athlete_id uuid not null references athletes(id) on delete cascade,
+  calendar_date date not null,
+  fluid_intake_ml integer,
+  raw jsonb not null,
+  synced_at timestamptz not null default now(),
+  primary key (athlete_id, calendar_date)
+);
+
+create table if not exists garmin_health_snapshot (
+  athlete_id uuid not null references athletes(id) on delete cascade,
+  calendar_date date not null,
+  summaries jsonb,
+  raw jsonb not null,
+  synced_at timestamptz not null default now(),
+  primary key (athlete_id, calendar_date)
+);
+
 -- ─── updated_at trigger for workouts ────────────────────────────────────────
 create or replace function set_updated_at()
 returns trigger as $$
@@ -368,6 +474,41 @@ alter table garmin_push_events enable row level security;
 
 alter table garmin_oauth_pkce enable row level security;
 -- Deliberately no policies at all — service-role only.
+
+-- Garmin Health metrics — readable by any signed-in athlete (same
+-- "shared coach log" openness strava_activities already has), written
+-- only by the service-role webhook/parser.
+alter table garmin_daily_health enable row level security;
+drop policy if exists garmin_daily_health_select on garmin_daily_health;
+create policy garmin_daily_health_select on garmin_daily_health for select to authenticated using (true);
+
+alter table garmin_sleep enable row level security;
+drop policy if exists garmin_sleep_select on garmin_sleep;
+create policy garmin_sleep_select on garmin_sleep for select to authenticated using (true);
+
+alter table garmin_hrv enable row level security;
+drop policy if exists garmin_hrv_select on garmin_hrv;
+create policy garmin_hrv_select on garmin_hrv for select to authenticated using (true);
+
+alter table garmin_pulse_ox enable row level security;
+drop policy if exists garmin_pulse_ox_select on garmin_pulse_ox;
+create policy garmin_pulse_ox_select on garmin_pulse_ox for select to authenticated using (true);
+
+alter table garmin_respiration enable row level security;
+drop policy if exists garmin_respiration_select on garmin_respiration;
+create policy garmin_respiration_select on garmin_respiration for select to authenticated using (true);
+
+alter table garmin_body_comp enable row level security;
+drop policy if exists garmin_body_comp_select on garmin_body_comp;
+create policy garmin_body_comp_select on garmin_body_comp for select to authenticated using (true);
+
+alter table garmin_hydration enable row level security;
+drop policy if exists garmin_hydration_select on garmin_hydration;
+create policy garmin_hydration_select on garmin_hydration for select to authenticated using (true);
+
+alter table garmin_health_snapshot enable row level security;
+drop policy if exists garmin_health_snapshot_select on garmin_health_snapshot;
+create policy garmin_health_snapshot_select on garmin_health_snapshot for select to authenticated using (true);
 
 alter table strava_daily_load enable row level security;
 drop policy if exists strava_daily_load_select_public on strava_daily_load;

@@ -1808,6 +1808,154 @@ now-unnecessary `<>...</>` fragment wrapper back to a plain `<Card>`) —
 `AthleteProfileCard`'s copy, together with the editable threshold
 inputs still in `AthleteZonesCard`, is the only one left.
 
+## Garmin Health metrics parsed + Dashboard redesigned (Nov 2026)
+
+Built per explicit instruction, after a text-only analysis (no code) of
+every Garmin Health API metric this app had access to but wasn't using
+yet: "con todas. mejora ese dashboard. piensa como un diseñador uiux y
+haz del putas la interfaz" — all of them, and redesign the Dashboard
+with real UI/UX thinking.
+
+- **The real blocker this surfaced first**: `garmin_push_events` (and
+  `garmin_dev_connections`) had no way to attribute an incoming push to
+  a Cadencia athlete — `garmin_user_id` was confirmed never populated
+  (see the "Garmin Connect Developer Program" section above). Fixed:
+  `fetchGarminUserId()` (new, `lib/integrations/garminDeveloper.ts`)
+  calls the confirmed Partner API `GET {API_BASE}/partner-gateway/rest
+  /user/id` -> `{userId}` right after a fresh OAuth token exchange
+  (`app/api/garmin-dev/callback/route.ts`), storing it on
+  `garmin_dev_connections.garmin_user_id`. Best-effort — a failure here
+  must never block the OAuth connect itself, since the existing
+  Training-API push flow (pushing a structured workout) never needed
+  this id at all, only incoming Health/Activity pushes do. **Not
+  independently confirmed live from this sandbox** — same caution as
+  the Workout Portal's own `/schedule` fix: the spec says this path,
+  but Garmin's real router has already surprised this codebase once
+  with naive concatenation.
+- **Migration `029_garmin_health_metrics.sql`** (mirrored in
+  `schema.sql` — **needs this migration run in the Supabase SQL
+  editor**): one table per pushed object type —
+  `garmin_daily_health` (steps, Body Battery charged/drained, average/
+  max stress, resting/average/max HR — all on the same Daily summary
+  object per the confirmed spec, so one push = one row, no cross-type
+  upsert conflict), `garmin_sleep`, `garmin_hrv`, `garmin_pulse_ox`,
+  `garmin_respiration`, `garmin_hydration`, `garmin_health_snapshot`
+  (one row per athlete per calendar day, upserted), and
+  `garmin_body_comp` (a measurement **event**, not a daily aggregate —
+  append-only, since an athlete may weigh in 0, 1, or several times a
+  day). Every table carries its own `raw jsonb` column alongside the
+  decoded fields specifically so a real payload can always be diffed
+  against the parser later. Device-measured VO2max/VO2max-cycling/
+  Fitness Age (the "user-metrics" push) went straight onto `athletes`
+  as plain columns instead (`garmin_vo2max`, `garmin_vo2max_cycling`,
+  `garmin_fitness_age`, `garmin_health_synced_at`) — the dashboard only
+  ever wants the current number, same reasoning `strava_weight_kg`/
+  `strava_stats` already use for other Strava-sourced athlete-level
+  fields. **Deliberately kept separate from the existing manually-
+  entered `vo2max` column** — one is device-measured, one is athlete-
+  entered, and the UI labels which is which rather than silently
+  merging them. All eight new tables: RLS enabled, `select` open to
+  `authenticated` (same "shared coach log" openness
+  `strava_activities`/`strava_daily_load` already have), written only
+  by the service-role webhook/parser.
+- **`lib/integrations/garminHealthParse.ts`** (new) decodes a raw
+  `garmin_push_events` payload into these tables, dispatched by
+  `endpoint_type` (the URL slug the push actually hit — see the
+  webhook route below). **Read this file's own header comment before
+  trusting it** — it's explicit about confidence level: the *object*
+  names (ClientSleep, ClientHRVSummary, ClientDaily,
+  ClientDailySpo2Acclimation, etc.) are confirmed from the real OpenAPI
+  spec pasted into this session earlier, but the individual *field*
+  names inside each decoder (`durationInSeconds`,
+  `bodyBatteryChargedValue`, `timeOffsetSpo2Values`, etc.) are
+  reconstructed from Garmin's well-documented public Health API
+  conventions, not copied verbatim from that spec text in this pass —
+  this file's own context window didn't retain the literal field list
+  at that granularity. Every decoder is therefore deliberately
+  defensive (a `pick()` helper tries several plausible key names/paths
+  per field, falls back to `null`, never throws) and the push envelope
+  itself (array of records? wrapped under a pluralized key? a single
+  object?) is also unconfirmed, handled by `extractRecords()` trying
+  all three shapes. **Two things have to happen before trusting this
+  blindly**: a real push has to actually land in `garmin_push_events`,
+  and its raw payload (preserved in every table's own `raw` column)
+  needs to be diffed against the `pick()` paths and corrected where
+  they don't match — same "capture now, parse per type once a real
+  payload is seen" discipline this codebase already applies to every
+  other unconfirmed Garmin shape. SpO2 and respiration's "average"
+  values are explicitly computed by this codebase from raw per-epoch
+  reading maps (`timeOffsetSpo2Values`/`timeOffsetEpochToBreaths`), not
+  a Garmin-reported daily summary number — labeled that way in the UI
+  rather than presented as if Garmin itself reported a daily average.
+  Body composition's mass fields are converted from grams to kg
+  (Garmin's documented convention for that object), with a `*Kg`
+  variant also checked defensively in case the real payload differs.
+- **The webhook route** (`app/api/webhooks/garmin/[type]/route.ts`)
+  now calls `processGarminPushEvent(type, payload)` right after storing
+  the raw row, best-effort (a parse failure is logged, never turns the
+  200 ack into a failure — Garmin would retry/back off an endpoint that
+  errors). Its own header comment was updated to reflect the "Scope
+  widened to every Health + Women's Health endpoint" change already
+  documented above — HEALTH - * rows are now expected and parsed
+  (Women's Health rows are still only captured raw, not decoded).
+- **`components/GarminHealthPanel.tsx`** (new) — the actual dashboard
+  redesign, rendered on `/calendar`'s bottom panel
+  (`DashboardPanel.tsx`), solo-athlete-only (same gating as
+  `FitnessPanel`/`StravaTotals` right below it), placed first in that
+  stack since recovery/readiness is the most actionable thing to see
+  before training-load trend or raw Strava totals. UI/UX decisions
+  made deliberately, not just "show every field":
+  - A **hero row of 4 tiles** — Sleep score, HRV, Body Battery,
+    Stress — the four metrics that together answer "how recovered am
+    I," each with a 14-day sparkline trend where history exists.
+  - **No fabricated "is this good?" verdict for HRV, SpO2, or
+    respiration** — shown as plain numbers with a trend line only,
+    never a status label, since HRV especially is highly individual
+    and this app has no personal baseline to compare against; a
+    fabricated universal threshold would be exactly the kind of
+    overclaiming this codebase avoids elsewhere (Best Efforts never
+    called "PR," Fitness/Fatigue/Form always labeled "estimated," etc).
+  - **Sleep Score and Stress DO get a light band label** ("Excellent"/
+    "Good"/"Fair"/"Poor" for sleep; "Rest"/"Low"/"Medium"/"High" for
+    stress) — but only because these use Garmin's own publicly
+    documented 0-100 scales, not a threshold invented by this
+    codebase; labeled and reasoned about as such in the component's
+    own header comment. The green/red tint on "Excellent" sleep and
+    "High" stress is the one place this pass reaches for `--success`/
+    `--error` outside a sync failure — judged a genuine, non-routine
+    state worth flagging, in the same spirit as (not an exception to)
+    the "reserved for real alerts" rule.
+  - **Body Battery is shown as charged vs. drained for the day, not a
+    fake "current level"** — the Daily summary object only has net
+    charged/drained values, not a live current-battery-level field, so
+    presenting it as a live gauge would be inventing a number Garmin's
+    push data doesn't actually give this app.
+  - A **secondary row of smaller stat chips** (SpO2, Respiration,
+    Hydration, device VO2max, Fitness Age) plus a **Body Composition
+    strip** (weight/body fat/body water/muscle mass/BMI, dated by its
+    real `measured_at`) sit below the hero row — real numbers, lower
+    visual weight, since they're not the "recovery at a glance"
+    headline but are still worth having on the page.
+  - **A clear, honest empty state** — since no real Garmin push has
+    landed from this sandbox yet (see above), the panel checks
+    `garmin_dev_connections` for this athlete and shows "connected, no
+    data synced yet" vs. "not connected, connect from Settings" rather
+    than rendering a dashboard full of dashes/zeros, which would read
+    as broken rather than simply empty.
+- Per Section 15.11 of the Garmin Developer Program Agreement (see the
+  "Garmin Connect Developer Program" section above), nothing decoded
+  or displayed here is ever passed into `lib/integrations/claude.ts`
+  or any AI feature — confirmed true of every file touched in this
+  pass.
+- **Not yet tested against a real push from this sandbox** (same
+  standing limitation as the rest of the Garmin Developer Program
+  integration) — confirm once deployed: run migration 029, trigger a
+  real sync from a connected Garmin device, read the resulting
+  `garmin_push_events` row(s) to see the real envelope and field names,
+  correct `garminHealthParse.ts`'s `pick()` paths wherever they don't
+  match, and confirm the Dashboard panel renders real numbers instead
+  of the empty state.
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as

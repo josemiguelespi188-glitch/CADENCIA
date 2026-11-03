@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
+import { processGarminPushEvent } from "@/lib/integrations/garminHealthParse";
 
 /**
  * Garmin Connect Developer Program (Starter Access) delivers data by
@@ -29,10 +30,17 @@ import { createServiceClient } from "@/lib/supabase/server";
  * type is always known for certain from the URL it hit — never guessed
  * from the body, since the body shape itself is still unconfirmed.
  *
- * **Deliberately NOT registering any HEALTH - * row** — per the scope
- * actually requested on the app ("Activity API" + "Training API"
- * only), matching the project's standing "never request more access
- * than a built feature needs" discipline.
+ * **Scope widened (Nov 2026) to every HEALTH - * and WOMEN_HEALTH - *
+ * row too** — per explicit instruction ("quiero usar todas las
+ * posibles"), superseding the "deliberately not registering Health"
+ * note this comment used to have. Every registered row still gets its
+ * own URL here (…/garmin/sleeps, …/garmin/pulse-ox, …/garmin/hrv-summary,
+ * …/garmin/hydration, …/garmin/body-compositions, …/garmin/respiration,
+ * …/garmin/health-snapshot, …/garmin/user-metrics, …/garmin/dailies,
+ * …/garmin/menstrual-cycle-tracking, etc.) — see
+ * lib/integrations/garminHealthParse.ts, which now parses each of
+ * these (except the Women's Health ones, not yet decoded) into real
+ * tables right after the raw capture below.
  *
  * **COMMON - Deregistrations matters for real compliance, not just
  * data sync**: when an athlete revokes access from Garmin's own side
@@ -69,6 +77,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ typ
     // Still ack — losing one event to a transient DB hiccup is better
     // than Garmin's retry/backoff treating this endpoint as broken.
   }
+
+  // Best-effort parse into the structured tables migration 029 added —
+  // see lib/integrations/garminHealthParse.ts's own file header for how
+  // confident each field mapping actually is. Never blocks the ack: the
+  // raw row above is already saved regardless of whether this succeeds.
+  await processGarminPushEvent(type, payload);
 
   return NextResponse.json({ ok: true });
 }

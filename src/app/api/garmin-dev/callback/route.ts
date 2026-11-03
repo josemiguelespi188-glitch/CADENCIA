@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { exchangeGarminDevCode } from "@/lib/integrations/garminDeveloper";
+import { exchangeGarminDevCode, fetchGarminUserId } from "@/lib/integrations/garminDeveloper";
 import { getSiteBaseUrl } from "@/lib/integrations/strava";
 
 /**
@@ -42,9 +42,13 @@ export async function GET(req: NextRequest) {
 
   try {
     const token = await exchangeGarminDevCode(code, pkce.code_verifier);
+    // Best-effort — see fetchGarminUserId()'s own doc comment for why a
+    // failure here must never block the connect itself.
+    const garminUserId = await fetchGarminUserId(token.access_token);
     await db.from("garmin_dev_connections").upsert(
       {
         athlete_id: pkce.athlete_id,
+        garmin_user_id: garminUserId,
         access_token: token.access_token,
         refresh_token: token.refresh_token,
         expires_at: new Date(Date.now() + token.expires_in * 1000).toISOString(),

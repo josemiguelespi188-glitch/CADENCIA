@@ -406,3 +406,38 @@ export async function pushStructuredWorkoutToGarmin(athleteId: string, workout: 
     throw new Error(`Garmin workout was created but scheduling it failed: ${scheduleRes.status} ${await scheduleRes.text()}`);
   }
 }
+
+/**
+ * Resolves this connection's real Garmin "Connect Developer User ID" —
+ * confirmed in the real Partner API OpenAPI spec as
+ * `GET {API_BASE}/partner-gateway/rest/user/id` -> `{userId: string}`.
+ * This is the one piece this codebase was missing to attribute an
+ * incoming Health/Activity push to a Cadencia athlete at all: every
+ * `Client*` push payload (ClientSleep, ClientHRVSummary, etc.) carries
+ * its own `userId`, which only means something once we know which
+ * athlete that Garmin user id belongs to. Called right after a fresh
+ * token exchange in the OAuth callback — **not independently confirmed
+ * live from this sandbox** (same caution as the Workout Portal's
+ * /schedule fix above: the spec says this path, but Garmin's real
+ * router has already surprised this codebase once with a naive
+ * concatenation). Best-effort: a failure here must never fail the
+ * OAuth connect itself, since the Training-API push flow doesn't need
+ * this id at all — only incoming Health pushes do.
+ */
+export async function fetchGarminUserId(accessToken: string): Promise<string | null> {
+  try {
+    const apiBase = requireGarminDevEnv("GARMIN_DEV_API_BASE");
+    const res = await fetch(`${apiBase}/partner-gateway/rest/user/id`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) {
+      console.error(`Garmin user/id lookup failed: ${res.status} ${await res.text()}`);
+      return null;
+    }
+    const body: { userId?: string } = await res.json();
+    return body.userId ?? null;
+  } catch (e) {
+    console.error("Garmin user/id lookup threw", e);
+    return null;
+  }
+}

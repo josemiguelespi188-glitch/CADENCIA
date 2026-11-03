@@ -25,8 +25,15 @@ export interface Athlete {
   threshold_pace_sec_per_km: number | null;
   /** Cycling functional threshold power, in watts. */
   ftp_watts: number | null;
-  /** VO2max, in ml/kg/min. */
+  /** VO2max, in ml/kg/min — manually entered by the athlete. */
   vo2max: number | null;
+  /** Device-measured VO2max (running) from Garmin's user-metrics push — distinct from the manually-entered vo2max above. */
+  garmin_vo2max: number | null;
+  /** Device-measured VO2max (cycling) from Garmin's user-metrics push. */
+  garmin_vo2max_cycling: number | null;
+  /** Device-estimated fitness age from Garmin's user-metrics push. */
+  garmin_fitness_age: number | null;
+  garmin_health_synced_at: string | null;
   /** Raw heart_rate.zones from Strava's GET /athlete/zones, if configured there. */
   strava_hr_zones: { min: number; max: number }[] | null;
   /** Raw power.zones from Strava's GET /athlete/zones, if configured there. */
@@ -190,3 +197,90 @@ export interface StravaActivity {
 }
 
 export type ActivityWithSlug = StravaActivity & { athleteSlug: AthleteSlug };
+
+/**
+ * Garmin Health API-derived metrics (Nov 2026) — one interface per
+ * pushed object type, parsed from garmin_push_events by
+ * lib/integrations/garminHealthParse.ts into the tables migration 029
+ * creates. See CLAUDE.md's "Garmin Health metrics" section: field
+ * names are confirmed from the real OpenAPI spec, but the push
+ * envelope itself (and therefore whether every field below actually
+ * arrives) is not yet confirmed against a real payload.
+ */
+export interface GarminDailyHealth {
+  athlete_id: string;
+  calendar_date: string;
+  steps: number | null;
+  active_kilocalories: number | null;
+  body_battery_charged: number | null;
+  body_battery_drained: number | null;
+  average_stress_level: number | null;
+  max_stress_level: number | null;
+  resting_heart_rate: number | null;
+  average_heart_rate: number | null;
+  max_heart_rate: number | null;
+}
+
+export interface GarminSleep {
+  athlete_id: string;
+  calendar_date: string;
+  duration_s: number | null;
+  deep_s: number | null;
+  light_s: number | null;
+  rem_s: number | null;
+  awake_s: number | null;
+  overall_score: number | null;
+}
+
+export interface GarminHrv {
+  athlete_id: string;
+  calendar_date: string;
+  last_night_avg: number | null;
+  last_night_5min_high: number | null;
+}
+
+/** avg/min are computed by this codebase from raw per-epoch readings — not a Garmin-reported daily summary number. */
+export interface GarminPulseOx {
+  athlete_id: string;
+  calendar_date: string;
+  avg_spo2: number | null;
+  min_spo2: number | null;
+}
+
+/** avg_breaths_per_min is computed by this codebase from raw per-epoch readings — same caveat as GarminPulseOx. */
+export interface GarminRespiration {
+  athlete_id: string;
+  calendar_date: string;
+  avg_breaths_per_min: number | null;
+}
+
+export interface GarminBodyComp {
+  id: string;
+  athlete_id: string;
+  measured_at: string;
+  weight_kg: number | null;
+  body_fat_pct: number | null;
+  body_water_pct: number | null;
+  muscle_mass_kg: number | null;
+  bone_mass_kg: number | null;
+  bmi: number | null;
+}
+
+export interface GarminHydration {
+  athlete_id: string;
+  calendar_date: string;
+  fluid_intake_ml: number | null;
+}
+
+export interface GarminHealthSnapshotSummary {
+  summaryType: string;
+  minValue?: number;
+  maxValue?: number;
+  avgValue?: number;
+}
+
+export interface GarminHealthSnapshot {
+  athlete_id: string;
+  calendar_date: string;
+  summaries: GarminHealthSnapshotSummary[] | null;
+}

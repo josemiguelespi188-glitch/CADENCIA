@@ -5,6 +5,7 @@ import { useLocale } from "@/lib/i18n/context";
 import { Card } from "@/components/ui/card";
 import { StravaTotals } from "@/components/StravaTotals";
 import { FitnessPanel } from "@/components/FitnessPanel";
+import { GarminHealthPanel } from "@/components/GarminHealthPanel";
 import { ActivityDetailDialog } from "@/components/ActivityDetailDialog";
 import type { WorkoutWithSlug } from "@/components/WorkoutDialog";
 import { SPORTS, type ActivityWithSlug, type Athlete } from "@/lib/types";
@@ -156,6 +157,9 @@ export function DashboardPanel({
       {soloAthlete ? (
         <>
           <div className="mt-8">
+            <GarminHealthPanel athlete={soloAthlete} />
+          </div>
+          <div className="mt-4">
             <FitnessPanel athleteId={soloAthlete.id} />
           </div>
           <div className="mt-4">
