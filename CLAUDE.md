@@ -1956,6 +1956,88 @@ with real UI/UX thinking.
   match, and confirm the Dashboard panel renders real numbers instead
   of the empty state.
 
+## WHOOP integration (Nov 2026)
+
+Built immediately after the Garmin Health pass above, per direct
+instruction ("nos vamos a conectar a whoop igual") right after the user
+pasted the real WHOOP Developer Platform OpenAPI spec into chat — a
+genuine, direct documentation source, not a search summary or a
+reconstruction from general knowledge.
+
+- **Meaningfully higher-confidence than the Garmin Health parser.**
+  Every URL and field name in `lib/integrations/whoop.ts` is copied
+  directly from that pasted spec: authorize
+  `https://api.prod.whoop.com/oauth/oauth2/auth`, token
+  `https://api.prod.whoop.com/oauth/oauth2/token`, API base
+  `https://api.prod.whoop.com/developer` — all hardcoded (not env
+  vars), same reasoning `STRAVA_AUTHORIZE_URL`/`STRAVA_TOKEN_URL` are
+  hardcoded in `strava.ts` rather than configurable, since the spec
+  confirms these as fixed values. Only `WHOOP_CLIENT_ID`/
+  `WHOOP_CLIENT_SECRET` are env vars (the actual secret).
+- **Pull, not push** — the real spec has no webhook/subscription
+  endpoint at all, just paginated `GET /v2/cycle`, `/v2/activity/sleep`,
+  `/v2/recovery`, `/v2/activity/workout` (all `{records, next_token}`),
+  plus one-shot `GET /v2/user/measurement/body` and
+  `/v2/user/profile/basic`. So this mirrors **Strava's** manual "Sync
+  now" model (`/api/whoop/sync`, 30-day window — same default Strava's
+  own sync settled on), not Garmin's webhook-receiver model. There is
+  nothing to register with WHOOP beyond the OAuth redirect URI itself.
+- **Plain OAuth 2.0 authorization-code grant, no PKCE** — confirmed from
+  the spec's `securitySchemes.OAuth`, a real difference from Garmin's
+  confirmed PKCE requirement. `state` carries the athlete's id through
+  the round trip, same pattern as Strava's callback.
+- **Scopes are read-only**: `read:profile read:body_measurement
+  read:cycles read:recovery read:sleep read:workout` — there is no
+  write scope anywhere in WHOOP's public API, unlike Garmin's Training
+  API. No structured-workout push is possible here, by design of the
+  platform itself, not a gap in this integration.
+- **Token revoke is real** (`revokeWhoopAccess()`, `DELETE
+  /v2/user/access`) — actually revokes the grant on WHOOP's own side,
+  not just a local row deletion; called best-effort before deleting
+  `whoop_connections` on Disconnect.
+- **Migration `030_whoop_integration.sql`** (mirrored in `schema.sql`
+  — **needs this migration run in the Supabase SQL editor**):
+  `whoop_connections` (RLS, no policies, service-role only, same
+  strictness as every other OAuth-token table in this app) plus four
+  data tables — `whoop_cycles`, `whoop_sleep`, `whoop_recovery`,
+  `whoop_workouts` — each keyed by WHOOP's own real id
+  (`whoop_cycle_id`/`whoop_sleep_id`/`whoop_workout_id`), `select` open
+  to `authenticated` (shared coach log, same as `strava_activities`),
+  written only by `/api/whoop/sync`. Body measurement (height/weight/
+  max HR) goes straight onto `athletes` as plain columns
+  (`whoop_height_m`, `whoop_weight_kg`, `whoop_max_hr`,
+  `whoop_profile_synced_at`) — latest value only, same reasoning
+  `strava_weight_kg`/`garmin_vo2max` already use for other
+  device-sourced athlete-level fields.
+- **OAuth routes mirror Strava's exactly**: `/api/whoop/connect`,
+  `/api/whoop/callback` (register
+  `https://<this app's domain>/api/whoop/callback` as the redirect URI
+  in the WHOOP Developer Dashboard), `/api/whoop/status`,
+  `/api/whoop/disconnect`, `/api/whoop/sync`.
+- **`components/WhoopPanel.tsx`** — a Dashboard panel next to
+  `GarminHealthPanel`, same design language (hero stat row, no
+  fabricated verdicts, honest empty state distinguishing "not
+  connected" from "connected, nothing synced yet") for consistency
+  across the two wearable integrations: Strain (WHOOP's own 0-21
+  cardiovascular-load score), Recovery %, HRV (`hrv_rmssd_milli`),
+  Sleep Performance %, Resting HR, SpO2, skin temperature, and
+  respiratory rate — every one of these is WHOOP's own reported value,
+  nothing computed by this codebase (unlike Garmin's SpO2/respiration
+  averages, which this app derives itself from raw epoch readings).
+  `AthleteWhoopCard` on `/settings` mirrors `AthleteStravaCard` exactly
+  (status dot, Sync now / Disconnect buttons, no push button since the
+  platform has none).
+- Per Section 15.11 of the Garmin Developer Program Agreement — not
+  applicable here at all, since this is a completely separate platform
+  with its own terms; nothing in this integration touches Garmin data
+  or the Garmin constraint.
+- Not yet tested against a real WHOOP OAuth flow or account from this
+  sandbox — confirm once deployed: create the app at
+  developer.whoop.com, set `WHOOP_CLIENT_ID`/`WHOOP_CLIENT_SECRET` on
+  Vercel, register the callback URL above, run migration 030, click
+  Connect on the new WHOOP card, and confirm a real sync populates all
+  four tables plus the body-measurement columns.
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as

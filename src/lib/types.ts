@@ -34,6 +34,11 @@ export interface Athlete {
   /** Device-estimated fitness age from Garmin's user-metrics push. */
   garmin_fitness_age: number | null;
   garmin_health_synced_at: string | null;
+  /** From WHOOP's GET /v2/user/measurement/body — see lib/integrations/whoop.ts. */
+  whoop_height_m: number | null;
+  whoop_weight_kg: number | null;
+  whoop_max_hr: number | null;
+  whoop_profile_synced_at: string | null;
   /** Raw heart_rate.zones from Strava's GET /athlete/zones, if configured there. */
   strava_hr_zones: { min: number; max: number }[] | null;
   /** Raw power.zones from Strava's GET /athlete/zones, if configured there. */
@@ -283,4 +288,70 @@ export interface GarminHealthSnapshot {
   athlete_id: string;
   calendar_date: string;
   summaries: GarminHealthSnapshotSummary[] | null;
+}
+
+/**
+ * WHOOP (Nov 2026) — one interface per stored row, parsed from the real
+ * WHOOP API response shapes (see lib/integrations/whoop.ts) by
+ * app/api/whoop/sync/route.ts.
+ */
+export interface WhoopCycle {
+  athlete_id: string;
+  whoop_cycle_id: number;
+  start_at: string;
+  end_at: string | null;
+  score_state: string;
+  strain: number | null;
+  kilojoule: number | null;
+  average_heart_rate: number | null;
+  max_heart_rate: number | null;
+  step_count: number | null;
+}
+
+export interface WhoopSleep {
+  athlete_id: string;
+  whoop_sleep_id: string;
+  whoop_cycle_id: number | null;
+  start_at: string;
+  end_at: string;
+  nap: boolean;
+  score_state: string;
+  respiratory_rate: number | null;
+  sleep_performance_pct: number | null;
+  sleep_consistency_pct: number | null;
+  sleep_efficiency_pct: number | null;
+  total_in_bed_ms: number | null;
+  total_awake_ms: number | null;
+  total_light_ms: number | null;
+  total_sws_ms: number | null;
+  total_rem_ms: number | null;
+  sleep_cycle_count: number | null;
+  disturbance_count: number | null;
+}
+
+export interface WhoopRecovery {
+  athlete_id: string;
+  whoop_cycle_id: number;
+  whoop_sleep_id: string | null;
+  score_state: string;
+  recovery_score: number | null;
+  resting_heart_rate: number | null;
+  hrv_rmssd_milli: number | null;
+  spo2_percentage: number | null;
+  skin_temp_celsius: number | null;
+}
+
+export interface WhoopWorkout {
+  athlete_id: string;
+  whoop_workout_id: string;
+  sport_name: string | null;
+  start_at: string;
+  end_at: string;
+  score_state: string;
+  strain: number | null;
+  average_heart_rate: number | null;
+  max_heart_rate: number | null;
+  kilojoule: number | null;
+  distance_meter: number | null;
+  altitude_gain_meter: number | null;
 }

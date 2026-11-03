@@ -58,6 +58,12 @@ create table if not exists athletes (
   garmin_vo2max_cycling numeric,
   garmin_fitness_age integer,
   garmin_health_synced_at timestamptz,
+  -- From WHOOP's GET /v2/user/measurement/body — see migration 030 and
+  -- lib/integrations/whoop.ts.
+  whoop_height_m numeric,
+  whoop_weight_kg numeric,
+  whoop_max_hr integer,
+  whoop_profile_synced_at timestamptz,
   created_at timestamptz not null default now()
 );
 
@@ -397,6 +403,115 @@ create table if not exists garmin_health_snapshot (
   synced_at timestamptz not null default now(),
   primary key (athlete_id, calendar_date)
 );
+
+-- ─── WHOOP integration ──────────────────────────────────────────────────────
+-- See migration 030 and lib/integrations/whoop.ts's own file header —
+-- built from the real WHOOP OpenAPI spec pasted verbatim into this
+-- session, so (unlike the Garmin Health tables above) every field name
+-- here is copied directly from the spec, not reconstructed.
+create table if not exists whoop_connections (
+  athlete_id uuid primary key references athletes(id) on delete cascade,
+  whoop_user_id bigint,
+  access_token text not null,
+  refresh_token text not null,
+  expires_at timestamptz not null,
+  scope text,
+  connected_at timestamptz not null default now(),
+  last_synced_at timestamptz
+);
+
+alter table whoop_connections enable row level security;
+-- Deliberately no policies at all — service-role only.
+
+create table if not exists whoop_cycles (
+  athlete_id uuid not null references athletes(id) on delete cascade,
+  whoop_cycle_id bigint not null,
+  start_at timestamptz not null,
+  end_at timestamptz,
+  score_state text not null,
+  strain numeric,
+  kilojoule numeric,
+  average_heart_rate integer,
+  max_heart_rate integer,
+  step_count integer,
+  raw jsonb not null,
+  synced_at timestamptz not null default now(),
+  primary key (athlete_id, whoop_cycle_id)
+);
+
+create table if not exists whoop_sleep (
+  athlete_id uuid not null references athletes(id) on delete cascade,
+  whoop_sleep_id uuid not null,
+  whoop_cycle_id bigint,
+  start_at timestamptz not null,
+  end_at timestamptz not null,
+  nap boolean not null default false,
+  score_state text not null,
+  respiratory_rate numeric,
+  sleep_performance_pct numeric,
+  sleep_consistency_pct numeric,
+  sleep_efficiency_pct numeric,
+  total_in_bed_ms integer,
+  total_awake_ms integer,
+  total_light_ms integer,
+  total_sws_ms integer,
+  total_rem_ms integer,
+  sleep_cycle_count integer,
+  disturbance_count integer,
+  raw jsonb not null,
+  synced_at timestamptz not null default now(),
+  primary key (athlete_id, whoop_sleep_id)
+);
+
+create table if not exists whoop_recovery (
+  athlete_id uuid not null references athletes(id) on delete cascade,
+  whoop_cycle_id bigint not null,
+  whoop_sleep_id uuid,
+  score_state text not null,
+  recovery_score numeric,
+  resting_heart_rate numeric,
+  hrv_rmssd_milli numeric,
+  spo2_percentage numeric,
+  skin_temp_celsius numeric,
+  raw jsonb not null,
+  synced_at timestamptz not null default now(),
+  primary key (athlete_id, whoop_cycle_id)
+);
+
+create table if not exists whoop_workouts (
+  athlete_id uuid not null references athletes(id) on delete cascade,
+  whoop_workout_id uuid not null,
+  sport_name text,
+  start_at timestamptz not null,
+  end_at timestamptz not null,
+  score_state text not null,
+  strain numeric,
+  average_heart_rate integer,
+  max_heart_rate integer,
+  kilojoule numeric,
+  distance_meter numeric,
+  altitude_gain_meter numeric,
+  zone_durations jsonb,
+  raw jsonb not null,
+  synced_at timestamptz not null default now(),
+  primary key (athlete_id, whoop_workout_id)
+);
+
+alter table whoop_cycles enable row level security;
+drop policy if exists whoop_cycles_select on whoop_cycles;
+create policy whoop_cycles_select on whoop_cycles for select to authenticated using (true);
+
+alter table whoop_sleep enable row level security;
+drop policy if exists whoop_sleep_select on whoop_sleep;
+create policy whoop_sleep_select on whoop_sleep for select to authenticated using (true);
+
+alter table whoop_recovery enable row level security;
+drop policy if exists whoop_recovery_select on whoop_recovery;
+create policy whoop_recovery_select on whoop_recovery for select to authenticated using (true);
+
+alter table whoop_workouts enable row level security;
+drop policy if exists whoop_workouts_select on whoop_workouts;
+create policy whoop_workouts_select on whoop_workouts for select to authenticated using (true);
 
 -- ─── updated_at trigger for workouts ────────────────────────────────────────
 create or replace function set_updated_at()

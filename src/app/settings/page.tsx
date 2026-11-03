@@ -80,6 +80,12 @@ function SettingsContent() {
           ? "Could not connect Garmin. Its API may not be configured yet."
           : "No se pudo conectar Garmin. Puede que su API todavía no esté configurada."
       );
+    const whoop = searchParams.get("whoop");
+    if (whoop === "connected") setToast(isEn ? "WHOOP connected." : "WHOOP conectado.");
+    else if (whoop === "error")
+      setToast(
+        isEn ? "Could not connect WHOOP. Its API may not be configured yet." : "No se pudo conectar WHOOP. Puede que su API todavía no esté configurada."
+      );
   }, [searchParams, isEn]);
 
   return (
@@ -109,6 +115,10 @@ function SettingsContent() {
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <AthleteGarminDevCard name={me.name} />
                 <AthleteGarminCard name={me.name} />
+              </div>
+
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <AthleteWhoopCard name={me.name} />
               </div>
 
               <div className="mt-8 flex flex-wrap items-center gap-5 border-t border-line pt-6">
@@ -149,6 +159,95 @@ function SettingsContent() {
         </div>
       </main>
     </div>
+  );
+}
+
+/**
+ * Mirrors AthleteStravaCard exactly — WHOOP's public API is pull-only
+ * (no webhook/push capability in the real spec pasted into this session,
+ * see lib/integrations/whoop.ts's file header), so "Sync now" is the
+ * only path, same as Strava.
+ */
+function AthleteWhoopCard({ name }: { name: string }) {
+  const { locale } = useLocale();
+  const isEn = locale === "en";
+  const [status, setStatus] = useState<StravaStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const loadStatus = useCallback(async () => {
+    const res = await fetch("/api/whoop/status");
+    if (res.ok) setStatus(await res.json());
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadStatus();
+  }, [loadStatus]);
+
+  async function sync() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/whoop/sync", { method: "POST" });
+      const data = await res.json();
+      setMessage(
+        res.ok
+          ? isEn
+            ? `Synced ${data.cycles} cycles · ${data.sleeps} sleeps · ${data.recoveries} recoveries · ${data.workouts} workouts.`
+            : `${data.cycles} ciclos · ${data.sleeps} sueños · ${data.recoveries} recuperaciones · ${data.workouts} entrenos sincronizados.`
+          : data.error
+      );
+      await loadStatus();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function disconnect() {
+    setBusy(true);
+    try {
+      await fetch("/api/whoop/disconnect", { method: "POST" });
+      await loadStatus();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardTitle>{name} · WHOOP</CardTitle>
+
+      <div className="mt-4 flex items-center gap-3">
+        <span className="h-2.5 w-2.5 rounded-full" style={{ background: status?.connected ? "var(--success)" : "var(--ink-3)" }} />
+        <span className="text-sm">{status?.connected ? (isEn ? "Connected" : "Conectado") : isEn ? "Not connected" : "No conectado"}</span>
+      </div>
+
+      {status?.connected && (
+        <p className="mt-1 text-xs text-ink-3">
+          {isEn ? "Last sync" : "Última sincronización"}: {status.lastSyncedAt ? new Date(status.lastSyncedAt).toLocaleString(locale) : isEn ? "never" : "nunca"}
+        </p>
+      )}
+
+      {message && <p className="mt-2 text-xs text-ink-2">{message}</p>}
+
+      <div className="mt-5 flex flex-wrap gap-2">
+        {status?.connected ? (
+          <>
+            <Button size="sm" onClick={sync} disabled={busy}>
+              {isEn ? "Sync now" : "Sincronizar ahora"}
+            </Button>
+            <Button size="sm" variant="danger" onClick={disconnect} disabled={busy}>
+              {isEn ? "Disconnect" : "Desconectar"}
+            </Button>
+          </>
+        ) : (
+          <a href="/api/whoop/connect">
+            <Button size="sm">{isEn ? "Connect WHOOP" : "Conectar WHOOP"}</Button>
+          </a>
+        )}
+      </div>
+    </Card>
   );
 }
 

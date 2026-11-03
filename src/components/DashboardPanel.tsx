@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { StravaTotals } from "@/components/StravaTotals";
 import { FitnessPanel } from "@/components/FitnessPanel";
 import { GarminHealthPanel } from "@/components/GarminHealthPanel";
+import { WhoopPanel } from "@/components/WhoopPanel";
 import { ActivityDetailDialog } from "@/components/ActivityDetailDialog";
 import type { WorkoutWithSlug } from "@/components/WorkoutDialog";
 import { SPORTS, type ActivityWithSlug, type Athlete } from "@/lib/types";
@@ -158,6 +159,9 @@ export function DashboardPanel({
         <>
           <div className="mt-8">
             <GarminHealthPanel athlete={soloAthlete} />
+          </div>
+          <div className="mt-4">
+            <WhoopPanel athlete={soloAthlete} />
           </div>
           <div className="mt-4">
             <FitnessPanel athleteId={soloAthlete.id} />
