@@ -700,7 +700,12 @@ function AthleteGarminCard() {
         <ol className="mt-3 list-decimal space-y-1 pl-5 text-xs text-ink-2">
           <li>
             {isEn ? "Go to" : "Ve a"}{" "}
-            <a href="https://connect.garmin.com/app/settings/personalApiToken" target="_blank" rel="noopener noreferrer" className="underline">
+            <a
+              href="https://connect.garmin.com/app/settings/personalApiToken"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="break-all underline"
+            >
               connect.garmin.com/app/settings/personalApiToken
             </a>{" "}
             {isEn ? "(sign in to Garmin Connect first if asked)." : "(inicia sesión en Garmin Connect si te lo pide)."}
