@@ -30,7 +30,17 @@ import { getSiteBaseUrl } from "@/lib/integrations/strava";
  * Scopes requested: `read:profile read:body_measurement read:cycles
  * read:recovery read:sleep read:workout` — read-only, there is no write
  * scope in the spec at all (WHOOP's public API has no push capability,
- * unlike Garmin's Training API).
+ * unlike Garmin's Training API). **Also requests `offline`** — found
+ * live (Nov 2026): WHOOP's real token response came back with a null
+ * `refresh_token` (violating this app's own not-null constraint,
+ * caught by the error check in the callback route), which turned out
+ * to be WHOOP-documented behavior, not a bug — WHOOP only issues a
+ * refresh token when the authorization request includes the `offline`
+ * scope, confirmed via developer.whoop.com's own OAuth docs (not
+ * fetchable directly from this sandbox, confirmed via search instead).
+ * `offline` isn't a data-access scope (it grants no read access of its
+ * own), so it's requested alongside the six real ones, not instead of
+ * any of them.
  *
  * **Token revoke is real**: `DELETE /v2/user/access` actually revokes
  * the access grant on WHOOP's own side (per the spec's description:
@@ -42,7 +52,7 @@ import { getSiteBaseUrl } from "@/lib/integrations/strava";
 const WHOOP_AUTHORIZE_URL = "https://api.prod.whoop.com/oauth/oauth2/auth";
 const WHOOP_TOKEN_URL = "https://api.prod.whoop.com/oauth/oauth2/token";
 const WHOOP_API_BASE = "https://api.prod.whoop.com/developer";
-const WHOOP_SCOPES = "read:profile read:body_measurement read:cycles read:recovery read:sleep read:workout";
+const WHOOP_SCOPES = "read:profile read:body_measurement read:cycles read:recovery read:sleep read:workout offline";
 
 /** `state` carries the athlete's id through the OAuth round trip, same
  * pattern as Strava's `buildStravaAuthorizeUrl()` — no PKCE in this

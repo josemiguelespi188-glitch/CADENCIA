@@ -2031,12 +2031,43 @@ reconstruction from general knowledge.
   applicable here at all, since this is a completely separate platform
   with its own terms; nothing in this integration touches Garmin data
   or the Garmin constraint.
-- Not yet tested against a real WHOOP OAuth flow or account from this
-  sandbox — confirm once deployed: create the app at
-  developer.whoop.com, set `WHOOP_CLIENT_ID`/`WHOOP_CLIENT_SECRET` on
-  Vercel, register the callback URL above, run migration 030, click
-  Connect on the new WHOOP card, and confirm a real sync populates all
-  four tables plus the body-measurement columns.
+### Live-testing bug: missing `offline` scope, missing error check (Nov 2026)
+
+Two real bugs found and fixed the same day José actually clicked
+Connect on the WHOOP card:
+
+1. **`POST /api/whoop/callback` reported success even when the database
+   write failed.** `db.from("whoop_connections").upsert(...)` was never
+   checked for an `{error}` — Supabase's client returns that, it
+   doesn't throw — so a failed write still redirected to
+   `?whoop=connected`. Confirmed live: the OAuth consent screen
+   completed, the browser landed on the "connected" URL, but the
+   Settings card still showed "Not connected" with nothing visibly
+   wrong anywhere. Fixed by checking the upsert result and redirecting
+   to `?whoop=error` (with the real Postgres error `console.error`'d)
+   when it fails — same "never silently succeed on a failed write"
+   discipline this codebase applies everywhere else.
+2. **Root cause of that failed write, found from the now-visible Vercel
+   log**: `null value in column "refresh_token"... violates not-null
+   constraint` — WHOOP's real token response came back with
+   `refresh_token: null`. Confirmed via web search (developer.whoop.com
+   itself is blocked from this sandbox, same as Garmin's and COROS's
+   docs) that this is WHOOP's own documented behavior, not a bug on
+   either side: **WHOOP only issues a refresh token when the
+   authorization request explicitly includes the `offline` scope.**
+   `WHOOP_SCOPES` in `lib/integrations/whoop.ts` now requests `offline`
+   alongside the six real data scopes (it grants no read access of its
+   own, it's purely what unlocks getting a refresh token at all) — used
+   in both the authorize URL and the refresh-token request. This also
+   means every connection attempt made before this fix shipped silently
+   failed the same way (now correctly surfaced as `?whoop=error`
+   instead of a false `?whoop=connected`) — no real `whoop_connections`
+   row exists yet from any of those attempts; the next Connect attempt
+   after this deploy is the real first test.
+- Still not confirmed end-to-end from this sandbox — confirm once
+  deployed: Connect now actually lands on a real `whoop_connections`
+  row (not another silent failure), and a `Sync now` click populates
+  all four data tables plus the body-measurement columns on `athletes`.
 
 ## Style
 
