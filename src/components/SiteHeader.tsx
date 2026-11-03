@@ -54,7 +54,12 @@ export function SiteHeader() {
         </Link>
 
         {me && (
-          <div className="inline-flex items-center gap-2">
+          // Found live (Nov 2026, direct feedback: "la organización de las
+          // cosas") — a subtle left border + padding separates the
+          // identity cluster (name/Friends) from the brand mark to its
+          // left, instead of both groups just running together as one
+          // undifferentiated row of flex items.
+          <div className="inline-flex items-center gap-2 border-l border-line pl-3">
             <span className="rounded-full bg-ink px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-bg">
               {me.name}
             </span>
@@ -97,22 +102,35 @@ export function SiteHeader() {
           </div>
         )}
 
-        <nav className="hidden items-center gap-5 sm:flex ml-auto">
-          {NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "text-sm transition-colors",
-                pathname === item.href ? "text-ink font-medium" : "text-ink-2 hover:text-ink"
-              )}
-            >
-              {t(item.key)}
-            </Link>
-          ))}
+        <nav className="hidden items-center gap-2 sm:flex ml-auto">
+          {/* Found live (Nov 2026, direct feedback: "la organización de las
+              cosas") — Calendar/Generate/Settings used to be plain text
+              links with only a color change for the active page, sitting
+              next to Admin's own pill-badge styling — two different visual
+              languages for "you are here" in the same nav. Wrapped in one
+              segmented pill group now (bg-surface-2 track, bg-ink active
+              segment) matching the pill aesthetic this app already uses
+              everywhere else (buttons, the name/Friends badges). */}
+          <div className="flex items-center gap-1 rounded-full bg-surface-2 p-1">
+            {NAV.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "rounded-full px-3 py-1.5 text-xs font-medium uppercase tracking-wide transition-colors",
+                  pathname === item.href ? "bg-ink text-bg" : "text-ink-2 hover:text-ink"
+                )}
+              >
+                {t(item.key)}
+              </Link>
+            ))}
+          </div>
 
           {/* Admin, always the rightmost item when visible — per explicit
-             instruction ("lo más a la derecha posible"). */}
+             instruction ("lo más a la derecha posible"). Kept visually
+             distinct from the segmented group above (its own pill, not a
+             segment inside it) since it's a different kind of link —
+             conditional, admin-only — not a peer page in the main nav. */}
           {me?.is_admin && (
             <Link
               href="/admin"

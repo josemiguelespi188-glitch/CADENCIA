@@ -2143,6 +2143,39 @@ Connect on the WHOOP card:
   row (not another silent failure), and a `Sync now` click populates
   all four data tables plus the body-measurement columns on `athletes`.
 
+## Header bar + Settings connections, reorganized (Nov 2026)
+
+Direct follow-up feedback, confirmed via `AskUserQuestion` to cover
+both the top nav bar and the Settings integration cards ("la
+organización de las cosas" / "mejora la barra de arriba").
+
+- **`SiteHeader.tsx`**: the brand mark and the name/Friends identity
+  cluster used to just sit next to each other as plain flex items — a
+  `border-l border-line pl-3` now visually separates them. The main nav
+  (Calendar/Generate/Settings) used to be plain text links (only a
+  color change for the active page) sitting next to Admin's own
+  pill-badge styling — two different visual languages for "you are
+  here" in one nav. Wrapped the three in one segmented pill group
+  (`bg-surface-2` track, `bg-ink` active segment) matching the pill
+  aesthetic already used everywhere else in this app (buttons, the
+  name/Friends badges) — Admin stays its own separate pill to its
+  right, unchanged, since it's a different kind of link (conditional,
+  admin-only), not a peer page in the main group.
+- **`/settings`'s 5 integration cards** (Strava, COROS, Garmin
+  Developer API, Garmin Personal key, WHOOP) used to sit in three
+  separate 2-col grids stacked with `mt-4` gaps — the odd number left
+  WHOOP alone in its own row (an orphan cell), and the whole stack had
+  no section heading, reading as a loose pile of cards rather than a
+  labeled section. Now one "Connections" heading (matching this app's
+  existing uppercase-tracked micro-label pattern) over one responsive
+  grid (`sm:grid-cols-2 lg:grid-cols-3`), ordered by how usable each
+  connection actually is today — Strava and WHOOP (both fully working)
+  first, Garmin Developer (confirmed working) third, then COROS (still
+  pending partner approval) and the lower-capability Garmin Personal
+  key last — so if 5 cards in a 3-column grid ever leaves an orphan
+  cell on a wide screen, it falls on one of the two least-essential
+  cards, not a primary one.
+
 ## Full codebase audit — 31 findings, 29 fixed (Nov 2026)
 
 Direct instruction to run a structured multi-angle code review across

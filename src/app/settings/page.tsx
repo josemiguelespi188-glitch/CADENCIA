@@ -107,18 +107,27 @@ function SettingsContent() {
                 <AthleteZonesCard slug={me.slug} name={me.name} />
               </div>
 
-              <div className="mt-8 grid gap-4 sm:grid-cols-2">
+              {/* Found live (Nov 2026, direct feedback: "la organización de
+                  las cosas") — the 5 integration cards used to sit in three
+                  separate 2-col grids stacked with mt-4 gaps, which left
+                  WHOOP alone in its own row (an orphan slot) and read as a
+                  loose pile of cards with no section heading. One labeled
+                  section, one responsive grid now — ordered by how real/
+                  usable each connection actually is today (Strava and
+                  WHOOP fully working, Garmin Developer confirmed working,
+                  then COROS — still pending partner approval — and the
+                  lower-capability Garmin Personal key last, so if the grid
+                  ever leaves an orphan cell on a wide screen it falls on
+                  one of the two least-essential cards, not a primary one). */}
+              <h2 className="mt-8 mb-3 text-sm uppercase tracking-widest text-ink-3">
+                {isEn ? "Connections" : "Conexiones"}
+              </h2>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <AthleteStravaCard name={me.name} />
-                <AthleteCorosCard name={me.name} />
-              </div>
-
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <AthleteGarminDevCard name={me.name} />
-                <AthleteGarminCard name={me.name} />
-              </div>
-
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <AthleteWhoopCard name={me.name} />
+                <AthleteGarminDevCard name={me.name} />
+                <AthleteCorosCard name={me.name} />
+                <AthleteGarminCard name={me.name} />
               </div>
 
               <div className="mt-8 flex flex-wrap items-center gap-5 border-t border-line pt-6">
