@@ -85,6 +85,13 @@ export function DashboardPanel({
     <div className="mt-10 border-t border-line pt-8">
       <h1 className="text-2xl font-semibold tracking-tight mb-6">{t("nav_dashboard")}</h1>
 
+      {soloAthlete && (
+        <div className="mb-8">
+          <h2 className="mb-3 text-sm uppercase tracking-widest text-ink-3">{isEn ? "Performance Metrics" : "Métricas de Rendimiento"}</h2>
+          <FitnessPanel athleteId={soloAthlete.id} />
+        </div>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-4">
         <Kpi label={t("k_planned")} value={hm(plannedMin, locale as "es" | "en")} sub={t("this_week")} />
         <Kpi
@@ -162,9 +169,6 @@ export function DashboardPanel({
           </div>
           <div className="mt-4">
             <WhoopPanel athlete={soloAthlete} />
-          </div>
-          <div className="mt-4">
-            <FitnessPanel athleteId={soloAthlete.id} />
           </div>
           <div className="mt-4">
             <StravaTotals athlete={soloAthlete} />

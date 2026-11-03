@@ -1956,6 +1956,53 @@ with real UI/UX thinking.
   match, and confirm the Dashboard panel renders real numbers instead
   of the empty state.
 
+## Fitness/Fatigue/Form switched to WHOOP Strain, promoted on Calendar (Nov 2026)
+
+Direct instruction right after confirming WHOOP was connected and
+comparing against a real TrainingPeaks screenshot showing its own
+"Performance Metrics" widget (Fitness/Fatigue/Form): "usa WHOOP strain
+en vez de Strava pero igual ponle en calendar visible a esos datos como
+Performance Metric. son de las cosas más importantes."
+
+- **Data source switched from Strava's Relative Effort to WHOOP's
+  Strain** — `components/FitnessPanel.tsx` now reads `whoop_cycles`
+  (`strain`, already WHOOP's own 0-21 cardiovascular-load score, a
+  platform-native number rather than Strava's derived
+  `suffer_score`) instead of `strava_daily_load`. One `whoop_cycles`
+  row is roughly one physiological day already, so no per-activity
+  summing is needed the way Strava's old version needed (multiple
+  activities could land on one day); multiple cycles on the same
+  calendar date are still summed defensively, same reducer pattern
+  the old version used. The local date is approximated from
+  `start_at`'s UTC date (not corrected for the cycle's own
+  `timezone_offset`) — a deliberate, labeled approximation, same
+  "estimated" honesty this panel already carried in its header.
+- **`/api/whoop/sync` now fetches 90 days of cycles specifically for
+  this** (`FITNESS_HISTORY_DAYS` in `app/api/whoop/sync/route.ts`,
+  mirroring Strava's own identically-named constant and rationale —
+  CTL's 42-day time constant needs real room to converge), while
+  sleep/recovery/workouts stay at the existing 30-day `SYNC_DAYS`
+  window — nothing downstream needs 90 days of those. Cycles are small
+  objects, so this is a cheap second window on the same `fetchWhoopCycles`
+  call, not a second API round trip shape.
+- **Promoted from the bottom of the Dashboard to the very top of
+  `/calendar`'s Dashboard section** (`DashboardPanel.tsx`), directly
+  under an eyebrow label literally named "Performance Metrics" — the
+  exact English term from the TrainingPeaks reference screenshot, per
+  "son de las cosas más importantes." It's now the first thing a solo
+  athlete sees under the "Dashboard" heading, before the KPI grid, the
+  volume chart, or any of the Garmin/WHOOP raw-data panels further
+  down — no longer buried after several screens of scrolling.
+- `strava_daily_load` itself is left in place, untouched — still
+  written by `/api/strava/sync`'s own lightweight 90-day pass, just no
+  longer read by anything. Not dropped, since ripping out a working
+  write path for no behavioral reason isn't worth it, and it may be
+  useful again if WHOOP data is ever unavailable for an athlete who
+  only has Strava connected (not handled as an automatic fallback in
+  this pass — today the panel simply shows its own "no data" empty
+  state for an athlete with WHOOP not connected, even if they have
+  Strava history).
+
 ## Every dialog gets a close X + click-outside (Nov 2026)
 
 Direct instruction, with a screenshot of `ActivityDetailDialog` open

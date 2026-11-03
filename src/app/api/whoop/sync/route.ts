@@ -16,6 +16,14 @@ import {
  * than every other sync in this app already does. */
 const SYNC_DAYS = 30;
 
+/** Same 90-day rationale Strava's own `FITNESS_HISTORY_DAYS` already
+ * uses for Fitness/Fatigue/Form (lib/fitnessForm.ts's CTL has a 42-day
+ * time constant, 90 days gives it room to meaningfully converge).
+ * Cycles only (used for WHOOP Strain -> training load), not the full
+ * sleep/recovery/workout detail — those stay at SYNC_DAYS, since
+ * nothing downstream needs 90 days of that. */
+const FITNESS_HISTORY_DAYS = 90;
+
 /**
  * Pulls the signed-in athlete's recent WHOOP data and upserts it into
  * whoop_cycles/whoop_sleep/whoop_recovery/whoop_workouts, plus their
@@ -32,6 +40,7 @@ export async function POST() {
 
   const db = createServiceClient();
   const start = new Date(Date.now() - SYNC_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const fitnessHistoryStart = new Date(Date.now() - FITNESS_HISTORY_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
   try {
     const bodyMeasurement = await fetchWhoopBodyMeasurement(accessToken);
@@ -51,7 +60,7 @@ export async function POST() {
   }
 
   const [cycles, sleeps, recoveries, workouts] = await Promise.all([
-    fetchWhoopCycles(accessToken, start),
+    fetchWhoopCycles(accessToken, fitnessHistoryStart),
     fetchWhoopSleep(accessToken, start),
     fetchWhoopRecovery(accessToken, start),
     fetchWhoopWorkouts(accessToken, start),

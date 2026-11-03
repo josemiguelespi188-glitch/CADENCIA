@@ -8,12 +8,24 @@ import { computeFitnessForm, type DailyLoad, type FitnessFormResult } from "@/li
 
 /**
  * Fitness (CTL) / Fatigue (ATL) / Form (TSB) — see CLAUDE.md's
- * "Fitness/Fatigue/Form" note and lib/fitnessForm.ts for the formula and
- * why this was deferred until there was more than 30 days of history.
- * Reads `strava_daily_load` directly (RLS open to anon while auth is off,
- * same as every other table this app reads client-side) rather than
- * computing server-side, since the model itself is cheap and this keeps
- * the panel self-contained like ZoneTables/StravaTotals next to it.
+ * "Fitness/Fatigue/Form" note and lib/fitnessForm.ts for the formula.
+ *
+ * **Switched from Strava's Relative Effort to WHOOP's Strain (Nov
+ * 2026)** per explicit instruction ("usa WHOOP strain en vez de
+ * Strava") — WHOOP's own 0-21 cardiovascular-load score is a cleaner,
+ * platform-native training-stress signal than Strava's derived
+ * `suffer_score`, now that WHOOP is connected. Reads `whoop_cycles`
+ * directly (one row roughly = one physiological day, `strain` already
+ * computed by WHOOP) — `/api/whoop/sync` pulls 90 days of cycles
+ * specifically for this (`FITNESS_HISTORY_DAYS`), same rationale
+ * Strava's own fetch used: CTL's 42-day time constant needs real room
+ * to converge. Multiple cycles landing on the same calendar date (rare,
+ * but not assumed impossible) are summed, same reducer pattern the
+ * old Strava version used for multiple activities in a day. The local
+ * date is approximated from `start_at`'s UTC date (not adjusted for
+ * the cycle's own `timezone_offset`) — close enough for a day-level
+ * training-load model, same "estimated" honesty this panel already
+ * labels itself with.
  */
 export function FitnessPanel({ athleteId }: { athleteId: string }) {
   const { locale } = useLocale();
@@ -24,11 +36,19 @@ export function FitnessPanel({ athleteId }: { athleteId: string }) {
     setResult("loading");
     const supabase = createClient();
     const { data } = await supabase
-      .from("strava_daily_load")
-      .select("date, relative_effort")
+      .from("whoop_cycles")
+      .select("start_at, strain")
       .eq("athlete_id", athleteId)
-      .order("date", { ascending: true });
-    const loads: DailyLoad[] = (data ?? []).map((r) => ({ date: r.date as string, stress: Number(r.relative_effort) }));
+      .order("start_at", { ascending: true });
+    const byDate = new Map<string, number>();
+    for (const r of data ?? []) {
+      if (r.strain === null) continue;
+      const date = (r.start_at as string).slice(0, 10);
+      byDate.set(date, (byDate.get(date) ?? 0) + Number(r.strain));
+    }
+    const loads: DailyLoad[] = Array.from(byDate.entries())
+      .map(([date, stress]) => ({ date, stress }))
+      .sort((a, b) => (a.date < b.date ? -1 : 1));
     setResult(computeFitnessForm(loads));
   }, [athleteId]);
 
@@ -46,8 +66,8 @@ export function FitnessPanel({ athleteId }: { athleteId: string }) {
         <h3 className="text-lg font-semibold tracking-tight">{isEn ? "Fitness / Fatigue / Form" : "Forma Física / Fatiga / Forma"}</h3>
         <p className="mt-2 text-sm text-ink-3">
           {isEn
-            ? "No training-load history synced yet. Sync Strava to start building this up."
-            : "Todavía no hay historial de carga de entrenamiento sincronizado. Sincroniza Strava para empezar a acumularlo."}
+            ? "No WHOOP Strain history synced yet. Connect and sync WHOOP (Settings) to start building this up."
+            : "Todavía no hay historial de Strain de WHOOP sincronizado. Conecta y sincroniza WHOOP (Ajustes) para empezar a acumularlo."}
         </p>
       </Card>
     );
@@ -60,9 +80,7 @@ export function FitnessPanel({ athleteId }: { athleteId: string }) {
     <Card>
       <div className="flex items-start justify-between gap-3">
         <h3 className="text-lg font-semibold tracking-tight">{isEn ? "Fitness / Fatigue / Form" : "Forma Física / Fatiga / Forma"}</h3>
-        <span className="text-[11px] text-ink-3">
-          {isEn ? "estimated · from Relative Effort" : "estimado · a partir del Esfuerzo Relativo"}
-        </span>
+        <span className="text-[11px] text-ink-3">{isEn ? "estimated · from WHOOP Strain" : "estimado · a partir del Strain de WHOOP"}</span>
       </div>
 
       {!warmedUp && (
