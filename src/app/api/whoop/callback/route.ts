@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
     const profile = await fetchWhoopProfile(token.access_token).catch(() => null);
 
     const db = createServiceClient();
-    await db.from("whoop_connections").upsert(
+    const { error: upsertError } = await db.from("whoop_connections").upsert(
       {
         athlete_id: athleteId,
         whoop_user_id: profile?.user_id ?? null,
@@ -40,6 +40,16 @@ export async function GET(req: NextRequest) {
       },
       { onConflict: "athlete_id" }
     );
+    // Supabase's client returns {error}, it doesn't throw — a write
+    // failure here (e.g. migration 030 not yet run) used to redirect to
+    // ?whoop=connected anyway, lying about success. Found live (Nov
+    // 2026): the OAuth round trip completed and the browser landed on
+    // ?whoop=connected, but the Settings card still showed "Not
+    // connected" — this check is the fix.
+    if (upsertError) {
+      console.error("WHOOP connection upsert failed", upsertError);
+      return NextResponse.redirect(`${base}/settings?whoop=error`);
+    }
     return NextResponse.redirect(`${base}/settings?whoop=connected`);
   } catch (e) {
     console.error("WHOOP callback failed", e);
