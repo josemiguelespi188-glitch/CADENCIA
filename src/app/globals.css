@@ -26,12 +26,14 @@
   --run: #BF6F5C;
   --gym: #8A7AAE;
   --race: #0B0B0C;
+  --brick: #6B9B5E;
 
   --swim-soft: #4D93A31A;
   --bike-soft: #B98A4D1A;
   --run-soft: #BF6F5C1A;
   --gym-soft: #8A7AAE1A;
   --race-soft: #0B0B0C0D;
+  --brick-soft: #6B9B5E1A;
 }
 
 /* ─── Dark Mode — only via [data-theme="dark"], never by OS ─── */
@@ -52,12 +54,14 @@
   --run: #E6A594;
   --gym: #BBAEDB;
   --race: #F3F3F1;
+  --brick: #9DC98C;
 
   --swim-soft: #7FC2D126;
   --bike-soft: #E3BE8C26;
   --run-soft: #E6A59426;
   --gym-soft: #BBAEDB26;
   --race-soft: #F3F3F11A;
+  --brick-soft: #9DC98C26;
 }
 
 @theme inline {
@@ -77,11 +81,13 @@
   --color-run: var(--run);
   --color-gym: var(--gym);
   --color-race: var(--race);
+  --color-brick: var(--brick);
   --color-swim-soft: var(--swim-soft);
   --color-bike-soft: var(--bike-soft);
   --color-run-soft: var(--run-soft);
   --color-gym-soft: var(--gym-soft);
   --color-race-soft: var(--race-soft);
+  --color-brick-soft: var(--brick-soft);
 
   --font-sans: var(--font-ibm-plex-sans), 'IBM Plex Sans', Arial, sans-serif;
   --font-mono: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
@@ -117,3 +123,4 @@ dialog {
 .s-run { --c: var(--run); --soft: var(--run-soft); }
 .s-gym { --c: var(--gym); --soft: var(--gym-soft); }
 .s-race { --c: var(--race); --soft: var(--race-soft); }
+.s-brick { --c: var(--brick); --soft: var(--brick-soft); }

@@ -2383,6 +2383,88 @@ shared in chat:
   own duplicate-titled preset later is legitimate) — **needs this
   migration run in the Supabase SQL editor**.
 
+## Base Workouts: search, bilingual text, a real "brick" sport (Nov 2026)
+
+Direct, concrete follow-up feedback right after the presets above shipped,
+four distinct complaints in one message:
+
+1. **"no entiendo de qué sirve el Base Workouts si es que no hay cómo
+   añadir al calendario"** — there was no real way to get a preset onto
+   the calendar; the only picker was a small `<select>` buried inside
+   `WorkoutDialog`, shown only once a new-workout dialog was already
+   open. **`NewWorkoutLauncher.tsx` gained a third entry point** ("Build
+   with AI" / "Search for Workouts" / "Add a Workout", exactly the three
+   the user asked for) — picking "Search for Workouts" switches the same
+   dialog into a search screen (text filter + sport filter, both
+   client-side over the `templates` prop now also passed into this
+   component) and tapping a result opens `WorkoutDialog` already
+   pre-filled from that preset. `WorkoutDialog`'s `editing` prop gained
+   `defaultTemplateId?: string` for this — its init effect looks the
+   template up and merges `sport`/`title`/`minutes`/`km`/`notes` into the
+   new-workout defaults, the same fields `applyTemplate()` already set
+   for the existing inline `<select>` (kept as-is, a quicker in-dialog
+   alternative once a sport is already picked).
+2. **"no hace constancia el idioma de los Base Workouts con el idioma en
+   el cual está la plataforma"** — the 20 seeded presets were plain
+   Spanish text with no connection to the EN/ES toggle. `templates`
+   gained optional `title_en`/`notes_en` columns (migration
+   `032_templates_bilingual_and_brick_sport.sql`, mirrored directly into
+   `schema.sql`'s own seed block in its already-correct final form, not
+   as a second pass). **`lib/templates.ts`**'s `templateTitle()`/
+   `templateNotes()` is the one shared helper every reader goes through
+   (the Base Workouts grid on `/templates`, `WorkoutDialog`'s inline
+   select, `NewWorkoutLauncher`'s new search list) — English when the
+   viewer's locale is English and a translation exists, else always the
+   Spanish text, never a blank field. The `/templates` editor dialog
+   gained matching "Title (English, optional)"/"Details (English,
+   optional)" fields with a caption explaining the fallback, so an
+   athlete adding their own preset later can fill both languages the
+   same way.
+3. **"Los entrenamientos que son bricks deberían estar marcados no como
+   bike, sino como bike and run"** — confirmed via `AskUserQuestion`
+   given this reverses an explicit prior scoping decision
+   ("`NewWorkoutLauncher`... no new sport types beyond Cadencia's
+   existing five"): the user chose a real 6th sport, not a cosmetic
+   label. **`brick` is now a full `Sport`** — in `SPORTS`/`Sport` (
+   `lib/types.ts`), its own accent token (`--brick`/`--brick-soft` in
+   `globals.css`, a muted sage-green distinct from all five existing
+   hues, the `.s-brick` utility class), its own `t("brick")`/
+   `t("bike")`-sibling i18n label ("Bici + Trote"/"Bike + Run"), and a
+   widened check constraint on both `workouts.sport` and
+   `templates.sport` (migration 032 finds and drops each table's
+   existing unnamed check constraint dynamically via `pg_constraint`
+   rather than guessing its auto-generated name, then re-adds it with
+   `brick` included). The one seeded brick preset ("Brick
+   bici-carrera"/"Bike-to-run brick") is re-tagged `sport = 'brick'`
+   (migration 031 had it as `'bike'`, since `'brick'` wasn't a valid
+   value yet when that migration ran). Every other place `Sport` is
+   enumerated picked this up automatically through `SPORTS.map(...)` or
+   a `default:` branch (the calendar grid, the sport picker, the Excel
+   plan's dropdown/matcher, the Dashboard's by-sport breakdown) — three
+   places needed an explicit addition because they're `Record<Sport,
+   ...>` types or hand-written switches: `lib/racePredictor.ts`'s
+   `DISTANCE_PRESETS` (brick -> `[{label: "Custom", meters: null}]`,
+   same as gym), `DashboardPanel.tsx`'s volume-chart `sportColors`
+   (`var(--brick)`), and `lib/integrations/garminDeveloper.ts`'s
+   `sportToGarminShape()` (brick -> the confirmed `MULTI_SPORT` Garmin
+   enum value — a real, closer match than the `GENERIC` fallback every
+   other unmapped case uses, still unconfirmed against a live push).
+   **Deliberately NOT touched**: `lib/sport.ts`'s
+   `mapStravaSportType()` — Strava logs one activity as exactly one
+   `sport_type`, never a combined brick, so an individual synced
+   activity can never resolve to `"brick"`; this means a brick-tagged
+   planned workout can't be auto-matched by Strava sync's exact-sport
+   rule, a known, accepted gap (now commented in that file), not
+   something this pass tried to solve.
+- Not yet tested against a real Supabase project from this sandbox (same
+  standing limitation as every other Supabase-dependent feature here) —
+  confirm once deployed: run migration 032, confirm a brick preset shows
+  its own green accent and "Bike + Run" label everywhere, confirm
+  "Search for Workouts" actually opens `WorkoutDialog` pre-filled
+  correctly from a real preset, and confirm switching the platform to
+  English shows the translated preset text (and reverts to Spanish for
+  any preset with no English filled in).
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as

@@ -8,12 +8,13 @@ import { Button } from "@/components/ui/button";
 import { PlanImportPanel } from "@/components/PlanImportPanel";
 import { AiChatPlaceholder } from "@/components/AiChatPlaceholder";
 import { SPORTS, type Sport, type Template } from "@/lib/types";
+import { templateTitle, templateNotes } from "@/lib/templates";
 import { cn } from "@/lib/utils";
 
-const EMPTY = { sport: "run" as Sport, title: "", minutes: 0, km: 0, notes: "" };
+const EMPTY = { sport: "run" as Sport, title: "", title_en: "", minutes: 0, km: 0, notes: "", notes_en: "" };
 
 export default function TemplatesPage() {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
 
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -44,7 +45,15 @@ export default function TemplatesPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setValue(
       editing.record
-        ? { sport: editing.record.sport, title: editing.record.title, minutes: editing.record.minutes, km: editing.record.km, notes: editing.record.notes }
+        ? {
+            sport: editing.record.sport,
+            title: editing.record.title,
+            title_en: editing.record.title_en ?? "",
+            minutes: editing.record.minutes,
+            km: editing.record.km,
+            notes: editing.record.notes,
+            notes_en: editing.record.notes_en ?? "",
+          }
         : EMPTY
     );
     dialogRef.current?.showModal();
@@ -119,8 +128,8 @@ export default function TemplatesPage() {
                     {tpl.minutes ? ` · ${tpl.minutes} min` : ""}
                     {tpl.km ? ` · ${tpl.km} km` : ""}
                   </span>
-                  <h4 className="font-semibold">{tpl.title}</h4>
-                  {tpl.notes && <p className="flex-1 text-sm text-ink-2">{tpl.notes}</p>}
+                  <h4 className="font-semibold">{templateTitle(tpl, locale)}</h4>
+                  {tpl.notes && <p className="flex-1 text-sm text-ink-2">{templateNotes(tpl, locale)}</p>}
                   <div className="flex gap-2">
                     <Button size="sm" variant="ghost" onClick={() => setEditing({ record: tpl })}>
                       {t("edit")}
@@ -174,6 +183,14 @@ export default function TemplatesPage() {
               className="h-10 rounded-xl border border-line bg-bg px-3 text-sm"
             />
           </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs text-ink-2">{t("title_en")}</label>
+            <input
+              value={value.title_en}
+              onChange={(e) => setValue((v) => ({ ...v, title_en: e.target.value }))}
+              className="h-10 rounded-xl border border-line bg-bg px-3 text-sm"
+            />
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <label className="text-xs text-ink-2">{t("min")}</label>
@@ -204,6 +221,15 @@ export default function TemplatesPage() {
               onChange={(e) => setValue((v) => ({ ...v, notes: e.target.value }))}
               className="min-h-20 resize-y rounded-xl border border-line bg-bg px-3 py-2 text-sm"
             />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs text-ink-2">{t("notes_en")}</label>
+            <textarea
+              value={value.notes_en}
+              onChange={(e) => setValue((v) => ({ ...v, notes_en: e.target.value }))}
+              className="min-h-20 resize-y rounded-xl border border-line bg-bg px-3 py-2 text-sm"
+            />
+            <p className="text-[11px] text-ink-3">{t("tpl_en_hint")}</p>
           </div>
           <div className="mt-2 flex items-center gap-2">
             {editing?.record && (

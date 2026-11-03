@@ -25,7 +25,13 @@ import { buildWeekIcs, downloadIcs } from "@/lib/ics";
 import { mapStravaSportType } from "@/lib/sport";
 import { cn } from "@/lib/utils";
 
-type EditingState = { record: WorkoutWithSlug | null; defaultDate?: string; defaultAthlete?: AthleteSlug; defaultSport?: Sport } | null;
+type EditingState = {
+  record: WorkoutWithSlug | null;
+  defaultDate?: string;
+  defaultAthlete?: AthleteSlug;
+  defaultSport?: Sport;
+  defaultTemplateId?: string;
+} | null;
 
 export default function CalendarPage() {
   const { t, locale } = useLocale();
@@ -156,6 +162,12 @@ export default function CalendarPage() {
     setLauncherDate(null);
   }
 
+  function pickTemplate(tpl: Template) {
+    if (!launcherDate) return;
+    setEditing({ record: null, defaultDate: launcherDate, defaultAthlete: me?.slug, defaultTemplateId: tpl.id });
+    setLauncherDate(null);
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-bg">
       <SiteHeader />
@@ -209,7 +221,14 @@ export default function CalendarPage() {
         </div>
       </main>
 
-      <NewWorkoutLauncher date={launcherDate} onClose={() => setLauncherDate(null)} onPickSport={pickSport} onPickAI={pickAI} />
+      <NewWorkoutLauncher
+        date={launcherDate}
+        templates={templates}
+        onClose={() => setLauncherDate(null)}
+        onPickSport={pickSport}
+        onPickAI={pickAI}
+        onPickTemplate={pickTemplate}
+      />
       <WorkoutDialog
         editing={editing}
         templates={templates}

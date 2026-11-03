@@ -17,6 +17,7 @@ import {
 } from "@/lib/types";
 import { ymd, today } from "@/lib/dates";
 import { resolveHrZones, resolvePaceZones, resolvePowerZones, type HrZone, type PaceZone, type PowerZone, type ZoneKey } from "@/lib/zones";
+import { templateTitle, templateNotes } from "@/lib/templates";
 
 export type WorkoutWithSlug = Workout & { athleteSlug: AthleteSlug };
 
@@ -46,7 +47,15 @@ function newStepId() {
 
 interface Props {
   /** null = closed. undefined date fields fall back to sensible defaults for a new workout. */
-  editing: { record: WorkoutWithSlug | null; defaultDate?: string; defaultAthlete?: AthleteSlug; defaultSport?: Sport } | null;
+  editing: {
+    record: WorkoutWithSlug | null;
+    defaultDate?: string;
+    defaultAthlete?: AthleteSlug;
+    defaultSport?: Sport;
+    /** Prefill from a Base Workouts preset, picked via NewWorkoutLauncher's
+     * "Search for Workouts" screen — same fields applyTemplate() sets. */
+    defaultTemplateId?: string;
+  } | null;
   templates: Template[];
   /** Every athlete in the roster, for the athlete picker — the dynamic
    * replacement for the old hardcoded ATHLETES constant. */
@@ -73,7 +82,7 @@ const EMPTY: WorkoutFormValue = {
 };
 
 export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, onDelete }: Props) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [value, setValue] = useState<WorkoutFormValue>(EMPTY);
   const [saving, setSaving] = useState(false);
@@ -176,12 +185,19 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
             rpe: r.rpe,
             workoutSteps: r.workout_steps ?? [],
           }
-        : {
-            ...EMPTY,
-            date: editing.defaultDate ?? EMPTY.date,
-            athleteSlug: editing.defaultAthlete ?? athletes[0]?.slug ?? "",
-            sport: editing.defaultSport ?? EMPTY.sport,
-          }
+        : (() => {
+            const tpl = editing.defaultTemplateId ? templates.find((x) => x.id === editing.defaultTemplateId) : null;
+            return {
+              ...EMPTY,
+              date: editing.defaultDate ?? EMPTY.date,
+              athleteSlug: editing.defaultAthlete ?? athletes[0]?.slug ?? "",
+              sport: tpl?.sport ?? editing.defaultSport ?? EMPTY.sport,
+              title: tpl ? templateTitle(tpl, locale) : EMPTY.title,
+              minutes: tpl?.minutes ?? EMPTY.minutes,
+              km: tpl?.km ?? EMPTY.km,
+              notes: tpl ? templateNotes(tpl, locale) : EMPTY.notes,
+            };
+          })()
     );
     setPushMessage(null);
     dialogRef.current?.showModal();
@@ -191,7 +207,14 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
   function applyTemplate(id: string) {
     const tpl = templates.find((x) => x.id === id);
     if (!tpl) return;
-    setValue((v) => ({ ...v, sport: tpl.sport, title: tpl.title, minutes: tpl.minutes, km: tpl.km, notes: tpl.notes }));
+    setValue((v) => ({
+      ...v,
+      sport: tpl.sport,
+      title: templateTitle(tpl, locale),
+      minutes: tpl.minutes,
+      km: tpl.km,
+      notes: templateNotes(tpl, locale),
+    }));
   }
 
   function addStep() {
@@ -303,7 +326,7 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
               <option value="">-</option>
               {templates.map((tpl) => (
                 <option key={tpl.id} value={tpl.id}>
-                  {t(tpl.sport)} · {tpl.title}
+                  {t(tpl.sport)} · {templateTitle(tpl, locale)}
                 </option>
               ))}
             </select>

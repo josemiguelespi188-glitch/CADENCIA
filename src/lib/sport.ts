@@ -5,7 +5,13 @@
  * server-only import.
  */
 
-/** Maps a sport-shaped Cadencia value from Strava's own `sport_type` string. */
+/** Maps a sport-shaped Cadencia value from Strava's own `sport_type` string.
+ * No "brick"/"race" case here on purpose: Strava logs a single activity
+ * as exactly one sport_type, never a combined brick, so an individual
+ * synced activity can never map to "brick" — only a *planned* workout can
+ * be tagged that way. This means a brick-tagged planned workout can't be
+ * auto-matched by Strava sync's exact-sport-match rule (see CLAUDE.md's
+ * "Strava auto-complete" section) — a known, accepted gap, not a bug. */
 export function mapStravaSportType(sportType: string): "swim" | "bike" | "run" | "gym" | null {
   const s = sportType.toLowerCase();
   if (s.includes("swim")) return "swim";

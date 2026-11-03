@@ -351,6 +351,7 @@ function VolumeChart({ workouts, locale }: { workouts: WorkoutWithSlug[]; locale
     run: "var(--run)",
     gym: "var(--gym)",
     race: "var(--race)",
+    brick: "var(--brick)",
   };
 
   return (

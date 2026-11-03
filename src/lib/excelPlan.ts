@@ -20,6 +20,7 @@ const SPORT_LABEL: Record<Sport, { es: string; en: string }> = {
   run: { es: "Correr", en: "Run" },
   gym: { es: "Gimnasio", en: "Gym" },
   race: { es: "Carrera", en: "Race" },
+  brick: { es: "Bici + Trote", en: "Bike + Run" },
 };
 
 type Locale = "es" | "en";

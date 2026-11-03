@@ -279,7 +279,10 @@ export async function getValidGarminDevAccessToken(athleteId: string): Promise<s
  * (RUNNING/CYCLING/LAP_SWIMMING/STRENGTH_TRAINING/CARDIO_TRAINING/YOGA/
  * PILATES/GENERIC/HIIT/MULTI_SPORT). Cadencia has no "race" equivalent —
  * GENERIC is the safest fallback, not a guess at a closer-but-wrong enum
- * value. */
+ * value. "brick" (Nov 2026) maps to the confirmed MULTI_SPORT value,
+ * which is a real, closer match than GENERIC for a combined bike+run
+ * session — still unconfirmed against a live push since no brick workout
+ * has been pushed to Garmin from this sandbox yet. */
 function sportToGarminShape(sport: Workout["sport"]): string {
   switch (sport) {
     case "run":
@@ -292,6 +295,8 @@ function sportToGarminShape(sport: Workout["sport"]): string {
       return "STRENGTH_TRAINING";
     case "race":
       return "GENERIC";
+    case "brick":
+      return "MULTI_SPORT";
     default:
       return "GENERIC";
   }

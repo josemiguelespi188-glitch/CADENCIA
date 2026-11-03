@@ -32,6 +32,7 @@ export const DISTANCE_PRESETS: Record<Sport, { label: string; meters: number | n
     { label: "Custom", meters: null },
   ],
   gym: [{ label: "Custom", meters: null }],
+  brick: [{ label: "Custom", meters: null }],
   race: [
     { label: "Sprint Triathlon", meters: null },
     { label: "Olympic Triathlon", meters: null },

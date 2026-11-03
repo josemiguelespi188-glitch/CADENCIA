@@ -6,9 +6,9 @@
  * about athlete identity stay self-documenting.
  */
 export type AthleteSlug = string;
-export type Sport = "swim" | "bike" | "run" | "gym" | "race";
+export type Sport = "swim" | "bike" | "run" | "gym" | "race" | "brick";
 
-export const SPORTS: Sport[] = ["swim", "bike", "run", "gym", "race"];
+export const SPORTS: Sport[] = ["swim", "bike", "run", "gym", "race", "brick"];
 
 export interface Athlete {
   id: string;
@@ -160,6 +160,11 @@ export interface Template {
   minutes: number;
   km: number;
   notes: string;
+  /** English title/notes, optional — see lib/templates.ts's templateTitle()/
+   * templateNotes() for the locale-aware fallback (missing English just
+   * shows the Spanish text, never a blank field). */
+  title_en: string | null;
+  notes_en: string | null;
   created_at: string;
 }
 
