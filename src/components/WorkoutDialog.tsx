@@ -744,14 +744,20 @@ function StepRow({
         />
       )}
       <div className="col-span-2 flex items-center gap-1.5 sm:col-span-6">
+        {/* Same "bare unlabeled number" bug already fixed for duration/
+            target fields above (Nov 2026 usability pass) — the placeholder
+            text disappears the instant a value is typed, so a persistent
+            label is needed next to the input, not just inside it. */}
+        <span className="shrink-0 text-[10px] uppercase tracking-wide text-ink-3">{t("steps_repeat")}</span>
         <input
           type="number"
           min={1}
-          placeholder={t("steps_repeat")}
+          placeholder="1"
           value={step.repeatCount ?? ""}
           onChange={(e) => onChange({ repeatCount: e.target.value ? Number(e.target.value) : null })}
-          className={stepInputCls + " w-28"}
+          className={stepInputCls + " w-20"}
         />
+        <span className="shrink-0 text-[10px] text-ink-3">×</span>
         <Button type="button" variant="danger" size="sm" onClick={onRemove} className="ml-auto">
           ×
         </Button>

@@ -2795,6 +2795,98 @@ than everything half-done in one shot.
   that join/leave actually persist, and that the accept-invite
   coach/athlete choice actually lands on the right row.
 
+## Community — Phase 2: compare profiles, aggregate stats, bulk-assign (Nov 2026)
+
+The three pieces explicitly deferred from Phase 1 above, confirmed to
+proceed with per the user's own direct message ("comparar dos perfiles
+lado a lado, estadísticas agregadas de la comunidad... y que un coach
+pueda asignar un mismo entreno a toda la comunidad de una vez... esas
+tres merecen su propio diseño con calma... procedamos"). All three
+reuse existing pure helpers and RLS-open tables — no new migration, no
+new API route, same "direct Supabase client call from the page" pattern
+every other Community/Friends write already uses in this app.
+
+- **Compare profiles** (`/community/[slug]/compare?with=<athleteId>`,
+  `components/CompareProfiles.tsx`): defaults the left side to the
+  signed-in athlete; with no `?with=`, the page shows a picker of the
+  community's other members instead of guessing a second athlete. A
+  "Head to head" radar chart (`lib/compareMetrics.ts`'s
+  `buildCompareAxes()`) only includes an axis — weekly volume (last 30
+  days of synced Strava activity ÷ ~4.3 weeks), VO2max (device-measured
+  preferred, falls back to the manually-entered value), FTP, 5K speed
+  (derived from `predictRaceTimes()`'s own Riegel projection, inverted
+  to km/h so "higher is better" matches every other axis), resting HR
+  (inverted via a fixed 100bpm reference) — when **both** athletes have
+  a real value for it; a missing metric is left out entirely rather than
+  zeroed, since zeroing would unfairly make someone who simply hasn't
+  filled in e.g. FTP look like they have none. Each axis is normalized
+  independently against its own two values (whichever athlete is ahead
+  reaches the outer ring) — this chart answers "who's ahead on this
+  axis," not "how far from some absolute max," which is the more honest
+  reading for a head-to-head. Below the radar: a diverging per-sport bar
+  comparison (last 30 days of distance, one bar growing from center
+  each direction, sport-colored labels), a zones/thresholds comparison
+  (LTHR, threshold pace, FTP, VO2max — paired bars, the better value
+  bolded and outlined), a race-predictor table (5K/10K/Half/Marathon,
+  labeled "actual" vs. estimated same as `/settings` already does), and
+  — only when both athletes have WHOOP history — a side-by-side
+  Fitness/Fatigue/Form reading with a mini CTL sparkline each, reusing
+  `lib/fitnessForm.ts`'s `computeFitnessForm()` unmodified (the page
+  fetches each athlete's own `whoop_cycles` directly, same query shape
+  `FitnessPanel.tsx` already uses). The whole page uses one fixed pastel
+  color pair (`--bike` for the left athlete, `--gym` for the right) for
+  every chart element on the page, not either athlete's own sport mix —
+  a consistent "A vs B" visual language across the radar, bars, and
+  zone comparisons.
+- **Husmear (view-only profile)**
+  (`/community/[slug]/member/[athleteId]`,
+  new page): a read-only slice of `AthleteProfileCard`/`ZoneTables`/
+  `StravaTotals` — goal race, resting/max HR, VO2max, height/weight,
+  personal bests, the race predictor table, zones, and Strava totals —
+  with no edit controls, since this is someone else's data. Not
+  membership-gated for viewing, same choice Phase 1 made for the roster
+  itself. Has its own "Compare" button that jumps straight into the
+  compare view against this athlete.
+- **Aggregate community stats** (`lib/communityStats.ts`'s
+  `computeCommunityStats()`, a pure function, plus a new stats section
+  on `/community/[slug]` above the roster): sums every community
+  member's synced Strava activity — whatever window `strava_activities`
+  already covers (last 30 days, same as everywhere else in this app
+  that reads this table, see the "no necesito lo histórico" note under
+  Strava integration above) — into a total distance/time/session-count
+  KPI row, a per-sport breakdown (reusing the same sport-accent-colored
+  bar pattern `DashboardPanel.tsx`'s own "By sport" card already uses),
+  and a leaderboard (members ranked by distance, each a bar against the
+  group's own max). Real Strava data only — a community where nobody's
+  synced anything shows an honest "no synced activity yet" message, not
+  a chart full of zeros pretending to be real.
+- **Coach bulk-assign** (`components/AssignCommunityWorkoutDialog.tsx`,
+  an "Assign workout to everyone" button on `/community/[slug]` shown
+  only when the signed-in athlete is this community's coach
+  (`created_by`) or an admin): sport/title/date/minutes/km/notes, no
+  structured-steps editor — deliberately simpler than `WorkoutDialog`,
+  since the per-step HR/pace/power zone quick-pick resolves against ONE
+  athlete's own thresholds and wouldn't make sense applied blindly
+  across a roster of athletes with different zones; each athlete can
+  add their own structure afterward from their own calendar like any
+  other workout. On submit, batch-inserts one plain `workouts` row
+  (`done: false`) per community member directly via the browser
+  Supabase client (`workouts` is already open to any `authenticated`
+  write, same "shared coach log" model documented at the top of this
+  file) — no new API route, no new RLS policy.
+- Not yet tested against a real Supabase project from this sandbox
+  (same standing limitation as every other Supabase-dependent feature
+  here) — confirm once deployed: that the radar/bar/zone comparisons
+  render sensibly for two real athletes with genuinely different data
+  completeness (one with WHOOP connected and one without, one with a
+  5K PB and one without), that the leaderboard and per-sport totals on
+  the roster page match what Strava itself shows for those athletes,
+  and that "Assign workout to everyone" actually lands one row per
+  member and that a non-coach/non-admin athlete never even sees the
+  button (RLS doesn't need to block this one — `workouts` has always
+  allowed any authenticated athlete to write any other athlete's row,
+  so this button is a UI convenience, not a new permission boundary).
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as
