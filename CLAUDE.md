@@ -2583,6 +2583,96 @@ workout push (prep work, Oct 2026)":
   `garmin_push_events` already uses) before attempting to build a real
   `course` payload from Cadencia's own `WorkoutStep[]` model.
 
+## COROS MCP: real OAuth + tool discovery built (Nov 2026)
+
+Direct follow-up the same session: the user pasted the actual
+support.coros.com article content (including its own link out to
+oauth.net's standard OAuth 2.0 reference) and said plainly to use that —
+confirming COROS really does speak plain, standards-based OAuth 2.0 with
+no COROS-specific wrinkle, which combined with the official MCP
+Authorization spec's documented shape was enough to build the real
+connection, not just document the gap.
+
+- **`lib/integrations/corosMcp.ts`** (new) replaces the old Partner-API
+  scaffold (`lib/integrations/coros.ts`, now **deleted outright** —
+  nothing imported it anymore once this landed, and this codebase's own
+  practice is to delete confirmed-unused code rather than leave it as a
+  zombie). Built on the official `@modelcontextprotocol/sdk` package
+  (new dependency) — specifically its `client/auth.js` module's
+  `discoverOAuthServerInfo()` (RFC 9728 + RFC 8414 metadata discovery),
+  `registerClient()` (RFC 7591 Dynamic Client Registration),
+  `startAuthorization()`/`exchangeAuthorization()`/
+  `refreshAuthorization()` (PKCE authorization-code flow) — the SDK's
+  own implementation of the spec, not hand-rolled, same confidence
+  tier this codebase already gives "generic OAuth2 is safe to code."
+- **No manual "create an app, get a Client ID" step exists for this
+  integration**, unlike every other one in this app — DCR means
+  Cadencia registers itself with COROS's authorization server
+  automatically, the first time anyone ever connects, and the result
+  (client_id, client_secret if any) is cached in a new singleton table,
+  `coros_mcp_client` (`id boolean primary key check (id)`, a real
+  Postgres single-row idiom), reused for every athlete's own connect
+  afterward — registering a fresh client per athlete or per click would
+  be wasteful and isn't what DCR is for. `coros_mcp_pkce` mirrors
+  `garmin_oauth_pkce` exactly for the PKCE code_verifier's round trip.
+  `coros_connections` (already existed from migration 014) gained
+  `issuer`, `tools_catalog`, `tools_captured_at` — migration
+  `033_coros_mcp.sql`, **needs this run in the Supabase SQL editor**.
+- **`/api/coros/connect` and `/api/coros/callback` were rewritten**
+  against this real flow — same shape every other integration's routes
+  already have (derive the athlete from the session, redirect to the
+  real authorize URL, exchange the code on callback, upsert
+  `coros_connections`). `/api/coros/status` and `/api/coros/disconnect`
+  needed **no changes at all** — they already just read/delete rows
+  from `coros_connections` generically, which is exactly the table this
+  rewrite kept using.
+- **The moment a connection succeeds, `captureCorosToolCatalog()` calls
+  the MCP protocol's own `tools/list`** and stores the raw result in
+  `coros_connections.tools_catalog` — best-effort, never fails the
+  connect itself. This is the single most useful property MCP has that
+  no other integration in this codebase gets for free: every tool
+  self-describes its real input schema over the wire, so once José
+  actually connects for real, `tools_catalog` will hold the real,
+  confirmed shape of `createScheduledWorkout`'s `course` parameter —
+  no more doc-hunting needed for that specific piece.
+- **`pushStructuredWorkoutToCorosMcp()` is deliberately NOT implemented
+  — it always throws a clear "not built yet" error.** The `course`
+  object's internal schema (how warmup/interval/recovery/cooldown
+  sections and pace/HR/power targets are actually represented) is still
+  not confirmed from any source this sandbox could reach; guessing it
+  would repeat the exact mistake the old Partner-API `tp/list/push`
+  scaffold already made. The "Push to COROS" button in `WorkoutDialog.tsx`
+  is unchanged and still calls `/api/coros/push`, which now surfaces
+  this honest error instead of silently failing against a wrong URL.
+  Settings' COROS card copy was updated to say exactly this: real
+  connection works, pushing doesn't yet.
+- **Confirmed real, from COROS's own GitHub docs (`coroslab/COROS-MCP`,
+  reached via `raw.githubusercontent.com` — `github.com` and
+  `api.github.com` are both blocked from this sandbox, only that raw-
+  content subdomain works)**: the MCP endpoint
+  (`https://mcp.coros.com/mcp`, regional alternates for China/Europe/
+  US documented but not wired in — add if an athlete's account turns
+  out to need one), the real write tool names
+  (`createTrainingPlan`/`updateTrainingPlan`,
+  `createSingleWorkout`/`updateWorkoutDetails`, `scheduleWorkout`,
+  `createScheduledWorkout`/`updateScheduledWorkout` — the last pair is
+  the closest match to how `workouts` rows already work, one dated
+  workout at a time), and the read tools (`queryTrainingPlanLibrary`,
+  `queryTrainingSchedule`, `querySportRecords`, `getActivityDetail`,
+  etc. — a real pull-sync feature, mirroring Strava/WHOOP's own "Sync
+  now," is newly possible here and wasn't confirmed as existing at all
+  under the old Partner-API framing; not built, just newly available).
+- **Completely untested from this sandbox** — `mcp.coros.com` fails the
+  egress proxy's CONNECT tunnel the same way `support.coros.com` does,
+  so none of discovery, DCR, the authorize redirect, or the token
+  exchange has ever actually run against COROS's real server from here.
+  **Confirm the whole thing once deployed**: that `/api/coros/connect`
+  redirects somewhere that looks like a real COROS login/consent screen
+  (not an error), that the callback actually lands on `?coros=connected`
+  with a real `coros_connections` row, and that `tools_catalog` ends up
+  holding a real tool list after that — then read it to finally build
+  `pushStructuredWorkoutToCorosMcp()` for real.
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as

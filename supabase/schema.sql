@@ -364,20 +364,57 @@ create table if not exists strava_connections (
 );
 
 -- ─── coros_connections ──────────────────────────────────────────────────────
--- Mirrors strava_connections exactly — see migration 014. Prep work for the
--- "Structured Workouts and Training Plans Sync" COROS Partner API
--- capability applied for; COROS's real OAuth endpoints are unconfirmed
--- (see CLAUDE.md), so the client id/secret/base URLs are env-var-only
--- with no baked-in defaults.
+-- Real OAuth tokens for COROS MCP (see migration 033 and CLAUDE.md's
+-- "COROS MCP: real OAuth + tool discovery" section) — `coros_athlete_id`
+-- is a leftover from the old, now-deleted Partner-API scaffold and stays
+-- unused/null under MCP. `refresh_token` is nullable since a plain OAuth
+-- 2.0 token response isn't guaranteed to include one (confirmed the hard
+-- way by WHOOP's own integration — see its CLAUDE.md section).
 create table if not exists coros_connections (
   athlete_id uuid primary key references athletes(id) on delete cascade,
   coros_athlete_id text,
   access_token text not null,
-  refresh_token text not null,
+  refresh_token text,
   expires_at timestamptz not null,
   scope text,
   connected_at timestamptz not null default now(),
-  last_synced_at timestamptz
+  last_synced_at timestamptz,
+  -- Mirrors migration 033.
+  issuer text,
+  tools_catalog jsonb,
+  tools_captured_at timestamptz
+);
+
+comment on column coros_connections.issuer is 'The OAuth authorization server URL discovered for this token (RFC 9728/8414) — needed to refresh against the right server later.';
+comment on column coros_connections.tools_catalog is 'Raw tools/list response captured right after connecting — the real, self-describing schema for every COROS MCP tool (including the unconfirmed course object), fetched from the protocol itself rather than guessed from docs. See CLAUDE.md.';
+comment on column coros_connections.tools_captured_at is 'When tools_catalog was last captured. Null until a connection has successfully listed tools at least once.';
+
+-- ─── coros_mcp_client ────────────────────────────────────────────────────────
+-- The app's own OAuth client, obtained via Dynamic Client Registration —
+-- registered once for the whole app, then reused for every athlete's own
+-- authorize/token requests. True-singleton pattern.
+create table if not exists coros_mcp_client (
+  id boolean primary key default true,
+  issuer text not null,
+  client_id text not null,
+  client_secret text,
+  client_id_issued_at timestamptz,
+  authorization_endpoint text not null,
+  token_endpoint text not null,
+  registration_endpoint text,
+  registration_response jsonb,
+  created_at timestamptz not null default now(),
+  constraint coros_mcp_client_singleton check (id)
+);
+
+-- ─── coros_mcp_pkce ────────────────────────────────────────────────────────────
+-- Mirrors garmin_oauth_pkce — the PKCE code_verifier's round trip to
+-- COROS's consent screen and back.
+create table if not exists coros_mcp_pkce (
+  state text primary key,
+  athlete_id uuid not null references athletes(id) on delete cascade,
+  code_verifier text not null,
+  created_at timestamptz not null default now()
 );
 
 -- ─── garmin_connections ─────────────────────────────────────────────────────
@@ -706,6 +743,13 @@ alter table strava_connections enable row level security;
 
 alter table coros_connections enable row level security;
 -- Deliberately no policies at all — service-role only, same as strava_connections.
+
+alter table coros_mcp_client enable row level security;
+-- Deliberately no policies at all — service-role only.
+
+alter table coros_mcp_pkce enable row level security;
+-- Deliberately no policies at all — service-role only, security-sensitive
+-- for the brief OAuth round trip.
 
 alter table garmin_connections enable row level security;
 -- Deliberately no policies at all — service-role only, same as strava_connections.

@@ -115,9 +115,8 @@ function SettingsContent() {
                   section, one responsive grid now — ordered by how real/
                   usable each connection actually is today (Strava and
                   WHOOP fully working, Garmin Developer confirmed working,
-                  then COROS — the right real path turned out to be COROS
-                  MCP, not the Partner API this card was built against, and
-                  it hasn't been rebuilt yet, see CLAUDE.md — and the
+                  then COROS — real MCP connection works now, but pushing a
+                  workout doesn't yet, see CLAUDE.md — and the
                   lower-capability Garmin Personal key last, so if the grid
                   ever leaves an orphan cell on a wide screen it falls on
                   one of the two least-essential cards, not a primary one). */}
@@ -407,8 +406,8 @@ function AthleteCorosCard() {
 
       <p className="mt-2 text-xs text-ink-3">
         {isEn
-          ? "COROS confirmed the right path is COROS MCP (no approval needed), not the Partner API this card was built against — the connect flow here hasn't been rebuilt for that yet. See CLAUDE.md."
-          : "COROS confirmó que el camino correcto es COROS MCP (no necesita aprobación), no el Partner API con el que se construyó esta tarjeta — el flujo de conexión aquí todavía no se ha reconstruido para eso. Ver CLAUDE.md."}
+          ? "Real COROS MCP connection (no approval needed). Pushing structured workouts isn't built yet — the exact payload format COROS expects still needs confirming. See CLAUDE.md."
+          : "Conexión real a COROS MCP (no necesita aprobación). Mandar entrenos estructurados todavía no está construido — falta confirmar el formato exacto que espera COROS. Ver CLAUDE.md."}
       </p>
 
       <div className="mt-5 flex flex-wrap gap-2">
