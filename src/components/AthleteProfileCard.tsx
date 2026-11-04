@@ -42,6 +42,7 @@ export function AthleteProfileCard({ slug }: { slug: AthleteSlug }) {
   const [goalRaceDate, setGoalRaceDate] = useState("");
   const [goalDistance, setGoalDistance] = useState("");
   const [goalNotes, setGoalNotes] = useState("");
+  const [isCoach, setIsCoach] = useState(false);
   const [bests, setBests] = useState<PersonalBest[]>([]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -62,6 +63,7 @@ export function AthleteProfileCard({ slug }: { slug: AthleteSlug }) {
     setGoalRaceDate(a?.goal_race_date ?? "");
     setGoalDistance(a?.goal_distance ?? "");
     setGoalNotes(a?.goal_notes ?? "");
+    setIsCoach(a?.is_coach ?? false);
     setBests(a?.personal_bests ?? []);
   }, [slug]);
 
@@ -107,6 +109,7 @@ export function AthleteProfileCard({ slug }: { slug: AthleteSlug }) {
           goal_race_date: goalRaceDate || null,
           goal_distance: goalDistance || null,
           goal_notes: goalNotes || null,
+          is_coach: isCoach,
           personal_bests: bests.filter((b) => b.timeSec > 0),
         })
         .eq("id", athlete.id);
@@ -154,6 +157,28 @@ export function AthleteProfileCard({ slug }: { slug: AthleteSlug }) {
               <input type="number" min={0} max={300} step={0.1} value={weightKg} onChange={(e) => setWeightKg(e.target.value)} className={inputCls} />
             </Field>
           </div>
+        </section>
+
+        <section>
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-widest text-ink-3">
+            {isEn ? "Role" : "Rol"}
+          </h4>
+          <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-line p-3 text-sm">
+            <input
+              type="checkbox"
+              checked={isCoach}
+              onChange={(e) => setIsCoach(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0"
+            />
+            <span>
+              <span className="font-medium text-ink">{isEn ? "I'm a coach" : "Soy coach"}</span>
+              <span className="block text-xs text-ink-3">
+                {isEn
+                  ? "Lets you create Communities on the Community tab and assign a workout to every member at once. Leave unchecked if you're just an athlete — you can still join any community."
+                  : "Te deja crear Comunidades en la pestaña Community y asignar un entreno a todos los miembros a la vez. Déjalo sin marcar si solo eres atleta — igual puedes unirte a cualquier comunidad."}
+              </span>
+            </span>
+          </label>
         </section>
 
         <section>

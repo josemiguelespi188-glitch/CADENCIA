@@ -201,6 +201,29 @@ function AthleteRow({ athlete, me, onChange }: { athlete: Athlete; me: Athlete; 
     }
   }
 
+  // Nov 2026, see CLAUDE.md's "Community" section — is_coach is
+  // self-editable from Settings too; this is just an admin convenience
+  // for setting it on someone else's behalf.
+  async function toggleCoach() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/athletes/${athlete.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isCoach: !athlete.is_coach }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error);
+        return;
+      }
+      await onChange();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <Card className="p-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -214,7 +237,15 @@ function AthleteRow({ athlete, me, onChange }: { athlete: Athlete; me: Athlete; 
         {athlete.is_admin && (
           <span className="rounded-full bg-ink px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-bg">Admin</span>
         )}
+        {athlete.is_coach && (
+          <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-2">Coach</span>
+        )}
         <div className="ml-auto flex items-center gap-2">
+          {athlete.auth_user_id && (
+            <Button size="sm" variant="ghost" onClick={toggleCoach} disabled={busy}>
+              {athlete.is_coach ? "Remove coach" : "Make coach"}
+            </Button>
+          )}
           {athlete.auth_user_id ? (
             <Button size="sm" variant="steel" onClick={toggleAdmin} disabled={busy}>
               {athlete.is_admin ? "Remove admin" : "Make admin"}

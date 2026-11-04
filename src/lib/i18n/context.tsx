@@ -11,6 +11,7 @@ const DICT: Record<Locale, Record<string, string>> = {
     nav_calendar: "Calendario",
     nav_dashboard: "Panel",
     nav_templates: "Generate",
+    nav_community: "Community",
     nav_settings: "Ajustes",
     sign_in: "Iniciar Sesión",
     sign_out: "Cerrar Sesión",
@@ -182,6 +183,7 @@ const DICT: Record<Locale, Record<string, string>> = {
     // renamed to Generate" note), so every first-time visitor (default
     // locale is English) saw the stale "Templates" label in the nav.
     nav_templates: "Generate",
+    nav_community: "Community",
     nav_settings: "Settings",
     sign_in: "Sign In",
     sign_out: "Sign Out",

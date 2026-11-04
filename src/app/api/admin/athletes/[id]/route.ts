@@ -14,12 +14,26 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   const { id } = await params;
-  const { isAdmin } = await req.json().catch(() => ({}));
-  if (typeof isAdmin !== "boolean") {
-    return NextResponse.json({ error: "isAdmin must be a boolean." }, { status: 400 });
-  }
+  const body = await req.json().catch(() => ({}));
+  const { isAdmin, isCoach } = body;
 
   const db = createServiceClient();
+
+  // isCoach (Nov 2026, see CLAUDE.md's "Community" section) isn't
+  // security-sensitive the way is_admin is — an athlete can already
+  // flip it on their own row from Settings — this is just a convenience
+  // for an admin to set it on someone else's behalf (e.g. a Google
+  // self-registered athlete who hasn't touched Settings yet). No
+  // last-admin-style guard needed, no trigger involved.
+  if (typeof isCoach === "boolean") {
+    const { error: coachError } = await db.from("athletes").update({ is_coach: isCoach }).eq("id", id);
+    if (coachError) return NextResponse.json({ error: coachError.message }, { status: 500 });
+    if (typeof isAdmin !== "boolean") return NextResponse.json({ ok: true });
+  }
+
+  if (typeof isAdmin !== "boolean") {
+    return NextResponse.json({ error: "isAdmin or isCoach must be provided." }, { status: 400 });
+  }
 
   if (!isAdmin) {
     // Refuse to leave the roster with zero admins — would lock everyone

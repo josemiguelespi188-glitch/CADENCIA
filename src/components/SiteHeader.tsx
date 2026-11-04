@@ -9,9 +9,11 @@ import { cn } from "@/lib/utils";
 
 // Dashboard was folded into the bottom of /calendar (see CLAUDE.md's
 // "Merge Dashboard into Calendar" note) — no separate nav entry for it
-// anymore.
+// anymore. Community (Nov 2026) sits right after Calendar — see
+// CLAUDE.md's "Community" section.
 const NAV: { href: string; key: string }[] = [
   { href: "/calendar", key: "nav_calendar" },
+  { href: "/community", key: "nav_community" },
   { href: "/templates", key: "nav_templates" },
   { href: "/settings", key: "nav_settings" },
 ];
@@ -56,13 +58,13 @@ export function SiteHeader() {
         {me && (
           // Found live (Nov 2026, direct feedback: "la organización de las
           // cosas") — a subtle left border + padding separates the
-          // identity cluster (name/Friends) from the brand mark to its
-          // left, instead of both groups just running together as one
-          // undifferentiated row of flex items.
+          // Friends picker from the brand mark to its left, instead of
+          // both groups just running together as one undifferentiated
+          // row of flex items. The old plain-text "{me.name}" pill that
+          // used to sit here moved to the right side as a clickable
+          // profile chip (Nov 2026, direct feedback: "no me encanta...
+          // debería salir como el perfil del usuario" — see below).
           <div className="inline-flex items-center gap-2 border-l border-line pl-3">
-            <span className="rounded-full bg-ink px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-bg">
-              {me.name}
-            </span>
             <div ref={friendsRef} className="relative">
               <button
                 type="button"
@@ -125,6 +127,37 @@ export function SiteHeader() {
               </Link>
             ))}
           </div>
+
+          {/* The profile chip (Nov 2026) — moved here from the left side,
+              per direct feedback: "no me encanta... debería salir como
+              el perfil del usuario, más no... mi nombre ahí arriba. A la
+              derecha arriba pondría el perfil del usuario." A small
+              initials avatar + name, clickable through to /settings
+              (which already owns the full profile editor — no reason to
+              build a second one), styled as a pill to match everything
+              else in this nav rather than reusing the old plain
+              bg-ink/text-bg "badge" look that made it read as just a
+              label, not something to click. */}
+          {me && (
+            <Link
+              href="/settings"
+              className={cn(
+                "flex items-center gap-2 rounded-full py-1 pl-1 pr-3 text-xs font-medium uppercase tracking-wide transition-colors",
+                pathname === "/settings" ? "bg-ink text-bg" : "bg-surface-2 text-ink-2 hover:text-ink"
+              )}
+            >
+              <span
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold"
+                style={{
+                  background: pathname === "/settings" ? "var(--bg)" : "var(--ink)",
+                  color: pathname === "/settings" ? "var(--ink)" : "var(--bg)",
+                }}
+              >
+                {me.initials}
+              </span>
+              {me.name}
+            </Link>
+          )}
 
           {/* Admin, always the rightmost item when visible — per explicit
              instruction ("lo más a la derecha posible"). Kept visually

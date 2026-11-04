@@ -43,6 +43,7 @@ export default function AcceptInvitePage() {
   const [linkError, setLinkError] = useState(false);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [isCoach, setIsCoach] = useState<"athlete" | "coach">("athlete");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -122,12 +123,23 @@ export default function AcceptInvitePage() {
     }
     setSaving(true);
     const supabase = createClient();
-    const { error: updateError } = await supabase.auth.updateUser({ password });
-    setSaving(false);
+    const { data: userData, error: updateError } = await supabase.auth.updateUser({ password });
     if (updateError) {
+      setSaving(false);
       setError(updateError.message);
       return;
     }
+    // Best-effort — a failure here shouldn't block finishing account
+    // setup; is_coach is self-editable from the profile card any time
+    // afterward (see CLAUDE.md's "Community" section).
+    if (userData.user) {
+      const { error: coachError } = await supabase
+        .from("athletes")
+        .update({ is_coach: isCoach === "coach" })
+        .eq("auth_user_id", userData.user.id);
+      if (coachError) console.error("Failed to save coach/athlete role at signup", coachError);
+    }
+    setSaving(false);
     router.push("/settings");
   }
 
@@ -176,6 +188,29 @@ export default function AcceptInvitePage() {
                 onChange={(e) => setConfirm(e.target.value)}
                 className="h-11 rounded-xl border border-line bg-surface px-3 text-sm outline-none focus:border-line-strong"
               />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs text-ink-2">
+                {isEn ? "Are you a coach or an athlete?" : "¿Eres coach o atleta?"}
+              </label>
+              <p className="mb-1 text-[11px] text-ink-3">
+                {isEn
+                  ? "A coach can create Communities. You can change this any time from Settings."
+                  : "Un coach puede crear Comunidades. Puedes cambiar esto cuando quieras desde Ajustes."}
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {(["athlete", "coach"] as const).map((v) => (
+                  <label
+                    key={v}
+                    className={`flex cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm transition-colors ${
+                      isCoach === v ? "border-line-strong bg-ink text-bg" : "border-line text-ink-2 hover:text-ink"
+                    }`}
+                  >
+                    <input type="radio" name="role" value={v} checked={isCoach === v} onChange={() => setIsCoach(v)} className="sr-only" />
+                    {v === "athlete" ? (isEn ? "Athlete" : "Atleta") : isEn ? "Coach" : "Coach"}
+                  </label>
+                ))}
+              </div>
             </div>
             {error && <p className="text-sm text-error">{error}</p>}
             <Button type="submit" disabled={saving} className="mt-2 w-full">

@@ -2673,6 +2673,128 @@ connection, not just document the gap.
   holding a real tool list after that — then read it to finally build
   `pushStructuredWorkoutToCorosMcp()` for real.
 
+## Community — Phase 1: roster, roles, open join (Nov 2026)
+
+A real, deliberately big feature, confirmed before building via
+`AskUserQuestion` on three pivotal forks (guessing any of them wrong
+would have meant real rework): **multiple separate communities** (not
+one shared pool — a coach creates their own group, e.g. a running club
+or a triathlon community, and members only belong to the ones they
+joined) is a "Recomendado," **a coach can create communities AND
+bulk-assign one workout to every member at once** (also "Recomendado" —
+the bulk-assign part is NOT built yet, phase 2), and **build in
+phases** — this pass is the base (header redesign, data model,
+create/join/leave, roster) with compare-profiles and aggregate
+community stats (described as needing to be "súper dinámico, súper
+métricas, súper bien coloridas... gráficos súper bien hechos") held for
+a dedicated follow-up pass so each piece gets built properly rather
+than everything half-done in one shot.
+
+- **This is the first real privacy boundary of any kind in this app.**
+  Every table before `communities`/`community_members` is fully open to
+  any authenticated athlete (the "shared coach log" model documented
+  throughout this file) — that doesn't change for
+  `workouts`/`templates`/Strava-etc. data, which stays exactly as open
+  as before. Communities are a new, separate layer on top: anyone
+  signed in can browse the full directory (needed to discover and join
+  one), but membership itself, and anything built on membership later
+  (compare/aggregate stats), is scoped to who's actually in a given
+  community.
+- **Migration `034_communities.sql`** (mirrored in `schema.sql` —
+  **needs this migration run in the Supabase SQL editor**):
+  `athletes.is_coach` (a plain, **self-editable** boolean — unlike
+  `is_admin`, which only the service-role client can ever touch via the
+  `athletes_guard_is_admin` trigger, `is_coach` is just a preference an
+  athlete can flip on their own row through the existing
+  `athletes_update_own` RLS policy, same as their name or thresholds).
+  `communities` (id, slug, name, description, `created_by`, `created_at`
+  — `created_by` is nullable with `on delete set null` since this app
+  has no "delete an athlete" feature yet, but a community shouldn't
+  vanish if one is ever added) and `community_members` (a plain join,
+  `(community_id, athlete_id)` primary key, no per-membership role
+  column — "the coach of this community" is just
+  `communities.created_by`).
+- **Creating/joining/leaving a community is entirely RLS-governed, no
+  new API routes at all** — consistent with how `workouts`/`templates`
+  are already directly browser-writable in this app, not routed through
+  a server endpoint. `communities`' insert policy checks
+  `created_by = <caller's own athlete id> AND (is_coach OR is_admin)`
+  directly in SQL; `community_members`' insert/delete policies just
+  check `athlete_id = <caller's own athlete id>` — any athlete can join
+  or leave any community with no approval step, the exact same
+  "automático, sin solicitud" philosophy already confirmed for the
+  Friends picker (see "Real auth + admin" above).
+- **`/community`** (`app/community/page.tsx`): "My communities" (if
+  any) + "All communities" directory, each card showing name,
+  description, member count, the coach's name, and a Join/Leave button
+  — member counts come from one flat `community_members` select
+  reduced client-side (no RPC/group-by needed at this scale). A "+
+  Create a community" button appears only for `is_coach || is_admin`,
+  opening an inline name+description form; the slug is generated
+  client-side with the same `slugify()`/`dedupeSlug()` helpers
+  `lib/athleteSlug.ts` already exports for athlete slugs (now shared,
+  not athlete-specific).
+- **`/community/[slug]`** (`app/community/[slug]/page.tsx`): one
+  community's full roster (initials avatar + name per member, the
+  coach labeled), Join/Leave. Deliberately **not membership-gated for
+  viewing** in this pass — any signed-in athlete can look at any
+  community's roster, even one they haven't joined, since over-
+  restricting now without being explicitly asked risked guessing wrong;
+  the compare/aggregate-stats follow-up is where real membership-only
+  gating will matter and get built deliberately then.
+- **Header redesign** (`SiteHeader.tsx`), direct feedback: "no me
+  encanta... debería salir como el perfil del usuario, más no... mi
+  nombre ahí arriba. A la derecha arriba pondría el perfil del
+  usuario... pondría también un... tab que diga community." The old
+  plain, non-clickable `{me.name}` pill that sat top-left next to
+  Friends is gone — replaced by a clickable profile chip (initials
+  avatar + name, linking to `/settings`, which already owns the full
+  profile editor — no second profile page was built) moved to the
+  right side, next to the segmented Calendar/Community/Generate/
+  Settings nav group and the Admin pill (still rightmost). "Community"
+  was added to `NAV` right after Calendar, kept literally "Community"
+  in both locales (not translated), the same "this is the feature's
+  actual name" treatment "Generate" already got.
+- **Onboarding question**: `/accept-invite`'s password-setup form (the
+  admin-invite path) now also asks "Are you a coach or an athlete?"
+  (a two-option toggle, defaulting to Athlete) right before the submit
+  button — direct request: "cuando estás creando el account... te
+  pregunte si eres coach o eres solamente atleta." Saved as a
+  best-effort `athletes.is_coach` update right after the password is
+  set (never blocks finishing signup if it fails) — **Google
+  self-registration (`ensureAthleteForUser()`) has no UI step at all**,
+  so a Google sign-up always starts as `is_coach: false` (the column's
+  own default) and can flip it from the Athlete Profile card on
+  `/settings` afterward, same as anyone else who wants to change their
+  role later. `AthleteProfileCard.tsx` gained a small "Role" section
+  (a labeled checkbox, "I'm a coach") right after Personal Info, wired
+  into the same single-Save flow every other profile field already
+  uses.
+- **`/admin`** gained a "Coach" badge + a "Make coach"/"Remove coach"
+  button per athlete row, mirroring the existing Admin badge/toggle —
+  purely a convenience for an admin to set someone else's role on their
+  behalf (e.g. a Google-registered athlete who hasn't touched Settings
+  yet), not a new trust boundary: `PATCH /api/admin/athletes/[id]` now
+  also accepts an optional `isCoach` alongside the existing `isAdmin`, written directly
+  (no last-admin-style guard, no trigger — `is_coach` was never
+  security-sensitive to begin with).
+- **Explicitly NOT built in this pass** (confirmed deferred, per the
+  build-order decision above): comparing two athletes' profiles
+  side-by-side, community-wide aggregate stats (total km as a
+  community, etc.), and the bulk-assign-a-workout-to-every-member
+  feature that's the other half of what "coach" is supposed to unlock.
+  All three need their own real design pass (what metrics, what time
+  window, what the comparison view actually looks like) rather than a
+  rushed addition here — tracked as the explicit next phase of this
+  feature, not forgotten scope.
+- Not yet tested against a real Supabase project from this sandbox
+  (same standing limitation as every other Supabase-dependent feature
+  here) — confirm once deployed: run migration 034, that a coach can
+  actually create a community (and a plain athlete's attempt is
+  correctly rejected by the RLS policy, not just hidden by the UI),
+  that join/leave actually persist, and that the accept-invite
+  coach/athlete choice actually lands on the right row.
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as

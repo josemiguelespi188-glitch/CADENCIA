@@ -19,6 +19,11 @@ export interface Athlete {
   email: string | null;
   /** Can reach /admin — only ever set server-side, see CLAUDE.md. */
   is_admin: boolean;
+  /** Can create Communities and bulk-assign a workout to every member —
+   * self-editable from the profile card (not security-sensitive the way
+   * is_admin is), also asked at account-creation time. See CLAUDE.md's
+   * "Community" section. */
+  is_coach: boolean;
   /** Lactate threshold heart rate, in bpm. */
   threshold_hr: number | null;
   /** Running threshold pace ("race predictor"), in seconds per km. */
@@ -359,4 +364,23 @@ export interface WhoopWorkout {
   kilojoule: number | null;
   distance_meter: number | null;
   altitude_gain_meter: number | null;
+}
+
+/** A training group a coach creates and athletes join — see CLAUDE.md's
+ * "Community" section. Phase 1: directory + join/leave + roster only. */
+export interface Community {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  created_by: string | null;
+  created_at: string;
+}
+
+/** One row in community_members — a plain join, no per-membership role
+ * (the coach of a community is just `communities.created_by`). */
+export interface CommunityMember {
+  community_id: string;
+  athlete_id: string;
+  joined_at: string;
 }

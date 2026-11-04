@@ -20,6 +20,9 @@ create table if not exists athletes (
   -- Can reach /admin — only ever set server-side via the service-role
   -- admin API; see the athletes_guard_is_admin trigger below.
   is_admin boolean not null default false,
+  -- Can create Communities + bulk-assign workouts — see migration 034.
+  -- Self-editable, not admin-guarded (unlike is_admin above).
+  is_coach boolean not null default false,
   -- Training-zone thresholds, editable from /settings — see migration 003
   -- and CLAUDE.md's roadmap (these feed future AI plan generation / a
   -- virtual coach agent, neither built yet).
@@ -679,6 +682,55 @@ create policy whoop_recovery_select on whoop_recovery for select to authenticate
 alter table whoop_workouts enable row level security;
 drop policy if exists whoop_workouts_select on whoop_workouts;
 create policy whoop_workouts_select on whoop_workouts for select to authenticated using (true);
+
+-- ─── communities / community_members ────────────────────────────────────────
+-- See migration 034 and CLAUDE.md's "Community" section — Phase 1: a
+-- coach creates a community, athletes join it (open, no approval, same
+-- philosophy as the Friends picker), roster view. The first real privacy
+-- boundary of any kind in this app — everything before this table is
+-- fully open to any authenticated athlete.
+create table if not exists communities (
+  id uuid primary key default gen_random_uuid(),
+  slug text not null unique,
+  name text not null,
+  description text not null default '',
+  created_by uuid references athletes(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+alter table communities enable row level security;
+drop policy if exists communities_select_authenticated on communities;
+create policy communities_select_authenticated on communities
+  for select to authenticated using (true);
+drop policy if exists communities_insert_coach on communities;
+create policy communities_insert_coach on communities
+  for insert to authenticated
+  with check (
+    created_by = (select id from athletes where auth_user_id = auth.uid())
+    and exists (select 1 from athletes where auth_user_id = auth.uid() and (is_coach or is_admin))
+  );
+
+create table if not exists community_members (
+  community_id uuid not null references communities(id) on delete cascade,
+  athlete_id uuid not null references athletes(id) on delete cascade,
+  joined_at timestamptz not null default now(),
+  primary key (community_id, athlete_id)
+);
+
+create index if not exists community_members_athlete_idx on community_members (athlete_id);
+
+alter table community_members enable row level security;
+drop policy if exists community_members_select_authenticated on community_members;
+create policy community_members_select_authenticated on community_members
+  for select to authenticated using (true);
+drop policy if exists community_members_insert_self on community_members;
+create policy community_members_insert_self on community_members
+  for insert to authenticated
+  with check (athlete_id = (select id from athletes where auth_user_id = auth.uid()));
+drop policy if exists community_members_delete_self on community_members;
+create policy community_members_delete_self on community_members
+  for delete to authenticated
+  using (athlete_id = (select id from athletes where auth_user_id = auth.uid()));
 
 -- ─── updated_at trigger for workouts ────────────────────────────────────────
 create or replace function set_updated_at()
