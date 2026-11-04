@@ -2465,6 +2465,124 @@ four distinct complaints in one message:
   English shows the translated preset text (and reverts to Spanish for
   any preset with no English filled in).
 
+## COROS Partner API application superseded by COROS MCP (Nov 2026)
+
+A real, direct reply arrived from `api@coros.com` (not a search summary —
+the user forwarded the actual email), and it changes the COROS picture
+significantly from everything documented above under "COROS structured-
+workout push (prep work, Oct 2026)":
+
+- **For Cadencia's exact use case — pushing structured interval workouts
+  (warmup/interval/recovery/cooldown with pace/HR/power targets) for
+  run, trail run, and cycling — the Partner API this codebase was built
+  against is the WRONG path entirely, not just unapproved.** COROS's own
+  words: "MCP covers your use case today with no application or approval
+  needed." The Partner API application already submitted (the one this
+  file's earlier sections describe waiting on) is for a *different* set
+  of capabilities — webhook push notifications, GPX route import/export,
+  two-way activity sync — none of which Cadencia has asked for yet. If
+  any of those are wanted later, that application is still the right
+  path (form linked in the email); for everything built so far, it
+  isn't.
+- **COROS MCP** is a Model Context Protocol server, not a plain REST
+  API — confirmed real endpoint: `https://mcp.coros.com/mcp` (regional
+  alternates also confirmed from COROS's own GitHub docs repo,
+  `coroslab/COROS-MCP`, which — unlike the old Dropbox-hosted Partner
+  API guide — this sandbox CAN reach via `raw.githubusercontent.com`:
+  `https://mcpcn.coros.com/mcp` China, `https://mcpeu.coros.com/mcp`
+  Europe, `https://mcpus.coros.com/mcp` US/other). No application or
+  approval needed, free, personal/non-commercial projects fully
+  eligible. Swim write is explicitly not available via MCP yet (run,
+  trail run, cycling only) — matches Cadencia's own `brick` sport
+  gap too (COROS has no "brick" sport in its own tool surface either,
+  per the tool table below; a brick workout pushed to COROS would need
+  to become two separate single-sport pushes, not attempted yet).
+- **The real write tools are now confirmed** (from
+  `coroslab/COROS-MCP`'s `docs/en/tools.md`, reached via
+  `raw.githubusercontent.com` — `github.com`'s own page and
+  `api.github.com` are blocked from this sandbox, but raw file URLs
+  on that specific subdomain work): `createTrainingPlan`/
+  `updateTrainingPlan` (multi-week plans, 4-16 weeks, running/cycling/
+  trail running), `createSingleWorkout`/`updateWorkoutDetails` (single
+  library workouts), `scheduleWorkout` (places an existing library
+  workout on a date, up to 90 days out), `createScheduledWorkout`/
+  `updateScheduledWorkout` (a standalone workout directly on a specific
+  date, not saved to the library — the closest match to how Cadencia's
+  own `workouts` rows already work, one dated row per workout). Every
+  write tool's workout content is a `course` object described only as
+  containing "name, sport, sections, and training targets" — **the
+  internal schema for sections/steps (warmup/interval/recovery/
+  cooldown) and pace/HR/power targets is NOT in any doc this sandbox
+  could reach**, so still unconfirmed, same caveat the old Partner-API
+  `tp/list/push` guess carried. Read tools are also now confirmed
+  (`queryTrainingPlanLibrary`, `queryTrainingPlanDetails`,
+  `queryTrainingSchedule`, `queryWorkoutLibrary`, `queryWorkoutDetails`,
+  `queryScheduledWorkoutDetails`, `querySportRecords`,
+  `getActivityDetail`, `queryActivityLapData`,
+  `queryCustomActivityLapData`) — a real pull-sync feature (mirroring
+  Strava/WHOOP's own "Sync now") is newly possible here that wasn't
+  confirmed as existing at all under the old Partner-API framing.
+- **A genuinely useful property of MCP that doesn't exist for any other
+  integration in this codebase**: every tool's full input schema is
+  self-describing via the protocol's own `tools/list` call — once a
+  real OAuth connection exists, Cadencia can ask the MCP server for the
+  real `course` schema directly instead of needing it handed over in a
+  doc. This is the concrete next step once connecting is possible at
+  all (see below), not another round of doc-hunting.
+- **Still unconfirmed and blocking any real implementation**: the exact
+  OAuth 2.0 mechanism for a custom (non-ChatGPT/Claude-connector-UI)
+  application. The email says "implement OAuth 2.0 in your app... any
+  OAuth 2.0 client library will work" with **no mention anywhere of a
+  developer-portal client-ID step** — unlike every other integration in
+  this codebase (Strava, WHOOP, Garmin Developer), which all required
+  registering an app somewhere first. That absence is consistent with
+  the official MCP Authorization spec's standard shape (metadata
+  discovery via `.well-known/oauth-protected-resource` +
+  `.well-known/oauth-authorization-server`, then Dynamic Client
+  Registration per RFC 7591, then PKCE) — a real, published standard,
+  the same "generic OAuth2 is safe to code, specific URLs are not"
+  confidence tier this codebase already extends to Strava/WHOOP's
+  classic OAuth2 shape — but this is an **inference from absence**, not
+  confirmed the way COROS's regional MCP URLs and tool names now are.
+  The one page that most likely spells this out plainly — support.
+  coros.com's "Build on COROS MCP" article, specifically its "Setup
+  Guide" section for "other platforms, manual MCP setup" (as opposed to
+  the built-in ChatGPT/Claude connector flow) — is **blocked from this
+  sandbox's egress proxy** (`support.coros.com` fails the CONNECT
+  tunnel, same as `developer.garmin.com` was before Garmin's real docs
+  got pasted directly into chat). Direct network probes from this
+  sandbox against `mcp.coros.com` itself (its `.well-known` discovery
+  endpoints) are also blocked the same way, so the discovery mechanism
+  couldn't be confirmed by calling it live either.
+- **`lib/integrations/coros.ts`'s existing Partner-API-shaped scaffold
+  (OAuth env vars, `buildCorosAuthorizeUrl`, `pushStructuredWorkoutToCoros`
+  posting to a guessed `tp/list/push`) was left in place but clearly
+  flagged superseded at the top of the file**, rather than half-rewritten
+  against an unconfirmed OAuth mechanism — building a new MCP JSON-RPC
+  client (the official `@modelcontextprotocol/sdk` package is the
+  obvious tool for this, not yet a dependency) and a Dynamic Client
+  Registration flow blind, with no way to test any of it from this
+  sandbox and a real chance the OAuth inference above is wrong, would
+  very likely mean throwing it away and starting over once the real
+  Setup Guide is actually read — the same reasoning this codebase
+  already applies everywhere else to an unconfirmed integration shape
+  (Garmin's env vars with no baked-in default, the old COROS Partner-
+  API scaffold itself). `/settings`'s COROS card copy was updated to
+  say plainly that the right real path is MCP and this connect flow
+  hasn't been rebuilt for it yet, instead of the old "pending partner
+  approval" framing, which is no longer accurate (nothing is pending
+  anymore — the path itself changed).
+- **Before building the real MCP integration**: get the support.coros.
+  com Setup Guide's actual OAuth-for-custom-apps content (paste it, or
+  screenshots, same as unblocked WHOOP's and Garmin's real specs this
+  session) — specifically whether it really is discovery + DCR + PKCE
+  with zero manual registration step, or whether there's a dashboard/
+  client-ID step after all that the email's wording just didn't
+  mention. Once connected for real, call `tools/list` immediately and
+  store the raw response (same "capture now, parse later" discipline
+  `garmin_push_events` already uses) before attempting to build a real
+  `course` payload from Cadencia's own `WorkoutStep[]` model.
+
 ## Style
 
 Bilingual ES/EN throughout (`src/lib/i18n/context.tsx`), same pattern as

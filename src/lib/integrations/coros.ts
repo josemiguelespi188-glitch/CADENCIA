@@ -8,6 +8,33 @@ import type { Workout, WorkoutStep } from "@/lib/types";
  * Partner API application (see CLAUDE.md's "COROS structured-workout
  * push" section for the full story).
  *
+ * ⚠️ SUPERSEDED (Nov 2026) — read CLAUDE.md's "COROS Partner API
+ * application superseded by COROS MCP" section before touching this
+ * file. COROS's real API support replied: for exactly Cadencia's use
+ * case (pushing structured run/trail-run/cycling workouts), the Partner
+ * API this file was written against is NOT the right path at all —
+ * **COROS MCP** (`https://mcp.coros.com/mcp`, a Model Context Protocol
+ * server, needing no application or approval) is. Everything below this
+ * comment is the OLD Partner-API-shaped scaffold (`tp/list/push`, a
+ * guessed REST endpoint) and does not apply to MCP, which speaks
+ * JSON-RPC over HTTP, not plain REST, and whose real OAuth mechanism
+ * (standards-based discovery + Dynamic Client Registration are the
+ * likely shape, per the official MCP Authorization spec — "no
+ * application or approval needed" is consistent with DCR, but this is
+ * inferred, not confirmed) and whose `course` payload schema (the
+ * workout's actual warmup/interval/recovery/cooldown steps and pace/HR/
+ * power targets) are both still unconfirmed — the one page that likely
+ * has both (support.coros.com's "Setup Guide," linked from the Build on
+ * COROS MCP article) is blocked from this sandbox's egress proxy (same
+ * as `developer.garmin.com` and the old Dropbox-hosted COROS guide). Do
+ * NOT resume building against `tp/list/push` or the `COROS_*` Partner-
+ * API env vars below — that path is confirmed wrong for this use case,
+ * not just unconfirmed. The real rewrite needs an MCP JSON-RPC client
+ * (the `@modelcontextprotocol/sdk` package is the obvious choice) and
+ * either the Setup Guide's real OAuth details, or a live trial-and-error
+ * pass against `https://mcp.coros.com/.well-known/oauth-protected-
+ * resource` from a machine that can actually reach it.
+ *
  * **Everything in this file that is COROS-API-SPECIFIC is unconfirmed.**
  * This sandbox could never reach COROS's real API Reference Guide
  * (Dropbox is blocked from here) or `docs.tryterra.co`, so nothing below
@@ -16,9 +43,9 @@ import type { Workout, WorkoutStep } from "@/lib/types";
  * reverse-engineered field names mentioned in a forum/open-source project
  * (noted inline below, NOT an official source). Treat every COROS-
  * specific constant, field name, and endpoint path here as a placeholder
- * to verify — and very possibly rewrite — once the real Partner API docs
- * are in hand. Do not wire a "Sync now" button to `pushStructuredWorkoutToCoros`
- * believing it will work; it almost certainly will not, as written.
+ * — and now a confirmed dead end for this app's actual use case, see
+ * above. Do not wire a "Sync now" button to `pushStructuredWorkoutToCoros`
+ * believing it will work; it will not, as written.
  */
 
 /**
