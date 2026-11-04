@@ -2672,6 +2672,31 @@ connection, not just document the gap.
   with a real `coros_connections` row, and that `tools_catalog` ends up
   holding a real tool list after that — then read it to finally build
   `pushStructuredWorkoutToCorosMcp()` for real.
+- **Confirmed live (Nov 2026): the real OAuth flow works end to end.**
+  José connected for real — COROS's own authorize screen (a real
+  "authorization" page asking for the COROS account email/password and
+  listing the exact two scopes requested: personal info + workout data
+  including routes) appeared, and `/settings` showed "Connected" after.
+  This is the first live confirmation that the discovery + DCR + PKCE
+  flow this file describes above actually works against COROS's real
+  server, not just in theory.
+- **"Push to COROS" still throws its "not built yet" error on a real,
+  connected account — this is expected, not a bug** (reported live via
+  a screenshot of exactly that message). `pushStructuredWorkoutToCorosMcp()`
+  is deliberately unimplemented until the real `course` payload schema
+  is read from `coros_connections.tools_catalog` — see this file's own
+  header comment. **New debug surface added so that schema can actually
+  be read without SQL Editor access**: `GET /api/coros/tools-catalog`
+  (signed-in athlete only) returns the connected athlete's captured
+  `tools_catalog`/`tools_captured_at`; `/settings`'s COROS card gained a
+  "View captured schema" button (shown once connected) that fetches and
+  pretty-prints it in a scrollable `<pre>` with a Copy button — this
+  sandbox still can't reach `mcp.coros.com` itself, so reading the real
+  schema and implementing the push function for real needs that JSON
+  pasted back from a real connected account (José's, now that it's
+  connected) rather than fetched here. If the panel says nothing was
+  captured, disconnecting and reconnecting COROS re-runs
+  `captureCorosToolCatalog()`.
 
 ## Community — Phase 1: roster, roles, open join (Nov 2026)
 

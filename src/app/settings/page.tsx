@@ -373,6 +373,8 @@ function AthleteCorosCard() {
   const isEn = locale === "en";
   const [status, setStatus] = useState<StravaStatus | null>(null);
   const [busy, setBusy] = useState(false);
+  const [catalog, setCatalog] = useState<{ toolsCatalog: unknown; capturedAt: string | null } | "loading" | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const loadStatus = useCallback(async () => {
     const res = await fetch("/api/coros/status");
@@ -392,6 +394,20 @@ function AthleteCorosCard() {
       await loadStatus();
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function loadCatalog() {
+    setCatalog("loading");
+    const res = await fetch("/api/coros/tools-catalog");
+    setCatalog(res.ok ? await res.json() : null);
+  }
+
+  async function copyCatalog() {
+    if (catalog && catalog !== "loading" && catalog.toolsCatalog) {
+      await navigator.clipboard.writeText(JSON.stringify(catalog.toolsCatalog, null, 2));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
   }
 
@@ -420,7 +436,43 @@ function AthleteCorosCard() {
             <Button size="sm">{isEn ? "Connect" : "Conectar"}</Button>
           </a>
         )}
+        {status?.connected && !catalog && (
+          <Button size="sm" variant="ghost" onClick={loadCatalog}>
+            {isEn ? "View captured schema" : "Ver esquema capturado"}
+          </Button>
+        )}
       </div>
+
+      {/* Debug/dev surface, not an athlete-facing feature — shows the raw
+          MCP tools/list response captured on connect
+          (coros_connections.tools_catalog), so the real `course` payload
+          schema can be read and pasted back for implementing
+          pushStructuredWorkoutToCorosMcp() for real. See CLAUDE.md. */}
+      {catalog === "loading" ? (
+        <p className="mt-4 text-xs text-ink-3">{isEn ? "Loading…" : "Cargando…"}</p>
+      ) : catalog ? (
+        !catalog.toolsCatalog ? (
+          <p className="mt-4 text-xs text-ink-3">
+            {isEn
+              ? "Nothing captured yet — try disconnecting and reconnecting COROS."
+              : "Todavía no hay nada capturado — prueba desconectar y volver a conectar COROS."}
+          </p>
+        ) : (
+          <div className="mt-4">
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-widest text-ink-3">
+                {isEn ? "Captured" : "Capturado"} {catalog.capturedAt ? new Date(catalog.capturedAt).toLocaleString(locale) : ""}
+              </span>
+              <Button size="sm" variant="ghost" onClick={copyCatalog}>
+                {copied ? (isEn ? "Copied!" : "¡Copiado!") : isEn ? "Copy" : "Copiar"}
+              </Button>
+            </div>
+            <pre className="max-h-80 overflow-auto rounded-xl border border-line bg-bg p-3 text-[11px] leading-snug text-ink-2">
+              {JSON.stringify(catalog.toolsCatalog, null, 2)}
+            </pre>
+          </div>
+        )
+      ) : null}
     </Card>
   );
 }
