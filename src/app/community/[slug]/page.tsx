@@ -9,7 +9,10 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { AssignCommunityWorkoutDialog } from "@/components/AssignCommunityWorkoutDialog";
+import { CommunityCountdown } from "@/components/CommunityCountdown";
+import { CommunityFitnessChart } from "@/components/CommunityFitnessChart";
 import { computeCommunityStats } from "@/lib/communityStats";
+import { addDays, today, ymd } from "@/lib/dates";
 import type { ActivityWithSlug, Community, StravaActivity } from "@/lib/types";
 
 /**
@@ -90,7 +93,22 @@ export default function CommunityDetailPage({ params }: { params: Promise<{ slug
   const coach = community ? athletes.find((a) => a.id === community.created_by) : null;
   const isCoachOrAdmin = !!me && !!community && (me.id === community.created_by || me.is_admin);
   const members = memberIds.map((id) => athletes.find((a) => a.id === id)).filter((a): a is NonNullable<typeof a> => !!a);
-  const stats = computeCommunityStats(activities, new Set(memberIds));
+
+  // Nov 2026, direct request: "Aquí no es un last 30 days. sino desde
+  // que comienza el entrenamiento hasta que se llega al día del evento
+  // deportivo." A community with both dates set gets a window spanning
+  // its own training block (capped at today, since there's no synced
+  // data beyond "now" anyway); one with no training_start_date set yet
+  // falls back to a plain last-30-days window — the original behavior —
+  // rather than showing nothing until a coach gets around to setting
+  // dates.
+  const todayStr = ymd(today());
+  const dateRange = community
+    ? community.training_start_date
+      ? { from: community.training_start_date, to: community.event_date && community.event_date < todayStr ? community.event_date : todayStr }
+      : { from: ymd(addDays(today(), -30)), to: todayStr }
+    : { from: ymd(addDays(today(), -30)), to: todayStr };
+  const stats = computeCommunityStats(activities, new Set(memberIds), dateRange);
 
   return (
     <div className="flex min-h-screen flex-col bg-bg">
@@ -139,7 +157,15 @@ export default function CommunityDetailPage({ params }: { params: Promise<{ slug
               {error && <p className="mb-4 text-sm text-error">{error}</p>}
               {assignNotice && <p className="mb-4 rounded-lg bg-surface-2 px-3 py-2 text-sm text-ink-2">{assignNotice}</p>}
 
-              <CommunityStatsSection stats={stats} isEn={isEn} />
+              <CommunityCountdown community={community} isCoachOrAdmin={isCoachOrAdmin} isEn={isEn} onUpdated={load} />
+
+              <CommunityStatsSection stats={stats} isEn={isEn} dateRange={dateRange} />
+
+              {members.length > 0 && (
+                <div className="mt-6">
+                  <CommunityFitnessChart members={members} dateRange={dateRange} />
+                </div>
+              )}
 
               <h2 className="mb-3 mt-8 text-sm uppercase tracking-widest text-ink-3">
                 {isEn ? "Members" : "Miembros"} ({members.length})
@@ -202,15 +228,26 @@ const SPORT_LABEL: Record<string, { en: string; es: string }> = {
   other: { en: "Other", es: "Otro" },
 };
 
-function CommunityStatsSection({ stats, isEn }: { stats: ReturnType<typeof computeCommunityStats>; isEn: boolean }) {
+function CommunityStatsSection({
+  stats,
+  isEn,
+  dateRange,
+}: {
+  stats: ReturnType<typeof computeCommunityStats>;
+  isEn: boolean;
+  dateRange: { from: string; to: string };
+}) {
   const { athletes } = useAuth();
   const totalKm = stats.totalDistanceM / 1000;
   const totalHrs = stats.totalMovingTimeS / 3600;
   const maxDist = Math.max(1, ...stats.leaderboard.map((m) => m.distanceM));
+  const windowLabel = isEn ? `${dateRange.from} to ${dateRange.to}` : `${dateRange.from} a ${dateRange.to}`;
 
   return (
     <div>
-      <h2 className="mb-3 text-sm uppercase tracking-widest text-ink-3">{isEn ? "Community stats (last 30 days)" : "Estadísticas de la comunidad (últimos 30 días)"}</h2>
+      <h2 className="mb-3 text-sm uppercase tracking-widest text-ink-3">
+        {isEn ? `Community stats (${windowLabel})` : `Estadísticas de la comunidad (${windowLabel})`}
+      </h2>
       {stats.totalCount === 0 ? (
         <p className="text-sm text-ink-3">{isEn ? "No synced activity from this community yet." : "Todavía no hay actividad sincronizada de esta comunidad."}</p>
       ) : (

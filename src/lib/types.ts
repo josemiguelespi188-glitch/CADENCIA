@@ -384,6 +384,12 @@ export interface Community {
   description: string;
   created_by: string | null;
   created_at: string;
+  /** The race/event this community trains toward — set manually by the
+   * coach/admin (Nov 2026), never auto-derived. */
+  event_date: string | null;
+  /** When this community's training block started — set manually by the
+   * coach/admin. Widens the community stats window beyond last-30-days. */
+  training_start_date: string | null;
 }
 
 /** One row in community_members — a plain join, no per-membership role

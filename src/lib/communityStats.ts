@@ -26,15 +26,39 @@ export interface CommunityStats {
 /**
  * Aggregates synced Strava activity across every member of a community —
  * Community Phase 2 (see CLAUDE.md's "Community" section). Pure function,
- * no fetch: the caller passes whatever window `strava_activities` already
- * covers (last 30 days, same as everywhere else in this app that reads
- * this table — see CLAUDE.md's "no necesito lo histórico" note on Strava
- * sync). Real Strava data, nothing fabricated — a community with nobody
+ * no fetch: the caller passes whatever `strava_activities` rows it already
+ * loaded. Real Strava data, nothing fabricated — a community with nobody
  * synced simply returns all-zero totals and an empty leaderboard, not a
  * guessed number.
+ *
+ * `dateRange` (Nov 2026, see CLAUDE.md's "Community event countdown"
+ * section — direct request: "Aquí no es un last 30 days. sino desde que
+ * comienza el entrenamiento hasta que se llega al día del evento
+ * deportivo") narrows the window to a community's own training block
+ * instead of whatever `strava_activities` happens to hold — `from`/`to`
+ * are inclusive YYYY-MM-DD strings, either side optional (omit `to` to
+ * mean "through today," omit `from` for "no lower bound"). Filters on
+ * each activity's own local calendar date (`local_date`, falling back to
+ * `start_date`'s own date slice for an older row synced before that
+ * column existed) — never on `synced_at`, which is unrelated to when the
+ * activity itself happened. Omit `dateRange` entirely to keep the old
+ * "whatever was passed in" behavior (the caller's own window, e.g. a
+ * fixed last-30-days fetch).
  */
-export function computeCommunityStats(activities: ActivityWithSlug[], memberAthleteIds: Set<string>): CommunityStats {
-  const relevant = activities.filter((a) => memberAthleteIds.has(a.athlete_id));
+export function computeCommunityStats(
+  activities: ActivityWithSlug[],
+  memberAthleteIds: Set<string>,
+  dateRange?: { from?: string | null; to?: string | null },
+): CommunityStats {
+  const relevant = activities.filter((a) => {
+    if (!memberAthleteIds.has(a.athlete_id)) return false;
+    if (dateRange) {
+      const date = a.local_date ?? a.start_date.slice(0, 10);
+      if (dateRange.from && date < dateRange.from) return false;
+      if (dateRange.to && date > dateRange.to) return false;
+    }
+    return true;
+  });
   const bySportMap = new Map<string, CommunitySportTotal>();
   const byMemberMap = new Map<string, CommunityMemberTotal>();
 

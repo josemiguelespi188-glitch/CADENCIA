@@ -746,8 +746,16 @@ create table if not exists communities (
   name text not null,
   description text not null default '',
   created_by uuid references athletes(id) on delete set null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- Migration 037 — set manually by the coach/admin, never auto-derived.
+  event_date date,
+  training_start_date date
 );
+
+comment on column communities.event_date is
+  'The date of the race/event this community is training toward — set manually by the coach/admin, never auto-derived.';
+comment on column communities.training_start_date is
+  'When this community''s training block started — set manually by the coach/admin. Used to widen the community stats window beyond a fixed last-30-days range.';
 
 alter table communities enable row level security;
 drop policy if exists communities_select_authenticated on communities;
@@ -759,6 +767,17 @@ create policy communities_insert_coach on communities
   with check (
     created_by = (select id from athletes where auth_user_id = auth.uid())
     and exists (select 1 from athletes where auth_user_id = auth.uid() and (is_coach or is_admin))
+  );
+drop policy if exists communities_update_coach on communities;
+create policy communities_update_coach on communities
+  for update to authenticated
+  using (
+    created_by = (select id from athletes where auth_user_id = auth.uid())
+    or exists (select 1 from athletes where auth_user_id = auth.uid() and is_admin)
+  )
+  with check (
+    created_by = (select id from athletes where auth_user_id = auth.uid())
+    or exists (select 1 from athletes where auth_user_id = auth.uid() and is_admin)
   );
 
 create table if not exists community_members (

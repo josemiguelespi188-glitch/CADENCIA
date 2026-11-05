@@ -3881,3 +3881,85 @@ suggested 20/50 options).
   blocks a 6th generation in the same rolling week and recovers after
   7 days pass, and that a saved admin instruction (e.g. a required
   structure) actually shows up influencing a real generation's output.
+
+## Community event countdown + extended stats window + CTL progress chart (Nov 2026)
+
+Two direct requests on the same `/community/[slug]` screenshot:
+*"Débería haber una barra the timing para calcular cuando es el
+evento de la comunidad por el cual se esta entrenando. y QUE HAYAN
+GRÁFICOS DE mejora hacia el objetivo... Sería bunazo ver un grafico
+xy donde se va moviendo el usuario según su entrenamiento y carga."*
+and, on the exact same page: *"Aquí no es un last 30 days. sino desde
+que comienza el entrenamiento hasta que se llega al día del evento
+deportivo."* Confirmed via `AskUserQuestion` before building (the
+metric for the progress chart, and where the training-start date
+comes from — both genuinely pivotal, hard-to-reverse choices):
+**Fitness/CTL** (reusing the already-existing Banister model) is the
+progress metric, and **the coach sets both dates manually** (not
+auto-derived from anything, e.g. the earliest workout or first synced
+activity).
+
+- **Migration `037_community_event_dates.sql`** (mirrored in
+  `schema.sql` — **needs this migration run in the Supabase SQL
+  editor**): `communities.event_date` / `communities
+  .training_start_date` (both plain nullable `date` columns). Also
+  adds `communities_update_coach`, the first **update** RLS policy
+  this table has ever had (previously select + insert only) — same
+  `created_by`/`is_admin` check `communities_insert_coach` already
+  uses, so only this community's own coach or any admin can edit
+  these two dates.
+- **`CommunityCountdown.tsx`** (new): a card at the top of
+  `/community/[slug]`, right below the Join/Leave row. The coach/
+  admin gets an "Edit dates" button opening two plain `<input
+  type="date">` fields + Save (a direct `communities` update through
+  the browser Supabase client, same pattern every other Community
+  write already uses — no new API route). Once both dates exist, a
+  progress bar shows elapsed-vs-total days of the training block plus
+  a "N day(s) to go" / "Event day!" / "Event has passed" label. A
+  community with neither date set and no coach/admin viewing it
+  renders nothing here at all (nothing to show, nothing to edit).
+- **`computeCommunityStats()`** (`lib/communityStats.ts`) gained an
+  optional third parameter, `dateRange: {from?, to?}` — filters each
+  activity by its own `local_date` (falling back to `start_date`'s
+  date slice for an older row synced before that column existed),
+  never by `synced_at`. `/community/[slug]/page.tsx` now always passes
+  one: `{from: training_start_date, to: min(today, event_date)}` once
+  a community has set `training_start_date`, otherwise a **plain
+  last-30-days fallback** — exactly the "sensible fallback for
+  communities that haven't set these dates yet" this needed, matching
+  the original (now dynamic-labeled) behavior until a coach actually
+  sets dates. The stats section's own heading now shows the real
+  `from`–`to` window instead of a hardcoded "(last 30 days)" string.
+- **`CommunityFitnessChart.tsx`** (new) — the "gráfico xy" request:
+  one multi-line SVG chart, one line per member, each a distinct color
+  drawn from this app's existing sport-accent tokens (`--swim`,
+  `--bike`, `--run`, `--gym`, `--brick` — reused as a plain rotating
+  palette here, not tied to any sport meaning) with a name-labeled
+  legend below. **Reads `whoop_cycles.strain`**, not the stale
+  `strava_daily_load` table — matching this project's own prior,
+  explicit switch of the Fitness/Fatigue/Form model off Strava's
+  Relative Effort and onto WHOOP Strain (see the "Fitness/Fatigue/Form
+  switched to WHOOP Strain" section above); `strava_daily_load` is
+  still "left in place, untouched... no longer read by anything," and
+  this chart doesn't change that. CTL itself is computed from each
+  member's **full** available WHOOP history via the exact same
+  `computeFitnessForm()` `FitnessPanel.tsx` already uses (so the
+  42-day ramp-up is real, not artificially reset at the training
+  block's own start date) — only the **displayed** series is then
+  sliced down to the community's `dateRange`, so the chart shows
+  genuine progress across the training block without understating
+  day-one fitness as if everyone started from zero the moment training
+  began. A member with no WHOOP history synced yet simply doesn't get
+  a line — real data only, same "never fabricate" rule this file
+  applies everywhere else (Best Efforts, the Fitness panel's own
+  `warmedUp` flag, etc).
+- Not yet tested against a real Supabase project from this sandbox
+  (same standing limitation as every other Supabase-dependent feature
+  here) — confirm once deployed: run migration 037, that a coach can
+  actually set/edit both dates and a non-coach/non-admin member
+  correctly can't (RLS, not just the UI hiding the button), that the
+  countdown bar's day count and progress percentage look right for a
+  real training block, that the stats window actually widens once
+  dates are set instead of staying at 30 days, and that the CTL chart
+  renders a real multi-line comparison once more than one member has
+  WHOOP history synced.
