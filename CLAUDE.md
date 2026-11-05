@@ -3632,3 +3632,36 @@ Make/Remove admin and Make/Remove coach toggles.
   "Jose" by their display name, which this sandbox can't see live.
   Going forward, the admin UI button above is the way to remove any
   future stray row without needing SQL again.
+
+## Profile name is now editable (Nov 2026)
+
+Direct complaint: "I should be able to edit my profile name." The
+`athletes.name` column was never shown in `AthleteProfileCard.tsx`
+anywhere except the card's own read-only title (`{athlete?.name} ·
+Athlete Profile`) — every field under "Personal info" (birth date,
+sex, height, weight) was editable except the name itself.
+
+- Added a required "Name" input, first field in the "Personal info"
+  section (before Birth date) — saved in the same single-Save form as
+  every other profile field, same pattern this card already uses.
+- Keeps `athletes.initials` in step with the new name
+  (`initialsFrom()`, the same helper the admin invite flow and
+  Google self-registration both already use to derive it) — otherwise
+  a changed name would leave `SiteHeader`'s avatar circle showing
+  stale initials (e.g. "José Miguel" -> "Pepe" would keep showing
+  "JE"). Deliberately does NOT touch `slug` — that's used in URLs and
+  is also this very component's own query key (`load()` fetches by the
+  `slug` prop), so changing it here would be a real risk for no
+  requested benefit.
+- Calls `refreshAthletes()` (from `useAuth()`) right after a successful
+  save — `AuthCtx`'s own doc comment on that function already
+  anticipated exactly this case ("call after... editing your own
+  profile's name"), so `SiteHeader`'s profile chip and the Friends
+  dropdown both pick up the new name immediately, no full page reload
+  needed.
+- `AthleteProfileCard` is only ever rendered for the signed-in
+  athlete's own profile (`/settings`, `/onboarding`) — confirmed by
+  checking every call site — never for viewing another athlete's
+  profile (Community's own read-only member view is a separate,
+  purpose-built component), so there's no risk of this letting anyone
+  edit someone else's name.

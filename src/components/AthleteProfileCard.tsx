@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useLocale } from "@/lib/i18n/context";
+import { useAuth } from "@/lib/auth-context";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SPORTS, type Athlete, type AthleteSlug, type PersonalBest, type Sport } from "@/lib/types";
 import { durationLabel, parseDuration } from "@/lib/dates";
 import { DISTANCE_PRESETS, predictRaceTimes } from "@/lib/racePredictor";
+import { initialsFrom } from "@/lib/athleteSlug";
 import { ZoneTables } from "@/components/ZoneTables";
 
 function newId() {
@@ -30,8 +32,10 @@ function newId() {
 export function AthleteProfileCard({ slug }: { slug: AthleteSlug }) {
   const { t, locale } = useLocale();
   const isEn = locale === "en";
+  const { refreshAthletes } = useAuth();
 
   const [athlete, setAthlete] = useState<Athlete | null>(null);
+  const [name, setName] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [sex, setSex] = useState<"" | "male" | "female" | "other">("");
   const [heightCm, setHeightCm] = useState("");
@@ -53,6 +57,7 @@ export function AthleteProfileCard({ slug }: { slug: AthleteSlug }) {
     const { data } = await supabase.from("athletes").select("*").eq("slug", slug).maybeSingle();
     const a = data as Athlete | null;
     setAthlete(a);
+    setName(a?.name ?? "");
     setBirthDate(a?.birth_date ?? "");
     setSex((a?.sex as "male" | "female" | "other" | null) ?? "");
     setHeightCm(a?.height_cm ? String(a.height_cm) : "");
@@ -91,6 +96,11 @@ export function AthleteProfileCard({ slug }: { slug: AthleteSlug }) {
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (!athlete) return;
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setSaveError(isEn ? "Name can't be empty." : "El nombre no puede estar vacío.");
+      return;
+    }
     setSaving(true);
     setSaved(false);
     setSaveError(null);
@@ -99,6 +109,13 @@ export function AthleteProfileCard({ slug }: { slug: AthleteSlug }) {
       const { error } = await supabase
         .from("athletes")
         .update({
+          name: trimmedName,
+          // Keeps the header's avatar initials in step with a changed
+          // name instead of going stale (e.g. "José Miguel" -> "Pepe"
+          // would otherwise still show "JE"). Doesn't touch `slug` —
+          // that's used in URLs/exports and this component's own
+          // `load()` query key, too risky to change from a name edit.
+          initials: initialsFrom(trimmedName),
           birth_date: birthDate || null,
           sex: sex || null,
           height_cm: heightCm ? Number(heightCm) : null,
@@ -121,6 +138,12 @@ export function AthleteProfileCard({ slug }: { slug: AthleteSlug }) {
       } else {
         setSaved(true);
         await load();
+        // Reflects a changed name in SiteHeader's profile chip and the
+        // Friends dropdown immediately, without a full page reload —
+        // this is exactly the case refreshAthletes's own doc comment in
+        // auth-context.tsx already anticipated ("call after... editing
+        // your own profile's name").
+        await refreshAthletes();
       }
     } finally {
       setSaving(false);
@@ -139,6 +162,9 @@ export function AthleteProfileCard({ slug }: { slug: AthleteSlug }) {
             {isEn ? "Personal info" : "Información personal"}
           </h4>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Field label={isEn ? "Name" : "Nombre"}>
+              <input required value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
+            </Field>
             <Field label={isEn ? "Birth date" : "Fecha de nacimiento"}>
               <input type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} className={inputCls} />
             </Field>
