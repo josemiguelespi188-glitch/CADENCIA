@@ -8,9 +8,11 @@ import { useLocale } from "@/lib/i18n/context";
 import { Button } from "@/components/ui/button";
 import type { Athlete } from "@/lib/types";
 
-/** Routes reachable with no session — only the one page that CREATES a
- * session from an invite/recovery email link. Checked by prefix since
- * Next route params aren't known statically here. */
+/** Routes reachable with no session — checked by prefix since Next route
+ * params aren't known statically here. Does NOT include "/" (the public
+ * home/registration page, Nov 2026) — a prefix check on "/" would match
+ * every path in the app and defeat the whole gate, so root is matched
+ * exactly instead, right where this list is used below. */
 const PUBLIC_PATHS = [
   "/accept-invite",
   // Needs to be reachable with no account — e.g. for Garmin/COROS API
@@ -45,7 +47,7 @@ const Ctx = createContext<AuthCtx | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const isPublicPath = PUBLIC_PATHS.some((p) => pathname?.startsWith(p));
+  const isPublicPath = pathname === "/" || PUBLIC_PATHS.some((p) => pathname?.startsWith(p));
 
   const [session, setSession] = useState<Session | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);

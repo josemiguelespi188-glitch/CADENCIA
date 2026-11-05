@@ -2956,3 +2956,77 @@ the Operations Hub's forms — a flat `t(key)` lookup, not nested namespaces,
 to keep every page's strings in one place. No em dash (`—`) in any
 user-facing string, matching the Operations Hub's own style rule — fine in
 this file and in code comments, never in UI copy.
+
+## Public home / self-registration page (Nov 2026)
+
+Direct request, from the same session that surfaced the Supabase email
+rate-limit/SMTP issues above: "Quiero una pagina de incio para
+registrarse a cadencia." Two forks confirmed via `AskUserQuestion`
+before building, since guessing either wrong meant real rework:
+
+1. **Registration method, confirmed answer**: "deja lo de google, pero
+   no le conectemos aún. pon un mensaje de que esta función aún no esta
+   habilitada. Crear contraseña y poner el mail, así simple" — plain
+   email+password self-registration is the ACTIVE method (no invite
+   needed, same open philosophy Google sign-in already has); the
+   Google button is shown but deliberately disabled with a "not
+   available yet" note. This is scoped to only this new page's own
+   button — the already-built, fully-wired Google OAuth flow on the
+   gated sign-in screen (`SignInScreen` in `auth-context.tsx`) is
+   completely unchanged.
+2. **Location, confirmed answer**: "Página pública nueva y separada" —
+   a real public page, not a redesign of the existing gated sign-in
+   screen. Lives at `/` (the literal "home page"), replacing this
+   app's old `redirect("/calendar")` root page.
+
+- **`app/page.tsx`**: on mount, checks for an existing session and
+  redirects to `/calendar` if one exists (so a returning signed-in
+  visitor isn't shown a registration form); otherwise shows the
+  welcome copy + disabled Google button + email/password/confirm form.
+  Submits via `supabase.auth.signUp()` and handles both real outcomes:
+  an immediate `data.session` (Supabase's "Confirm email" setting is
+  off) calls the new `POST /api/auth/ensure-athlete` then routes into
+  `/settings`; no immediate session (confirmation required) shows a
+  "check your email" message instead. A link at the bottom routes an
+  already-registered visitor to `/calendar`, which shows the existing
+  gated sign-in screen (email/password sign-in, the real Google
+  button, "Forgot your password?") — unchanged.
+- **`api/auth/ensure-athlete/route.ts`** (new): reads the caller's own
+  session server-side, then calls `lib/ensureAthlete.ts`'s
+  `ensureAthleteForUser()` — the exact same idempotent athlete-row-
+  creation logic Google's self-registration already uses (checks for
+  an existing row by `auth_user_id` or email first, creates one if
+  not, name falls back to the email's local part since this form
+  collects no name field). Reused rather than duplicated, so a new
+  athlete's row looks identical regardless of which self-registration
+  path created it.
+- **`lib/auth-context.tsx`**: `PUBLIC_PATHS` deliberately does NOT
+  include `"/"` — that list is matched by `pathname.startsWith(p)`,
+  and `"/".startsWith("/")` would match literally every path in the
+  app, defeating the whole auth gate. `isPublicPath` now checks
+  `pathname === "/" || PUBLIC_PATHS.some(...)` instead — root is
+  matched exactly, every other public path still by prefix.
+- **Strongly recommended, not yet confirmed done**: turn OFF
+  Supabase's "Confirm email" setting (Auth -> Providers -> Email ->
+  Confirm email) for this project. With it off, `signUp()` returns a
+  session immediately and self-registration needs **zero** Supabase
+  emails at all — directly avoiding the "email rate limit exceeded" /
+  "invalid or expired" problems documented above, which was the whole
+  reason this page exists in the first place ("seguimos usando los
+  mails de supabase," i.e. no custom SMTP domain was set up either).
+  With it left on, `signUp()`'s confirmation email would need the same
+  `token_hash`-pattern email-template fix already documented for
+  Invite/Reset Password, applied a third time to "Confirm signup" (not
+  done) — and the confirmation link lands on `/accept-invite`, which
+  will ask the new user to set a password again (harmless redundancy,
+  not a broken flow, just not polished) since that page's own flow was
+  built for the invite case, not a user who already picked one at
+  signup.
+- Not yet tested against a real Supabase project from this sandbox
+  (same standing limitation as every other Supabase-dependent feature
+  here) — confirm once deployed: that a brand-new email+password
+  registration actually works end to end (ideally with "Confirm
+  email" off, per the recommendation above), that the resulting
+  `athletes` row looks correct, and that an already-registered
+  visitor hitting `/` gets redirected straight to `/calendar` instead
+  of seeing the registration form again.
