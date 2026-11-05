@@ -3539,3 +3539,56 @@ complaints with screenshots.
   retroactively links on the next sync, and that typing a description
   directly on an unmatched activity in `ActivityDetailDialog` really
   shows up on the live Strava activity page.
+
+## Friends picker: single-select "view their week," not a merge (Nov 2026)
+
+Direct complaint, with a screenshot of the old checkbox dropdown: "Aqui
+debería ser solo para ver my friend. no me gusta que se haga merge con
+sus actividades mi calendario... que sea mas view my friends week...
+el merge va más en community." The old "Friends" dropdown was a
+multi-select checkbox list — checking a friend added their workouts
+and Strava activities onto your OWN calendar, rendered together
+(chips tagged with initials to tell them apart). That whole
+merged-multi-athlete view is gone from `/calendar`; what's left is a
+plain switch between whose single week you're looking at.
+
+- **`lib/auth-context.tsx`**: `viewing: string[]` is now always exactly
+  one slug (never merged) — `toggleFriend(slug)` (add/remove from a set)
+  was replaced with **`viewAthlete(slug)`**, which just replaces
+  `viewing` with `[slug]` entirely (persisted to the same
+  `cadencia-viewing` localStorage key, now always a single-element
+  array). No other file needed to change its own filtering logic
+  (`calendar/page.tsx`, `DashboardPanel.tsx` both already filter with
+  `viewing.includes(...)`, which still works correctly against a
+  length-1 array) — only the picker UI and the context method it calls
+  changed. `isMultiple` (`viewing.length > 1`) is kept, now always
+  `false` in practice, rather than ripped out of every file that still
+  reads it to decide whether to show a per-athlete initials badge on a
+  chip (`calendar/page.tsx`, `lib/ics.ts`) — those badges simply never
+  render anymore now that there's never more than one athlete to tell
+  apart on your own calendar, with no code changes needed in those
+  files to get that behavior.
+- **`SiteHeader.tsx`**'s Friends dropdown redesigned from a checkbox
+  list to a plain single-select button list: "My week" at the top
+  (always present), then each other athlete as "`{name}`'s week" — a
+  filled dot marks whichever one is currently active, clicking any of
+  them calls `viewAthlete(...)` and closes the dropdown immediately
+  (no "apply" step, matches how quick a single-select switch should
+  feel). The pill button itself shows the friend's name instead of
+  "Friends" whenever you're viewing someone else's week, so it's
+  obvious at a glance whose calendar you're looking at without opening
+  the dropdown.
+- **The merged, multi-athlete view this replaces still exists — it
+  lives in Community now**, per the user's own framing ("el merge va
+  más en community"): the aggregate stats/leaderboard on
+  `/community/[slug]` and the side-by-side radar/bar comparisons on
+  `/community/[slug]/compare` (see the "Community" sections above)
+  already show more than one athlete's data together, which is exactly
+  where that belongs — a shared team/community view, not quietly mixed
+  into what's supposed to be your own personal training calendar.
+- Not yet confirmed live from this sandbox (no live Supabase project
+  connected here) — confirm once deployed: picking a friend from the
+  dropdown actually swaps the whole calendar/dashboard to their data,
+  picking "My week" switches back, the active dot/button-name reflects
+  whichever is currently selected, and the choice survives a page
+  reload (via the same localStorage key as before).

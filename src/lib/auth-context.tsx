@@ -34,11 +34,24 @@ interface AuthCtx {
    * constant now that the roster is dynamic). */
   athletes: Athlete[];
   athleteBySlug: Record<string, Athlete>;
-  /** Slugs currently shown on the calendar/dashboard — always includes
-   * your own once resolved. "Friends" toggles other slugs in and out. */
+  /** Whose calendar/dashboard is currently shown — a single-slug array
+   * (not a merged multi-select; see `viewAthlete` below), defaulting to
+   * your own once resolved. */
   viewing: string[];
+  /** Always `false` now that `viewing` is single-select — kept rather
+   * than ripped out across every file that still reads it (same "left
+   * in place since harmless, may get a future non-single caller"
+   * reasoning this codebase already applies to `Stepper`'s unreachable
+   * canceled-steps handling). */
   isMultiple: boolean;
-  toggleFriend: (slug: string) => void;
+  /** Switches whose week is shown — replaces your own view with this
+   * athlete's entirely, never merges the two (Nov 2026, direct
+   * feedback: "no me gusta que se haga merge con sus actividades mi
+   * calendario... que sea mas view my friends week" — the old
+   * multi-select "Friends" checkbox list that merged several athletes'
+   * workouts onto one calendar moved to Community instead, see
+   * CLAUDE.md). */
+  viewAthlete: (slug: string) => void;
   /** Re-fetches the roster — call after inviting someone or editing your
    * own profile's name, so the UI reflects it without a full reload. */
   refreshAthletes: () => Promise<void>;
@@ -194,24 +207,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const saved = JSON.parse(localStorage.getItem("cadencia-viewing") ?? "null");
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setViewing(Array.isArray(saved) && saved.includes(me.slug) ? saved : [me.slug]);
+      setViewing(Array.isArray(saved) && saved.length === 1 && typeof saved[0] === "string" ? saved : [me.slug]);
     } catch {
       setViewing([me.slug]);
     }
   }, [me]);
 
-  function toggleFriend(slug: string) {
-    if (!me) return;
-    setViewing((prev) => {
-      const next = prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug];
-      const withMe = next.includes(me.slug) ? next : [me.slug, ...next];
-      try {
-        localStorage.setItem("cadencia-viewing", JSON.stringify(withMe));
-      } catch {
-        /* ignore */
-      }
-      return withMe;
-    });
+  function viewAthlete(slug: string) {
+    setViewing([slug]);
+    try {
+      localStorage.setItem("cadencia-viewing", JSON.stringify([slug]));
+    } catch {
+      /* ignore */
+    }
   }
 
   async function signOut() {
@@ -231,7 +239,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     athleteBySlug,
     viewing,
     isMultiple: viewing.length > 1,
-    toggleFriend,
+    viewAthlete,
     refreshAthletes: loadAthletes,
     signOut,
   };

@@ -20,7 +20,7 @@ const NAV: { href: string; key: string }[] = [
 
 export function SiteHeader() {
   const { t, locale } = useLocale();
-  const { me, athletes, viewing, toggleFriend } = useAuth();
+  const { me, athletes, viewing, viewAthlete } = useAuth();
   const pathname = usePathname();
   const [friendsOpen, setFriendsOpen] = useState(false);
   const friendsRef = useRef<HTMLDivElement>(null);
@@ -64,6 +64,15 @@ export function SiteHeader() {
           // used to sit here moved to the right side as a clickable
           // profile chip (Nov 2026, direct feedback: "no me encanta...
           // debería salir como el perfil del usuario" — see below).
+          //
+          // Redesigned again (Nov 2026, direct feedback: "no me gusta que
+          // se haga merge con sus actividades mi calendario... que sea
+          // mas view my friends week") — this used to be a multi-select
+          // checkbox list that merged several athletes' workouts/
+          // activities onto one shared calendar. Now a single-select
+          // switch: pick "My week" or exactly one friend, never both at
+          // once — the old merged, multi-athlete view moved to Community
+          // instead (aggregate stats, compare profiles), see CLAUDE.md.
           <div className="inline-flex items-center gap-2 border-l border-line pl-3">
             <div ref={friendsRef} className="relative">
               <button
@@ -71,32 +80,52 @@ export function SiteHeader() {
                 onClick={() => setFriendsOpen((v) => !v)}
                 className={cn(
                   "rounded-full px-3 py-1.5 text-xs font-medium uppercase tracking-wide transition-colors",
-                  viewing.length > 1 ? "bg-surface-2 text-ink" : "bg-surface-2 text-ink-2 hover:text-ink"
+                  viewing[0] !== me.slug ? "bg-surface-2 text-ink" : "bg-surface-2 text-ink-2 hover:text-ink"
                 )}
               >
-                {isEn ? "Friends" : "Friends"} {viewing.length > 1 ? `(${viewing.length - 1})` : ""} ▾
+                {viewing[0] !== me.slug ? (athletes.find((a) => a.slug === viewing[0])?.name ?? (isEn ? "Friends" : "Friends")) : isEn ? "Friends" : "Friends"} ▾
               </button>
               {friendsOpen && (
                 <div className="absolute left-0 top-full z-10 mt-1 w-56 rounded-xl border border-line bg-surface p-2 shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      viewAthlete(me.slug);
+                      setFriendsOpen(false);
+                    }}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-surface-2",
+                      viewing[0] === me.slug ? "font-semibold text-ink" : "text-ink-2"
+                    )}
+                  >
+                    <span className="flex h-4 w-4 shrink-0 items-center justify-center">{viewing[0] === me.slug ? "●" : ""}</span>
+                    {isEn ? "My week" : "Mi semana"}
+                  </button>
                   {friends.length === 0 ? (
                     <p className="px-2 py-1.5 text-xs text-ink-3">
                       {isEn ? "No one else here yet." : "Todavía no hay nadie más aquí."}
                     </p>
                   ) : (
-                    friends.map((f) => (
-                      <label
-                        key={f.slug}
-                        className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-surface-2"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={viewing.includes(f.slug)}
-                          onChange={() => toggleFriend(f.slug)}
-                          className="h-4 w-4"
-                        />
-                        {f.name}
-                      </label>
-                    ))
+                    <>
+                      <div className="my-1 border-t border-line" />
+                      {friends.map((f) => (
+                        <button
+                          type="button"
+                          key={f.slug}
+                          onClick={() => {
+                            viewAthlete(f.slug);
+                            setFriendsOpen(false);
+                          }}
+                          className={cn(
+                            "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-surface-2",
+                            viewing[0] === f.slug ? "font-semibold text-ink" : "text-ink-2"
+                          )}
+                        >
+                          <span className="flex h-4 w-4 shrink-0 items-center justify-center">{viewing[0] === f.slug ? "●" : ""}</span>
+                          {isEn ? `${f.name}'s week` : `Semana de ${f.name}`}
+                        </button>
+                      ))}
+                    </>
                   )}
                 </div>
               )}
