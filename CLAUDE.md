@@ -3359,3 +3359,46 @@ linked to your account") appeared immediately after registering.
   brand-new `/register` sign-up (with "Confirm email" off, so the
   session is immediate) now lands cleanly on `/onboarding` within a
   second or two instead of ever flashing `NoProfileScreen`.
+
+### The actual permanent bug: a reused email never got re-linked (Nov 2026)
+
+The retry fix above only closed the transient race — the user kept
+hitting `NoProfileScreen` indefinitely (not just briefly) on a real
+reused-email case, confirmed by reproducing the exact sequence they
+described: they'd deleted a Supabase Auth user for `mike@axiskey.com`
+(an athletes row for that email already existed from an earlier attempt)
+and then tried registering fresh with the same email.
+
+- **Root cause**: `athletes.auth_user_id` is declared
+  `on delete set null` (`schema.sql`) — deleting the Supabase Auth user
+  doesn't delete the `athletes` row, it just nulls out that row's
+  `auth_user_id`, leaving the row (with its original email) in place.
+  `ensureAthleteForUser()`'s existing-row check
+  (`auth_user_id.eq.<id> OR email.ilike.<email>`) found that row via the
+  email match — but used to just `return` on any match, treating "found
+  by email" exactly the same as "found by auth_user_id" (already
+  correctly linked). It never re-pointed `auth_user_id` at the new
+  session. Every subsequent sign-in/retry queried `athletes` and never
+  found a row whose `auth_user_id` matched the new session's `user.id` —
+  not because the row didn't exist, but because it was never updated —
+  so this was permanently stuck, not something more retries could ever
+  fix on their own.
+- **Fixed in `ensureAthleteForUser()`** (`lib/ensureAthlete.ts`): when
+  the matched existing row's `auth_user_id` doesn't already equal the
+  signed-in user's id (covers both `null` and any other stale value),
+  it's updated to the new `user.id` instead of no-opping — matching by
+  email is supposed to mean "this is the same person, reconnect them,"
+  not "something's already there, ignore it."
+- **`AuthProvider`'s retry loop now also self-heals, not just waits**
+  (`lib/auth-context.tsx`): each of the bounded retries first re-POSTs
+  to `POST /api/auth/ensure-athlete` (idempotent either way — creates a
+  missing row, re-links an unlinked one per the fix above, or no-ops if
+  already correctly linked) before refetching `athletes`. This means a
+  session already stuck in this exact state self-heals automatically the
+  next time that tab loads any gated page — no manual Sign Out, no SQL,
+  no new deploy needed from the athlete's side once this ships.
+- Not yet confirmed live — confirm next: that `mike@axiskey.com`'s
+  already-existing (now-unlinked) row actually gets re-linked and the
+  account lands cleanly past onboarding without any manual steps, and
+  that a genuinely new email still creates a fresh row exactly as
+  before.

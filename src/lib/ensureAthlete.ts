@@ -16,7 +16,9 @@ import { slugify, initialsFrom, dedupeSlug } from "@/lib/athleteSlug";
  * Idempotent: if a row already exists for this `auth_user_id` (returning
  * athlete) or `email` (e.g. an admin-invited password account whose
  * Supabase identity Supabase auto-linked to this same Google sign-in,
- * since the email matched and was verified), this is a no-op.
+ * since the email matched and was verified), this re-links the row
+ * rather than no-opping blindly (see the `auth_user_id` mismatch
+ * handling just below — a real bug found live, Nov 2026).
  */
 export async function ensureAthleteForUser(user: User): Promise<void> {
   const db = createServiceClient();
@@ -29,10 +31,31 @@ export async function ensureAthleteForUser(user: User): Promise<void> {
   // (no wildcards — an exact case-insensitive match) fixes that.
   const { data: existing } = await db
     .from("athletes")
-    .select("id")
+    .select("id, auth_user_id")
     .or(`auth_user_id.eq.${user.id}${user.email ? `,email.ilike.${user.email}` : ""}`)
     .maybeSingle();
-  if (existing) return;
+  if (existing) {
+    // Found live (Nov 2026): a real, permanent "stuck forever" bug, not
+    // just the transient race fixed in `auth-context.tsx` the same day.
+    // `athletes.auth_user_id` is `on delete set null` — deleting a
+    // Supabase Auth user (e.g. to let someone re-register cleanly, as
+    // was done live here) leaves their old `athletes` row in place with
+    // `auth_user_id = null` and the same email. The match above found
+    // that row via `email.ilike`, but this used to just `return` without
+    // updating it — the row stayed unlinked forever, `auth_user_id`
+    // never matched the brand-new session's `user.id` no matter how
+    // many times the retry in `auth-context.tsx` tried, and the athlete
+    // was permanently stuck on `NoProfileScreen`. Now: if this row's
+    // `auth_user_id` doesn't already equal the signed-in user (null, or
+    // any other stale value), re-link it to this session instead of a
+    // silent no-op — the whole point of matching by email at all is "this
+    // is the same person, reconnect them."
+    if (existing.auth_user_id !== user.id) {
+      const { error: relinkError } = await db.from("athletes").update({ auth_user_id: user.id }).eq("id", existing.id);
+      if (relinkError) console.error("Failed to re-link existing athlete row to new sign-in", relinkError);
+    }
+    return;
+  }
 
   const displayName =
     (typeof user.user_metadata?.full_name === "string" && user.user_metadata.full_name) ||

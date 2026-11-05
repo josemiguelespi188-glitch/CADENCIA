@@ -132,14 +132,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [session, athletes]);
 
   // Bounded retry: a session resolved, the athletes fetch finished, but
-  // no row matched yet. Could be the race described above (the row is
-  // about to appear) or a genuinely orphaned session — retry a few times
-  // with a short delay before treating it as the latter.
+  // no row matched yet. Could be the ensure-athlete race described above
+  // (the row is about to appear), or a real athletes row that already
+  // exists under this email but is unlinked (`auth_user_id` null — e.g.
+  // after deleting and re-creating a Supabase Auth user for the same
+  // email, found live Nov 2026). Every retry also re-POSTs to
+  // `/api/auth/ensure-athlete` (idempotent — creates the row if it's
+  // genuinely missing, or re-links an existing-but-unlinked one per the
+  // fix in `ensureAthleteForUser`, or no-ops if already correctly
+  // linked) before refetching, so both cases self-heal here with no
+  // manual sign-out/sign-in needed. Only falls through to a real
+  // "genuinely orphaned" NoProfileScreen once every retry — including
+  // its own self-heal attempt — has failed to produce a match.
   useEffect(() => {
     if (!session || !athletesLoaded || me || noProfileRetries >= MAX_NO_PROFILE_RETRIES) return;
     const t = setTimeout(() => {
-      setNoProfileRetries((n) => n + 1);
-      loadAthletes();
+      fetch("/api/auth/ensure-athlete", { method: "POST" })
+        .catch(() => {})
+        .finally(() => {
+          setNoProfileRetries((n) => n + 1);
+          loadAthletes();
+        });
     }, 600);
     return () => clearTimeout(t);
   }, [session, athletesLoaded, me, noProfileRetries, loadAthletes]);
