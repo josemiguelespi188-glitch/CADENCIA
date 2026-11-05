@@ -17,12 +17,25 @@ import { ActivityMap } from "@/components/ActivityMap";
  * this activity is linked to a planned workout, it also shows a Planned
  * vs. Completed comparison (per explicit request, modeled on TrainingPeaks'
  * own activity detail view) — see CLAUDE.md's "Planned vs Completed" note.
+ *
+ * Also has a "Strava Description" box (Nov 2026, direct complaint: "no
+ * deja poner comentarios en la actividad") that pushes straight to the
+ * real Strava activity via `POST /api/strava/activities/[id]/description`
+ * — works whether this activity is matched to a workout or not (unlike
+ * `WorkoutDialog`'s own field by the same name, which only ever exists on
+ * a planned workout). See CLAUDE.md's "Auto-sync Strava" / "strava
+ * comment" sections for how this interacts with the sync route's own
+ * matching retry.
  */
 export function ActivityDetailDialog({ activity, onClose }: { activity: StravaActivity | null; onClose: () => void }) {
   const { t, locale } = useLocale();
   const isEn = locale === "en";
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [matchedWorkout, setMatchedWorkout] = useState<Workout | null>(null);
+  const [description, setDescription] = useState("");
+  const [savingDescription, setSavingDescription] = useState(false);
+  const [descriptionSaved, setDescriptionSaved] = useState(false);
+  const [descriptionError, setDescriptionError] = useState<string | null>(null);
 
   useEffect(() => {
     // Found live (Nov 2026, full codebase audit): this had no staleness
@@ -39,7 +52,10 @@ export function ActivityDetailDialog({ activity, onClose }: { activity: StravaAc
         .eq("strava_activity_id", activity.id)
         .maybeSingle()
         .then(({ data }) => {
-          if (!cancelled) setMatchedWorkout((data as Workout) ?? null);
+          if (cancelled) return;
+          const w = (data as Workout) ?? null;
+          setMatchedWorkout(w);
+          setDescription(w?.strava_comment ?? "");
         });
     } else {
       dialogRef.current?.close();
@@ -47,6 +63,9 @@ export function ActivityDetailDialog({ activity, onClose }: { activity: StravaAc
       // same pattern as WorkoutDialog's own form-reset effect.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setMatchedWorkout(null);
+      setDescription("");
+      setDescriptionSaved(false);
+      setDescriptionError(null);
     }
     return () => {
       cancelled = true;
@@ -55,6 +74,28 @@ export function ActivityDetailDialog({ activity, onClose }: { activity: StravaAc
 
   const sport = activity ? mapStravaSportType(activity.sport_type) : null;
   const pace = activity && activity.distance_m ? Math.round(activity.moving_time_s / (activity.distance_m / 1000)) : null;
+
+  async function saveDescription() {
+    if (!activity || !description.trim()) return;
+    setSavingDescription(true);
+    setDescriptionSaved(false);
+    setDescriptionError(null);
+    try {
+      const res = await fetch(`/api/strava/activities/${activity.id}/description`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description: description.trim() }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setDescriptionError(data.error ?? (isEn ? "Could not save." : "No se pudo guardar."));
+        return;
+      }
+      setDescriptionSaved(true);
+    } finally {
+      setSavingDescription(false);
+    }
+  }
 
   function handleDialogClick(e: React.MouseEvent<HTMLDialogElement>) {
     // Same click-outside-to-close handler as WorkoutDialog/NewWorkoutLauncher
@@ -140,6 +181,32 @@ export function ActivityDetailDialog({ activity, onClose }: { activity: StravaAc
             ) : (
               <p className="text-sm text-ink-3">{t("no_plan_matched")}</p>
             )}
+          </div>
+
+          <div>
+            <label htmlFor="activity-description" className="mb-2 block text-xs font-semibold uppercase tracking-widest text-ink-3">
+              {t("strava_comment")}
+            </label>
+            <textarea
+              id="activity-description"
+              rows={3}
+              value={description}
+              onChange={(e) => {
+                setDescription(e.target.value);
+                setDescriptionSaved(false);
+                setDescriptionError(null);
+              }}
+              placeholder={isEn ? "Write a description and push it to Strava…" : "Escribe una descripción y pásala a Strava…"}
+              className="w-full resize-none rounded-xl border border-line bg-surface px-3 py-2 text-sm outline-none focus:border-line-strong"
+            />
+            <p className="mt-1 text-xs text-ink-3">{t("strava_comment_hint")}</p>
+            <div className="mt-2 flex items-center gap-3">
+              <Button type="button" size="sm" onClick={saveDescription} disabled={savingDescription || !description.trim()}>
+                {savingDescription ? (isEn ? "Saving…" : "Guardando…") : t("save")}
+              </Button>
+              {descriptionSaved && <span className="text-xs text-ink-3">{t("saved")}</span>}
+              {descriptionError && <span className="text-xs text-error">{descriptionError}</span>}
+            </div>
           </div>
 
           <div className="flex justify-end gap-2">

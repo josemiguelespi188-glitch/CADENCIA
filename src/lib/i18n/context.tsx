@@ -106,7 +106,10 @@ const DICT: Record<Locale, Record<string, string>> = {
     computed: "Calculadas",
     need_threshold: "Agrega el umbral arriba para calcular las zonas.",
     workout_type: "Tipo de entreno",
-    strava_comment: "Comentario para Strava",
+    // "Strava Description" se mantiene literal en ambos idiomas (Nov 2026,
+    // directo: "Cambia la palabra comentarios por Strava Description") —
+    // es el nombre real del campo en Strava, no una traducción.
+    strava_comment: "Strava Description",
     strava_comment_hint: "Resumen que se escribe tal cual en la actividad de Strava cuando se vincule. Si lo dejas vacío, la IA genera uno.",
     plan_import_h: "Plan semanal (Excel)",
     download_template: "Descargar plantilla",
@@ -274,7 +277,7 @@ const DICT: Record<Locale, Record<string, string>> = {
     computed: "Computed",
     need_threshold: "Add the threshold above to compute zones.",
     workout_type: "Workout type",
-    strava_comment: "Strava comment",
+    strava_comment: "Strava Description",
     strava_comment_hint: "Written verbatim onto the Strava activity once matched. Leave blank to let the AI draft one.",
     plan_import_h: "Weekly plan (Excel)",
     download_template: "Download template",

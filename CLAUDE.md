@@ -3473,3 +3473,69 @@ and still works exactly as before, this is purely additive).
   new trigger for that existing route, not new behavior inside it.
 - Scoped to Strava only, per the literal request — WHOOP/Garmin/COROS
   still require a manual "Sync now" click on `/settings`, unchanged.
+
+## Auto-complete retried every sync, direct per-activity description edit (Nov 2026)
+
+Two fixes/additions from the same live-testing session, both direct
+complaints with screenshots.
+
+- **"El entrenamiento debería hacerse merge con el training siempre"** —
+  a real bug, not a one-off: matching used to only ever be attempted
+  ONCE per Strava activity, gated by the same `description_written_at`
+  flag as the one-shot description write. Once an activity had been
+  processed a single time — even with zero matching candidates that day
+  — it was never re-checked again, so a planned workout added AFTER
+  that first sync could never retroactively link to an already-synced
+  activity (confirmed live: a Thursday "8x800m Intervalos" run never
+  linked to that day's already-synced "Morning Run" Strava activity).
+  **Fixed in `/api/strava/sync`** (`app/api/strava/sync/route.ts`):
+  matching is now retried on EVERY sync for anything in that sync's own
+  30-day window still unlinked to a workout, independent of whether a
+  description was already written for it — only the description
+  **write** itself stays gated (`needsDescribe` in `processActivity`),
+  so a still-genuinely-unmatched activity doesn't burn a Claude/Strava
+  call every single sync, but a freshly-discovered match always gets
+  its description (re)written immediately, even overwriting an earlier
+  AI-drafted one with the real matched workout's own comment once one
+  exists. `toProcessMap` now unions the existing "never described"
+  backlog query with a fresh "still unmatched in this sync's window"
+  query (built from `workouts` rows with a non-null `strava_activity_id`
+  — the real source of truth for "is this activity linked").
+  `processActivity` itself now checks for an existing match FIRST
+  (`existingMatch`) before running the "exactly one unmatched candidate"
+  query — needed so a retry doesn't lose track of an already-real match
+  (that query only finds workouts still `strava_activity_id is null`,
+  so re-running it blind on an already-linked activity would never
+  re-find its own match).
+- **"No deja poner comentarios en la actividad"** — there was genuinely
+  no way to set a description for a Strava activity that has no matched
+  planned workout at all (e.g. a standalone unmatched run) —
+  `ActivityDetailDialog` was pure read-only. **New: `POST
+  /api/strava/activities/[id]/description`**
+  (`app/api/strava/activities/[id]/description/route.ts`) pushes a
+  typed description straight onto the real Strava activity via the
+  already-existing `updateStravaActivityDescription()`. If the activity
+  IS matched to a workout, that workout's own `strava_comment` column is
+  also updated (not just pushed to Strava directly) — keeping it as the
+  real source of truth the sync route's own matching-retry reads from
+  on every future sync, so this edit doesn't get silently overwritten
+  by a later AI-drafted description. `description_written_at` is
+  stamped either way. `ActivityDetailDialog.tsx` gained a "Strava
+  Description" textarea + Save button (prefilled from
+  `matchedWorkout.strava_comment` when matched, blank otherwise) right
+  above the Close/"Open in Strava" row.
+- **"Cambia la palabra comentarios por Strava Description"** — the
+  `strava_comment`/`strava_comment_hint` i18n values
+  (`lib/i18n/context.tsx`) changed from "Comentario para Strava" (ES) /
+  "Strava comment" (EN) to literally **"Strava Description"** in BOTH
+  locales — same "this is the field's real/actual name, not a phrase to
+  translate" treatment "Generate" already got. Only the displayed label
+  changed; the underlying `strava_comment` key name and DB column are
+  unchanged (`WorkoutDialog.tsx`'s own field, and the new
+  `ActivityDetailDialog.tsx` one, both read this same translation key,
+  so both now show "Strava Description").
+- Not yet confirmed live — confirm next: that a planned workout added
+  AFTER a same-day Strava activity was already synced now actually
+  retroactively links on the next sync, and that typing a description
+  directly on an unmatched activity in `ActivityDetailDialog` really
+  shows up on the live Strava activity page.

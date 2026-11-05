@@ -154,6 +154,37 @@ export async function POST() {
     .is("description_written_at", null)
     .limit(200);
 
+  // Found live (Nov 2026, direct complaint: "el entrenamiento debería
+  // hacerse merge con el training siempre") — matching used to only ever
+  // be attempted once per activity, gated by the exact same
+  // `description_written_at is null` flag as the one-shot description
+  // write. Once an activity had been processed a single time (even with
+  // zero matching candidates that day), it was never re-checked again —
+  // so a planned workout added AFTER that first sync could never
+  // retroactively link to an already-synced activity. Fixed by also
+  // re-checking matching, every sync, for anything in this sync's own
+  // 30-day window that still isn't linked to a workout — independent of
+  // whether a description was already written for it. Only the
+  // description WRITE itself stays gated (see `needsDescribe` in
+  // `processActivity` below) to avoid repeated Claude/Strava calls for
+  // an activity that's still genuinely unmatched.
+  const recentIds = rows.map((r) => r.id);
+  const { data: recentActivities } = recentIds.length
+    ? await db.from("strava_activities").select("*").eq("athlete_id", athlete.id).in("id", recentIds)
+    : { data: [] as StravaActivity[] };
+  const { data: linkedRows } = await db
+    .from("workouts")
+    .select("strava_activity_id")
+    .eq("athlete_id", athlete.id)
+    .not("strava_activity_id", "is", null);
+  const linkedIds = new Set((linkedRows ?? []).map((w) => String(w.strava_activity_id)));
+
+  const toProcessMap = new Map<string, StravaActivity>();
+  for (const a of (pending as StravaActivity[]) ?? []) toProcessMap.set(a.id, a);
+  for (const a of (recentActivities as StravaActivity[]) ?? []) {
+    if (!linkedIds.has(String(a.id))) toProcessMap.set(a.id, a);
+  }
+
   let matched = 0;
   let described = 0;
 
@@ -172,13 +203,30 @@ export async function POST() {
   async function processActivity(act: StravaActivity, athleteId: string, token: string): Promise<{ matched: boolean; described: boolean }> {
     const mappedSport = mapStravaSportType(act.sport_type);
     let matchedWorkout: Workout | null = null;
+    let didMatch = false;
 
-    // Conservative on purpose: only auto-complete when there is EXACTLY
-    // one un-linked planned workout for this athlete on the same local
-    // day and sport. Zero or multiple candidates are left for manual
-    // review rather than guessing — see the "Strava integration" note in
-    // CLAUDE.md for why date+sport alone isn't reliable enough to guess.
-    if (mappedSport && act.local_date) {
+    // Check for an existing match FIRST — re-running the "exactly one
+    // still-unmatched candidate" query below would never find this
+    // activity's own already-linked workout again (it's no longer
+    // "unmatched"), so without this check a retry would silently lose
+    // track of a real match made on an earlier sync.
+    const { data: existingMatch } = await db
+      .from("workouts")
+      .select("*")
+      .eq("athlete_id", athleteId)
+      .eq("strava_activity_id", act.id)
+      .maybeSingle();
+
+    if (existingMatch) {
+      matchedWorkout = existingMatch as Workout;
+    } else if (mappedSport && act.local_date) {
+      // Conservative on purpose: only auto-complete when there is EXACTLY
+      // one un-linked planned workout for this athlete on the same local
+      // day and sport. Zero or multiple candidates are left for manual
+      // review rather than guessing — see the "Strava integration" note in
+      // CLAUDE.md for why date+sport alone isn't reliable enough to guess.
+      // Retried every sync (not just once) now — see the note above
+      // `toProcessMap`'s construction.
       const { data: candidates } = await db
         .from("workouts")
         .select("*")
@@ -188,41 +236,46 @@ export async function POST() {
         .is("strava_activity_id", null);
       if (candidates && candidates.length === 1) {
         matchedWorkout = candidates[0] as Workout;
+        await db
+          .from("workouts")
+          .update({ done: true, strava_activity_id: act.id })
+          .eq("id", matchedWorkout.id);
+        didMatch = true;
       }
-    }
-
-    let didMatch = false;
-    if (matchedWorkout) {
-      await db
-        .from("workouts")
-        .update({ done: true, strava_activity_id: act.id })
-        .eq("id", matchedWorkout.id);
-      didMatch = true;
     }
 
     // A human-written strava_comment on the matched workout wins verbatim
     // over the AI-generated description — per explicit instruction, it's
     // the planned summary meant to go to Strava, not just an "objective"
-    // for the AI to paraphrase. Best-effort either way: never blocks
-    // marking this activity as processed.
-    const description = matchedWorkout?.strava_comment
-      ? matchedWorkout.strava_comment
-      : await generateActivityDescription(act, matchedWorkout).catch(() => null);
+    // for the AI to paraphrase. Only (re)written when there's something
+    // new to say: a FRESH match just happened (even if this activity was
+    // already described once before, without a match, on an earlier
+    // sync — the real human comment should still win once one exists),
+    // or this activity has never been described at all yet. An activity
+    // that's still genuinely unmatched and already described once is
+    // left alone here — it'll keep being retried for matching on future
+    // syncs without re-spending a Claude call every time.
+    const needsDescribe = didMatch || act.description_written_at === null;
     let didDescribe = false;
-    if (description) {
-      try {
-        await updateStravaActivityDescription(token, act.id, description);
-        didDescribe = true;
-      } catch (e) {
-        console.error("Failed to write description back to Strava", act.id, e);
+    if (needsDescribe) {
+      const description = matchedWorkout?.strava_comment
+        ? matchedWorkout.strava_comment
+        : await generateActivityDescription(act, matchedWorkout).catch(() => null);
+      if (description) {
+        try {
+          await updateStravaActivityDescription(token, act.id, description);
+          didDescribe = true;
+        } catch (e) {
+          console.error("Failed to write description back to Strava", act.id, e);
+        }
       }
+      await db.from("strava_activities").update({ description_written_at: new Date().toISOString() }).eq("id", act.id);
     }
 
-    await db.from("strava_activities").update({ description_written_at: new Date().toISOString() }).eq("id", act.id);
     return { matched: didMatch, described: didDescribe };
   }
 
-  const pendingActivities = (pending as StravaActivity[]) ?? [];
+  const pendingActivities = Array.from(toProcessMap.values());
   for (let i = 0; i < pendingActivities.length; i += CONCURRENCY) {
     const batch = pendingActivities.slice(i, i + CONCURRENCY);
     const results = await Promise.all(batch.map((act) => processActivity(act, athlete.id, accessToken)));
