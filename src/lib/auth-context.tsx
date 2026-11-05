@@ -302,9 +302,10 @@ function SignInScreen() {
         )}
 
         <p className="mt-6 text-center text-xs text-ink-3">
-          {isEn
-            ? "New here? Sign in with Google and your account is created automatically."
-            : "¿Primera vez? Inicia sesión con Google y tu cuenta se crea automáticamente."}
+          {isEn ? "New here? " : "¿Primera vez? "}
+          <a href="/register" className="underline hover:text-ink">
+            {isEn ? "Create an account" : "Crea una cuenta"}
+          </a>
         </p>
       </div>
     </div>

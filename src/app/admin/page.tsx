@@ -156,8 +156,39 @@ function InviteNewAthlete({ onDone }: { onDone: () => Promise<void> }) {
 function AthleteRow({ athlete, me, onChange }: { athlete: Athlete; me: Athlete; onChange: () => Promise<void> }) {
   const [inviting, setInviting] = useState(false);
   const [email, setEmail] = useState(athlete.email ?? "");
+  const [settingPassword, setSettingPassword] = useState(false);
+  const [password, setPassword] = useState("Cadencia2026!");
+  const [passwordSaved, setPasswordSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // No Supabase email involved at all — built to unblock an athlete
+  // whose invite/reset/confirm email never arrived (Nov 2026, see
+  // CLAUDE.md's "set a password directly" note). Works whether this
+  // athlete already has an account (overwrites its password, also
+  // force-confirms it) or not yet (creates one using the stored email).
+  async function setPasswordDirectly(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    setPasswordSaved(false);
+    try {
+      const res = await fetch(`/api/admin/athletes/${athlete.id}/set-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error);
+        return;
+      }
+      setPasswordSaved(true);
+      await onChange();
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function sendInvite(e: React.FormEvent) {
     e.preventDefault();
@@ -255,6 +286,11 @@ function AthleteRow({ athlete, me, onChange }: { athlete: Athlete; me: Athlete; 
               Send invite
             </Button>
           )}
+          {!settingPassword && (
+            <Button size="sm" variant="ghost" onClick={() => setSettingPassword(true)} disabled={busy}>
+              Set password
+            </Button>
+          )}
         </div>
       </div>
 
@@ -282,6 +318,32 @@ function AthleteRow({ athlete, me, onChange }: { athlete: Athlete; me: Athlete; 
             Cancel
           </Button>
         </form>
+      )}
+
+      {settingPassword && (
+        <form onSubmit={setPasswordDirectly} className="mt-3 flex items-center gap-2">
+          <input
+            required
+            minLength={8}
+            type="text"
+            placeholder="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="h-9 flex-1 rounded-xl border border-line bg-bg px-3 text-sm"
+            style={{ fontFamily: "var(--font-mono)" }}
+          />
+          <Button type="submit" size="sm" disabled={busy}>
+            Save
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setSettingPassword(false)}>
+            Cancel
+          </Button>
+        </form>
+      )}
+      {passwordSaved && (
+        <p className="mt-2 text-xs text-ink-3">
+          Password set — give <span className="font-medium text-ink">{athlete.email}</span> / <span className="font-mono text-ink">{password}</span> to {athlete.name} so they can sign in.
+        </p>
       )}
 
       {error && <p className="mt-2 text-xs text-error">{error}</p>}

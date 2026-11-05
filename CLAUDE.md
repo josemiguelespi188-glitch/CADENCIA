@@ -3116,3 +3116,62 @@ Intervals.icu's indigo.
   (the two `FeatureSection`s stack, the hero CTAs wrap cleanly), and
   that both CTAs ("Get Started" -> `/register`, "Log In" -> `/calendar`)
   land where expected.
+
+### Branded Supabase email templates, a direct "set password" admin action, and the gated sign-in screen's stale link fixed (Nov 2026)
+
+Same session's live testing with Juan kept surfacing the same root
+cause from a few more angles — Supabase's auth emails (Confirm signup,
+Invite user, Reset Password) were still unbranded and, independently,
+still not reliably reaching him even after Resend was wired up as
+custom SMTP (reusing the already-verified `axiskey.com` domain from
+the Operations Hub codebase, since the user explicitly declined buying
+a dedicated domain earlier — "no quiero dominio... usemos el mismo
+mail de resend axiskey.com"). Three concrete pieces came out of this:
+
+- **All three Supabase email templates got Cadencia-branded HTML**
+  (dark header, the `cadencia` wordmark, a black pill CTA button
+  matching this app's own `Button` component, the already-decided
+  `token_hash` link pattern baked directly into each one) — handed to
+  the user to paste into Auth -> Email Templates' Subject/Source
+  fields for Confirm signup / Invite user / Reset Password. **The
+  first version referenced the real hosted logo
+  (`https://cadenciatraining.vercel.app/logo.png`) and it rendered as
+  a broken-image icon in Supabase's own template preview** — the file
+  itself was confirmed intact (a real 300x300 PNG, not corrupted, same
+  verification discipline the Operations Hub codebase's own broken-
+  email-logo saga established) so this was either Supabase's preview
+  sandbox not fetching external images, or a prod/preview deployment
+  mismatch, neither confirmable from this sandbox. Rather than debug
+  an unconfirmable cause, the templates were rewritten to drop the
+  image entirely and use the exact same text-only wordmark treatment
+  (`cadencia` + `TRAINING LOG` tagline, no icon) the in-app sign-in
+  screen and `/register` already use — zero risk of ever showing a
+  broken-image icon in any client, not just a Supabase preview quirk.
+- **`POST /api/admin/athletes/[id]/set-password`** (new): lets an
+  admin set an athlete's password directly from `/admin`, with **no
+  Supabase email involved at all** — built specifically to unblock
+  Juan after repeated real email-delivery failures this same session
+  (direct request: "creame un usuario para juan, con clave genérica...
+  que haga login"). Handles both shapes an athlete can be in: already
+  has a linked `auth_user_id` (overwrites that account's password via
+  `auth.admin.updateUserById()`, and force-sets `email_confirm: true`
+  too, so a never-confirmed account becomes usable in the same call),
+  or has no account yet (`auth.admin.createUser()` using the athlete's
+  own stored email, then links the new user's id onto the `athletes`
+  row — same linking the existing invite flow already does). The
+  `/admin` UI's new "Set password" button opens an inline field
+  pre-filled with a generic placeholder password (`Cadencia2026!`,
+  editable) and shows a one-line reminder of the exact email/password
+  pair to hand the athlete once saved, since this is the one time that
+  password is visible anywhere.
+- **The gated sign-in screen's footer link was stale and fixed**
+  (`SignInScreen` in `auth-context.tsx`, found live from a screenshot:
+  "falta un sign in link para cambiar y crear cuenta") — it still read
+  "New here? Sign in with Google and your account is created
+  automatically," left over from before `/register`'s plain
+  email+password self-registration became the active method (Google is
+  now deliberately disabled on that page — see its own section above).
+  Replaced with a real link, "Create an account" -> `/register`, so
+  someone who lands directly on the gated sign-in screen (e.g. by
+  visiting `/calendar` with no session) has a way to reach
+  registration too, not just visitors who start at `/`.
