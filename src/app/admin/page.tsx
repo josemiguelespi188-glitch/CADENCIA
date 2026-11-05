@@ -232,6 +232,32 @@ function AthleteRow({ athlete, me, onChange }: { athlete: Athlete; me: Athlete; 
     }
   }
 
+  const [deleting, setDeleting] = useState(false);
+
+  // Nov 2026, direct request: "Borra y deja solo jose y juan" — cleaning
+  // up stray test/self-registration rows. Permanent, unlike Deactivate
+  // in the sibling Operations Hub codebase (Cadencia has no is_active
+  // toggle for athletes — a stray row is either a real teammate or
+  // noise to remove, nothing in between), so this asks for confirmation
+  // first; the signed-in admin's own row never shows this button at all
+  // (see the render below), matching the API's own self-delete guard.
+  async function deleteAthlete() {
+    if (!confirm(`Delete ${athlete.name}? This removes their account and all their data permanently.`)) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/athletes/${athlete.id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error);
+        return;
+      }
+      await onChange();
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   // Nov 2026, see CLAUDE.md's "Community" section — is_coach is
   // self-editable from Settings too; this is just an admin convenience
   // for setting it on someone else's behalf.
@@ -289,6 +315,11 @@ function AthleteRow({ athlete, me, onChange }: { athlete: Athlete; me: Athlete; 
           {!settingPassword && (
             <Button size="sm" variant="ghost" onClick={() => setSettingPassword(true)} disabled={busy}>
               Set password
+            </Button>
+          )}
+          {athlete.id !== me.id && (
+            <Button size="sm" variant="danger" onClick={deleteAthlete} disabled={busy || deleting}>
+              {deleting ? "Deleting…" : "Delete"}
             </Button>
           )}
         </div>

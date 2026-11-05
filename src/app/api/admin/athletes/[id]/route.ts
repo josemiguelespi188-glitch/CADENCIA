@@ -2,6 +2,55 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { createServiceClient } from "@/lib/supabase/server";
 
+/**
+ * Permanently removes an athlete — their `athletes` row and, if one
+ * exists, their real Supabase Auth account too (Nov 2026, direct
+ * request: "Borra y deja solo jose y juan" — cleaning up stray
+ * self-registration test rows, same pattern this app's sibling
+ * Operations Hub codebase already documents for its own "delete a team
+ * member" feature). The signed-in admin can't delete their own account
+ * from here (avoids locking everyone out of /admin by accident) — both
+ * this guard and `TeamView`-equivalent UI button disable for that case;
+ * a self-delete still needs another admin or the Supabase dashboard.
+ */
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  let admin;
+  try {
+    admin = await requireAdmin();
+  } catch {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  }
+
+  const { id } = await params;
+  if (id === admin.id) {
+    return NextResponse.json({ error: "Can't delete your own account." }, { status: 400 });
+  }
+
+  const db = createServiceClient();
+  const { data: target } = await db.from("athletes").select("id, auth_user_id").eq("id", id).maybeSingle();
+  if (!target) return NextResponse.json({ error: "Athlete not found." }, { status: 404 });
+
+  // Every FK into athletes() is ON DELETE CASCADE (see schema.sql)
+  // except communities.created_by (ON DELETE SET NULL) — so deleting
+  // this one row cleanly removes all of this athlete's workouts,
+  // connections, and every other table keyed off athlete_id too, no
+  // manual cleanup needed first.
+  const { error } = await db.from("athletes").delete().eq("id", id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Also remove the real Supabase Auth account if one's linked —
+  // unlike the row above, that's never cleaned up automatically the
+  // other way (`athletes.auth_user_id` is ON DELETE SET NULL only when
+  // the AUTH user is deleted first, not the reverse) — best-effort,
+  // never fails the athlete-row delete itself, which already succeeded.
+  if (target.auth_user_id) {
+    const { error: authError } = await db.auth.admin.deleteUser(target.auth_user_id);
+    if (authError) console.error("Deleted athlete row but failed to delete its Auth account", id, authError);
+  }
+
+  return NextResponse.json({ ok: true });
+}
+
 /** Toggles is_admin on an athlete row. Uses the service-role client — the
  * only path allowed to change this column at all, see the
  * athletes_guard_is_admin trigger (migration 013) that blocks every other

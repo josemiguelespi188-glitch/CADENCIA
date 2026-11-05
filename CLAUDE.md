@@ -3592,3 +3592,43 @@ plain switch between whose single week you're looking at.
   picking "My week" switches back, the active dot/button-name reflects
   whichever is currently selected, and the choice survives a page
   reload (via the same localStorage key as before).
+
+## Admin can permanently delete an athlete (Nov 2026)
+
+Direct request, cleaning up stray self-registration/test rows ("ir",
+"mie", a duplicate "Jose", etc. — visible as extra entries in the
+Friends dropdown): "Borra y deja solo jose y juan." This app had no
+delete-athlete capability at all before this — only the existing
+Make/Remove admin and Make/Remove coach toggles.
+
+- **`DELETE /api/admin/athletes/[id]`** (new, added to the existing
+  `app/api/admin/athletes/[id]/route.ts`): `requireAdmin()`-gated,
+  refuses to delete the signed-in admin's own row (avoids locking
+  everyone out of `/admin` by accident — a self-delete still needs
+  another admin or the Supabase dashboard, same reasoning the sibling
+  Operations Hub codebase's own "delete a team member" feature already
+  documents). Deletes the `athletes` row — every FK into that table is
+  `ON DELETE CASCADE` except `communities.created_by` (`ON DELETE SET
+  NULL`), confirmed from `schema.sql`, so this cleanly removes all of
+  that athlete's workouts/connections/every other table keyed off
+  `athlete_id` too, no manual cleanup needed first. If the row has a
+  linked `auth_user_id`, the real Supabase Auth account is also deleted
+  (best-effort, logged on failure, never blocks the row delete which
+  already succeeded) — unlike the row, that side never gets cleaned up
+  automatically the other way (`athletes.auth_user_id` only nulls out
+  when the AUTH user is deleted first, not the reverse).
+- **`/admin`**'s `AthleteRow` gained a "Delete" button (red, `confirm()`
+  first, since this app has no softer "deactivate" toggle the way the
+  sibling Operations Hub codebase does for request types — an athlete
+  row here is either a real teammate or noise to remove, nothing in
+  between) — hidden entirely for the signed-in admin's own row, same
+  guard the API enforces server-side.
+- **Immediate cleanup for the live project was done directly in the
+  Supabase SQL editor** (this sandbox has no DB access of its own),
+  keyed by the two real, confirmed Supabase Auth user ids visible in a
+  live screenshot (`juanesbch@gmail.com` and
+  `josemiguel.espi188@gmail.com`) rather than guessing by name/slug —
+  safer than trying to match stray rows like "ir"/"mie"/a duplicate
+  "Jose" by their display name, which this sandbox can't see live.
+  Going forward, the admin UI button above is the way to remove any
+  future stray row without needing SQL again.
