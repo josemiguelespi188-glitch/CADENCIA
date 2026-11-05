@@ -24,6 +24,8 @@ export interface Athlete {
    * is_admin is), also asked at account-creation time. See CLAUDE.md's
    * "Community" section. */
   is_coach: boolean;
+  /** Has this athlete finished the /onboarding wizard (profile + connections)? */
+  onboarding_completed: boolean;
   /** Lactate threshold heart rate, in bpm. */
   threshold_hr: number | null;
   /** Running threshold pace ("race predictor"), in seconds per km. */

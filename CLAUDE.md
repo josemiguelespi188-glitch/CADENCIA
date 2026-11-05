@@ -3175,3 +3175,88 @@ mail de resend axiskey.com"). Three concrete pieces came out of this:
   someone who lands directly on the gated sign-in screen (e.g. by
   visiting `/calendar` with no session) has a way to reach
   registration too, not just visitors who start at `/`.
+
+### First-run onboarding wizard (Nov 2026)
+
+Direct, verbatim instruction right after self-registration shipped:
+"cuando entro debería hacerme llenar todo el perfil de como encuesta y
+pedirme que me conecte con los diferentes apis. eso es lo primero que
+tiene que hacer. esfuérzate más." A brand-new account of ANY kind —
+self-registered via `/register`, Google, or admin-invited via
+`/accept-invite` — now gets forced through a two-step onboarding wizard
+before it can see anything else in the app.
+
+- **Migration `035_onboarding_flow.sql`** (mirrored in `schema.sql` —
+  **needs this migration run in the Supabase SQL editor**):
+  `athletes.onboarding_completed`, default `false` so every future
+  insert needs onboarding, immediately backfilled to `true` on every
+  row that already existed when the column was added — Juan and José
+  are already using the app and shouldn't suddenly be interrupted by a
+  first-run wizard that predates their accounts.
+- **`components/settings/ConnectionCards.tsx`** (new): the zones card
+  and all 5 connection cards (Strava, WHOOP, Garmin Developer, Garmin
+  Personal, COROS) were extracted out of `/settings`'s own page file
+  into this shared component, specifically so the new wizard and
+  `/settings` share one real implementation instead of two copies of
+  six cards' worth of fetch/connect/disconnect logic drifting apart
+  over time. `/settings` itself is otherwise unchanged — same content,
+  same layout, just importing instead of defining these locally.
+- **`app/onboarding/page.tsx`** (new): two steps, a simple dot-stepper
+  at the top.
+  1. **Profile** — `AthleteProfileCard` + `AthleteZonesCard`,
+     unmodified, the exact same components `/settings` already uses.
+     Deliberately **not skippable** — filling this in needs nothing
+     external, and the user asked for "todo el perfil" directly, not
+     an abbreviated version.
+  2. **Connections** — the same 5 cards `/settings` shows, in the same
+     grid. **Has a "Skip for now" option** (alongside "Finish," both
+     call the same completion handler) — connecting a real external
+     account isn't something this app can force if the athlete
+     doesn't have one yet; skipping still marks onboarding complete so
+     it doesn't nag forever, and everything here stays editable from
+     `/settings` any time afterward.
+  "Finish"/"Skip" both just set `athletes.onboarding_completed = true`
+  for the signed-in athlete directly (same open-write-to-your-own-row
+  pattern every other profile field already uses) and route to
+  `/calendar`.
+- **`lib/auth-context.tsx`**: once `me` resolves, `needsOnboarding` is
+  `true` whenever `!me.onboarding_completed` and the current path
+  isn't `/onboarding` itself — an effect redirects there
+  (`router.replace`), and the render path shows a blank loading state
+  for that one tick instead of flashing the real destination page's
+  content first. Deliberately **no other exempt path** (not even
+  `/settings`, which has the identical content) — per the user's own
+  "esto es lo primero que tiene que hacer," so there's no loophole
+  page a not-yet-onboarded athlete could bookmark to permanently dodge
+  the wizard.
+- Not yet tested against a real Supabase project from this sandbox
+  (same standing limitation as every other Supabase-dependent feature
+  here) — confirm once deployed: run migration 035, that a genuinely
+  brand-new account (via `/register`, Google, or an admin invite)
+  actually lands on `/onboarding` and can't navigate around it, that
+  "Skip for now" and "Finish" both correctly release the gate, and
+  that Juan/José's existing accounts were NOT interrupted by this
+  (their rows should already read `onboarding_completed = true` right
+  after the migration runs).
+
+### Gated sign-in screen's Google button also disabled (Nov 2026)
+
+Found live from a real screenshot: clicking "Continue with Google" on
+the gated sign-in screen (the one shown for any visitor without a
+session, e.g. at `/calendar`) navigated the whole page away to
+Supabase's own raw authorize endpoint, which returned its own
+unbranded `{"code":400,"error_code":"validation_failed","msg":
+"Unsupported provider: provider is not enabled"}` JSON — proof Google
+was never actually enabled in Supabase's own Auth providers, contrary
+to this file's earlier assumption that this particular button was
+"already fully wired." Because `signInWithOAuth` triggers a full
+top-level navigation away from the app, there's no way to catch that
+failure and show a nice in-app message after the fact once it's
+already happened — the only honest fix is not starting it at all.
+`SignInScreen`'s Google button now gets the exact same disabled-with-
+a-note treatment `/register`'s own Google button already has
+("Continue with Google (not available yet)"), and `handleGoogleSignIn`
+no longer calls `signInWithOAuth`. Flip this back to a real call once
+Google is confirmed enabled in Supabase Auth -> Providers -> Google
+(see CLAUDE.md's "Google sign-in" section for the two manual setup
+steps that were apparently never actually completed).

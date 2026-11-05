@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import type { Session } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { useLocale } from "@/lib/i18n/context";
@@ -47,8 +47,16 @@ interface AuthCtx {
 
 const Ctx = createContext<AuthCtx | null>(null);
 
+/** The one path exempt from the onboarding redirect below (besides the
+ * public paths, which never reach this check at all) — everything else
+ * a not-yet-onboarded athlete tries to visit bounces back to
+ * `/onboarding` first, per explicit instruction that filling the
+ * profile + connecting accounts is "lo primero que tiene que hacer." */
+const ONBOARDING_PATH = "/onboarding";
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const isPublicPath = pathname === "/" || PUBLIC_PATHS.some((p) => pathname?.startsWith(p));
 
   const [session, setSession] = useState<Session | null>(null);
@@ -97,6 +105,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [session, athletes]);
 
   const athleteBySlug = useMemo(() => Object.fromEntries(athletes.map((a) => [a.slug, a])), [athletes]);
+
+  // First-run onboarding gate (Nov 2026) — any signed-in athlete whose
+  // profile row isn't marked onboarding_completed yet gets bounced to
+  // /onboarding before seeing anything else, regardless of how their
+  // account was created (self-registration, Google, or an admin
+  // invite). `me` is still null for a brief moment right after sign-in
+  // while `athletes` is loading, so this only fires once it's actually
+  // resolved — never redirects a half-loaded session.
+  const needsOnboarding = !!me && !me.onboarding_completed && pathname !== ONBOARDING_PATH;
+  useEffect(() => {
+    if (needsOnboarding) router.replace(ONBOARDING_PATH);
+  }, [needsOnboarding, router]);
 
   useEffect(() => {
     if (!me) return;
@@ -158,6 +178,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
   }
 
+  if (needsOnboarding) {
+    // Avoid flashing the real destination page's content for the one
+    // tick before the redirect effect above fires.
+    return <Ctx.Provider value={value}><div className="flex min-h-screen items-center justify-center bg-bg" /></Ctx.Provider>;
+  }
+
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
@@ -180,7 +206,6 @@ function SignInScreen() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
   const [mode, setMode] = useState<"signin" | "reset">("signin");
   const [resetSent, setResetSent] = useState(false);
 
@@ -192,20 +217,19 @@ function SignInScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handleGoogleSignIn() {
-    setError(null);
-    setGoogleLoading(true);
-    const supabase = createClient();
-    const { error: oauthError } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
-    });
-    if (oauthError) {
-      setGoogleLoading(false);
-      setError(isEn ? "Could not start Google sign-in." : "No se pudo iniciar sesión con Google.");
-    }
-    // On success the browser navigates away to Google — no need to clear loading.
-  }
+  // Found live (Nov 2026, from a real screenshot): Google was never
+  // actually enabled in Supabase's own Auth providers — clicking this
+  // navigated the whole page away to Supabase's raw authorize endpoint,
+  // which then showed its own unbranded
+  // {"code":400,"error_code":"validation_failed","msg":"Unsupported
+  // provider: provider is not enabled"} JSON. That's a full top-level
+  // navigation, so there's no way to catch the failure and show a nice
+  // in-app message after the fact — the only honest fix is not starting
+  // it at all until the Supabase side is really configured, same
+  // disabled-with-a-note treatment `/register`'s own Google button
+  // already uses. `signInWithOAuth` is deliberately NOT called here
+  // anymore; flip this back to the real call once Google is confirmed
+  // enabled in Supabase Auth -> Providers.
 
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
@@ -250,12 +274,12 @@ function SignInScreen() {
 
         <button
           type="button"
-          onClick={handleGoogleSignIn}
-          disabled={googleLoading}
-          className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-line bg-surface text-sm font-medium text-ink transition-colors hover:border-line-strong disabled:opacity-60"
+          disabled
+          title={isEn ? "Not available yet" : "Aún no disponible"}
+          className="flex h-11 w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-line bg-surface-2 text-sm font-medium text-ink-3"
         >
           <GoogleIcon />
-          {googleLoading ? (isEn ? "Redirecting…" : "Redirigiendo…") : isEn ? "Continue with Google" : "Continuar con Google"}
+          {isEn ? "Continue with Google (not available yet)" : "Continuar con Google (aún no disponible)"}
         </button>
         {error && <p className="mt-3 text-center text-sm text-error">{error}</p>}
 

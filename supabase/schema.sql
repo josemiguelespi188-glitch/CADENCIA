@@ -23,6 +23,10 @@ create table if not exists athletes (
   -- Can create Communities + bulk-assign workouts — see migration 034.
   -- Self-editable, not admin-guarded (unlike is_admin above).
   is_coach boolean not null default false,
+  -- Has this athlete finished /onboarding (profile + connections)? See
+  -- migration 035. Defaults false so every new account (self-registered
+  -- or admin-invited) starts needing it.
+  onboarding_completed boolean not null default false,
   -- Training-zone thresholds, editable from /settings — see migration 003
   -- and CLAUDE.md's roadmap (these feed future AI plan generation / a
   -- virtual coach agent, neither built yet).
