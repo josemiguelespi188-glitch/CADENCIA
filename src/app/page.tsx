@@ -1,208 +1,273 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useLocale } from "@/lib/i18n/context";
-import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 /**
- * Public home/registration page (Nov 2026, direct request: "Quiero una
- * pagina de incio para registrarse a cadencia"). Confirmed via
- * `AskUserQuestion`: plain email+password self-registration is the active
- * method here (no invite needed, same "open self-registration" philosophy
- * Google sign-in already has — see CLAUDE.md's "Google sign-in" section),
- * "Continue with Google" is shown but deliberately disabled with a "not
- * available yet" note rather than wired up on this page ("no le
- * conectemos aún... pon un mensaje de que esta función aún no esta
- * habilitada") — this does NOT affect the already-built, fully-wired
- * Google button on the gated sign-in screen inside `auth-context.tsx`,
- * only this new page's own copy of the button. A separate, public page
- * (confirmed over redesigning the existing gated sign-in screen), so it
- * replaces this app's old `redirect("/calendar")` root page.
+ * Public marketing/landing page (Nov 2026, direct follow-up: "quiero
+ * antes de entrar ahí que haya una landing page explicativa... siguiendo
+ * nuestro manual de marca"). The reference screenshots shared (FinalSurge,
+ * Intervals.icu, TrainingPeaks) were explicitly for CONTENT/STRUCTURE —
+ * hero + subheadline + CTAs, a "connects with" integrations strip,
+ * athlete-facing vs. coach-facing feature sections, a closing CTA band —
+ * not for visual style: this page uses Cadencia's own existing design
+ * system unchanged (monochrome ink/surface/line tokens, IBM Plex Sans +
+ * JetBrains Mono wordmark, pill buttons, rounded-2xl cards,
+ * uppercase-tracked micro-labels — see CLAUDE.md's "Design system"
+ * section), not FinalSurge's red or Intervals.icu's indigo.
  *
- * **Strongly recommend disabling Supabase's "Confirm email" setting**
- * (Auth -> Providers -> Email -> Confirm email) for this to actually
- * avoid the email-sending problems that triggered this whole feature
- * (see CLAUDE.md's "email rate limit exceeded" / "invalid or expired"
- * notes) — with it off, `signUp()` returns a session immediately and
- * registering needs ZERO Supabase emails at all. This page handles both
- * cases either way: an immediate session calls `/api/auth/ensure-athlete`
- * (the same idempotent athlete-row creation Google's self-registration
- * already uses) and goes straight into the app; no immediate session
- * shows a "check your email" message instead (that confirmation link
- * still needs the Invite/Reset-Password-style `token_hash` email
- * template fix applied to "Confirm signup" too, or it'll hit the same
- * PKCE mismatch already documented).
+ * Deliberately does NOT borrow Intervals.icu's usage-stats row
+ * ("200,000+ Active Athletes," etc.) — this app has no real users to
+ * report yet, and fabricating a number here would be exactly the kind of
+ * dishonesty this codebase avoids everywhere else (Best Efforts never
+ * called "PR," Fitness/Fatigue/Form always labeled "estimated," etc). The
+ * "Connects with" integrations strip only lists Strava/WHOOP/Garmin/
+ * COROS — all four really do have a working connect flow in this app
+ * (see their own CLAUDE.md sections), even though COROS's push isn't
+ * built yet; no logo IMAGES are used (would need real brand assets this
+ * app doesn't have), just styled monochrome text wordmarks, which also
+ * reads more like this app's own restrained brand than borrowed color
+ * logos would.
+ *
+ * The actual registration form lives at `/register` (moved there from
+ * this route) — this page is pure marketing with two kinds of CTA,
+ * "Get Started" (-> /register) and "Log In" (-> /calendar, which shows
+ * the existing gated sign-in screen, unchanged).
  */
-export default function HomePage() {
+export default function LandingPage() {
   const { locale } = useLocale();
   const isEn = locale === "en";
-  const router = useRouter();
-  const [checkingSession, setCheckingSession] = useState(true);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [pendingConfirmation, setPendingConfirmation] = useState(false);
-
-  useEffect(() => {
-    const supabase = createClient();
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) {
-        router.replace("/calendar");
-      } else {
-        setCheckingSession(false);
-      }
-    });
-  }, [router]);
-
-  async function handleRegister(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    if (password.length < 8) {
-      setError(isEn ? "Password must be at least 8 characters." : "La contraseña debe tener al menos 8 caracteres.");
-      return;
-    }
-    if (password !== confirm) {
-      setError(isEn ? "Passwords don't match." : "Las contraseñas no coinciden.");
-      return;
-    }
-    setSaving(true);
-    const supabase = createClient();
-    const { data, error: signUpError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { emailRedirectTo: `${window.location.origin}/accept-invite` },
-    });
-    if (signUpError) {
-      setSaving(false);
-      setError(signUpError.message);
-      return;
-    }
-    if (data.session) {
-      // Supabase's "Confirm email" is off (or this project otherwise
-      // auto-confirms) — the account is real and signed in immediately.
-      // Ensure the athletes row exists, same idempotent path Google's
-      // self-registration already uses, before entering the app.
-      const res = await fetch("/api/auth/ensure-athlete", { method: "POST" });
-      if (!res.ok) {
-        setSaving(false);
-        setError(isEn ? "Account created, but setting up your profile failed. Try signing in." : "Se creó la cuenta, pero falló configurar tu perfil. Intenta iniciar sesión.");
-        return;
-      }
-      router.push("/settings");
-      return;
-    }
-    setSaving(false);
-    setPendingConfirmation(true);
-  }
-
-  if (checkingSession) return <div className="flex min-h-screen items-center justify-center bg-bg" />;
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-bg px-6 py-12">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 text-center">
+    <div className="flex min-h-screen flex-col bg-bg">
+      <header className="border-b border-line px-6 py-4">
+        <div className="mx-auto flex max-w-5xl items-center justify-between">
+          <div className="flex items-center gap-2">
+            <img src="/logo.png" alt="" className="h-7 w-7 rounded-lg" />
+            <span
+              className="text-lg font-black tracking-[0.05em] text-ink"
+              style={{ fontFamily: "var(--font-jetbrains-mono, 'JetBrains Mono', monospace)" }}
+            >
+              cadencia
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link href="/calendar">
+              <Button variant="ghost" size="sm">
+                {isEn ? "Log In" : "Iniciar sesión"}
+              </Button>
+            </Link>
+            <Link href="/register">
+              <Button size="sm">{isEn ? "Sign Up" : "Regístrate"}</Button>
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      <main className="flex-1">
+        {/* ─── Hero ─── */}
+        <section className="px-6 pt-20 pb-16 text-center">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-ink-3">
+            {isEn ? "training log" : "registro de entreno"}
+          </p>
+          <h1 className="mx-auto mt-4 max-w-2xl text-4xl font-bold tracking-tight text-ink sm:text-5xl">
+            {isEn ? "Train with purpose. Together." : "Entrena con propósito. Juntos."}
+          </h1>
+          <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-ink-2">
+            {isEn
+              ? "Plan your workouts on a real training calendar, sync real data from Strava, WHOOP and Garmin, and train in sync with your community — all in one place."
+              : "Planifica tus entrenamientos en un calendario real, sincroniza datos reales de Strava, WHOOP y Garmin, y entrena en sincronía con tu comunidad — todo en un solo lugar."}
+          </p>
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+            <Link href="/register">
+              <Button size="lg">{isEn ? "Get Started" : "Empezar"}</Button>
+            </Link>
+            <Link href="/calendar">
+              <Button variant="outline" size="lg">
+                {isEn ? "Log In" : "Iniciar sesión"}
+              </Button>
+            </Link>
+          </div>
+
+          <div className="mx-auto mt-16 max-w-2xl">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-ink-3">
+              {isEn ? "Connects with" : "Se conecta con"}
+            </p>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-x-10 gap-y-3">
+              {["STRAVA", "WHOOP", "GARMIN", "COROS"].map((brand) => (
+                <span key={brand} className="text-lg font-bold tracking-wide text-ink-3">
+                  {brand}
+                </span>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ─── For athletes ─── */}
+        <FeatureSection
+          eyebrow={isEn ? "For athletes" : "Para atletas"}
+          title={isEn ? "A training log that actually knows what you did" : "Un registro que de verdad sabe lo que hiciste"}
+          bullets={
+            isEn
+              ? [
+                  "A real training calendar — swim, bike, run, gym, brick, race.",
+                  "Auto-synced real data from Strava, WHOOP and Garmin.",
+                  "Real HR/pace/power training zones and a race-time predictor.",
+                  "AI helps you build a structured workout from a plain description.",
+                  "Download your week to any calendar app.",
+                ]
+              : [
+                  "Un calendario de entrenamiento real — natación, bici, trote, gimnasio, brick, carrera.",
+                  "Datos reales sincronizados de Strava, WHOOP y Garmin.",
+                  "Zonas de FC/pace/potencia reales y un predictor de tiempos de carrera.",
+                  "La IA te arma un entreno estructurado a partir de una descripción simple.",
+                  "Descarga tu semana a cualquier app de calendario.",
+                ]
+          }
+          mock={<CalendarMock />}
+        />
+
+        {/* ─── For coaches ─── */}
+        <FeatureSection
+          eyebrow={isEn ? "For coaches" : "Para coaches"}
+          title={isEn ? "See your whole team, not just one athlete" : "Ve a todo tu equipo, no solo a un atleta"}
+          bullets={
+            isEn
+              ? [
+                  "Create a Community for your club or team.",
+                  "See everyone's combined stats and a leaderboard.",
+                  "Compare two athletes side by side, visually.",
+                  "Assign one workout to the whole community at once.",
+                ]
+              : [
+                  "Crea una Comunidad para tu club o equipo.",
+                  "Mira las estadísticas combinadas de todos y una tabla de posiciones.",
+                  "Compara a dos atletas lado a lado, de forma visual.",
+                  "Asigna un mismo entreno a toda la comunidad de una vez.",
+                ]
+          }
+          mock={<LeaderboardMock />}
+          reverse
+        />
+
+        {/* ─── Closing CTA ─── */}
+        <section className="bg-ink px-6 py-16 text-center">
+          <h2 className="text-2xl font-bold tracking-tight text-bg sm:text-3xl">
+            {isEn ? "Ready to train with purpose?" : "¿Listo para entrenar con propósito?"}
+          </h2>
+          <div className="mt-6">
+            <Link href="/register">
+              <Button size="lg" className="bg-bg text-ink hover:opacity-90">
+                {isEn ? "Get Started" : "Empezar"}
+              </Button>
+            </Link>
+          </div>
+        </section>
+      </main>
+
+      <footer className="border-t border-line px-6 py-8">
+        <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-3 sm:flex-row">
           <span
-            className="text-2xl font-black tracking-[0.05em] text-ink"
+            className="text-sm font-bold tracking-[0.05em] text-ink-3"
             style={{ fontFamily: "var(--font-jetbrains-mono, 'JetBrains Mono', monospace)" }}
           >
             cadencia
           </span>
-          <p className="mt-1 text-[10px] uppercase tracking-[0.5em] text-ink-3">{isEn ? "training log" : "registro de entreno"}</p>
-          <p className="mt-4 text-sm leading-relaxed text-ink-2">
-            {isEn
-              ? "Plan your training, track real Strava, WHOOP and Garmin data, and train in sync with your community."
-              : "Planifica tu entrenamiento, sigue tus datos reales de Strava, WHOOP y Garmin, y entrena en sincronía con tu comunidad."}
-          </p>
+          <Link href="/privacy" className="text-xs text-ink-3 hover:text-ink">
+            {isEn ? "Privacy" : "Privacidad"}
+          </Link>
         </div>
+      </footer>
+    </div>
+  );
+}
 
-        {pendingConfirmation ? (
-          <p className="text-center text-sm text-ink-2">
-            {isEn
-              ? `Check ${email} for a confirmation link to finish creating your account.`
-              : `Revisa ${email} para un enlace de confirmación y terminar de crear tu cuenta.`}
-          </p>
-        ) : (
-          <>
-            <button
-              type="button"
-              disabled
-              title={isEn ? "Not available yet" : "Aún no disponible"}
-              className="flex h-11 w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-line bg-surface-2 text-sm font-medium text-ink-3"
-            >
-              <GoogleIcon />
-              {isEn ? "Continue with Google (not available yet)" : "Continuar con Google (aún no disponible)"}
-            </button>
+function FeatureSection({
+  eyebrow,
+  title,
+  bullets,
+  mock,
+  reverse,
+}: {
+  eyebrow: string;
+  title: string;
+  bullets: string[];
+  mock: React.ReactNode;
+  reverse?: boolean;
+}) {
+  return (
+    <section className="border-t border-line px-6 py-16">
+      <div className={cn("mx-auto grid max-w-5xl items-center gap-10 lg:grid-cols-2", reverse && "lg:[&>*:first-child]:order-2")}>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-ink-3">{eyebrow}</p>
+          <h2 className="mt-3 text-2xl font-bold tracking-tight text-ink sm:text-3xl">{title}</h2>
+          <ul className="mt-6 flex flex-col gap-3">
+            {bullets.map((b) => (
+              <li key={b} className="flex items-start gap-2.5 text-sm text-ink-2">
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-ink" />
+                {b}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="flex justify-center">{mock}</div>
+      </div>
+    </section>
+  );
+}
 
-            <div className="my-5 flex items-center gap-3">
-              <div className="h-px flex-1 bg-line" />
-              <span className="text-[11px] uppercase tracking-[0.2em] text-ink-3">{isEn ? "or" : "o"}</span>
-              <div className="h-px flex-1 bg-line" />
+/** Decorative mock built from this app's own real calendar-chip look —
+ * not a fabricated screenshot, just the same `.s-<sport>` color pattern
+ * the real Calendar page already uses. */
+function CalendarMock() {
+  const rows: { sport: "run" | "bike" | "swim"; label: string; sub: string }[] = [
+    { sport: "run", label: "Tempo Run", sub: "50 min · 8.5 km" },
+    { sport: "bike", label: "Endurance Ride", sub: "1h 30min · 35 km" },
+    { sport: "swim", label: "Technique Swim", sub: "45 min · 2000 m" },
+  ];
+  return (
+    <div className="w-full max-w-sm rounded-2xl border border-line bg-surface p-5 shadow-sm">
+      <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-ink-3">This week</p>
+      <div className="flex flex-col gap-2.5">
+        {rows.map((r) => (
+          <div key={r.label} className={cn("s-" + r.sport, "flex items-center gap-3 rounded-xl border border-line p-3")} style={{ background: "var(--soft)" }}>
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: "var(--c)" }} />
+            <div>
+              <p className="text-sm font-medium text-ink">{r.label}</p>
+              <p className="text-xs text-ink-3">{r.sub}</p>
             </div>
-
-            <form onSubmit={handleRegister} className="flex flex-col gap-4">
-              <TextField id="reg-email" label="Email" type="email" value={email} onChange={setEmail} />
-              <TextField id="reg-password" label={isEn ? "Password" : "Contraseña"} type="password" value={password} onChange={setPassword} />
-              <TextField id="reg-confirm" label={isEn ? "Confirm password" : "Confirmar contraseña"} type="password" value={confirm} onChange={setConfirm} />
-              {error && <p className="text-sm text-error">{error}</p>}
-              <Button type="submit" disabled={saving} className="mt-2 w-full">
-                {saving ? (isEn ? "Creating account…" : "Creando cuenta…") : isEn ? "Create account" : "Crear cuenta"}
-              </Button>
-            </form>
-
-            <p className="mt-6 text-center text-xs text-ink-3">
-              {isEn ? "Already have an account? " : "¿Ya tienes cuenta? "}
-              <a href="/calendar" className="underline hover:text-ink">
-                {isEn ? "Sign in" : "Inicia sesión"}
-              </a>
-            </p>
-          </>
-        )}
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 
-function GoogleIcon() {
+/** Decorative mock for the Compare/Community feature — same fixed
+ * bike/gym color pair `CompareProfiles.tsx` already uses for "athlete A
+ * vs athlete B" visuals throughout that feature. */
+function LeaderboardMock() {
+  const rows = [
+    { name: "José Miguel", km: 42, pct: 100 },
+    { name: "Juan", km: 31, pct: 74 },
+  ];
   return (
-    <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
-      <path fill="#4285F4" d="M45.1 24.5c0-1.6-.1-3.1-.4-4.6H24v8.7h11.9c-.5 2.8-2.1 5.1-4.5 6.7v5.5h7.3c4.3-3.9 6.8-9.7 6.8-16.3z" />
-      <path fill="#34A853" d="M24 46c6.1 0 11.3-2 15-5.5l-7.3-5.5c-2 1.4-4.6 2.2-7.7 2.2-5.9 0-10.9-4-12.7-9.4H3.7v5.7C7.4 41 15 46 24 46z" />
-      <path fill="#FBBC05" d="M11.3 27.8c-.5-1.4-.7-2.8-.7-4.3s.3-3 .7-4.3v-5.7H3.7C2.6 16.2 2 20 2 23.5s.6 7.3 1.7 10l7.6-5.7z" />
-      <path fill="#EA4335" d="M24 10.8c3.3 0 6.3 1.1 8.6 3.3l6.5-6.3C35.3 4.1 30.1 2 24 2 15 2 7.4 7 3.7 13.8l7.6 5.7c1.8-5.4 6.8-9.4 12.7-9.4z" />
-    </svg>
-  );
-}
-
-function TextField({
-  id,
-  label,
-  type,
-  value,
-  onChange,
-}: {
-  id: string;
-  label: string;
-  type: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-xs text-ink-2">
-        {label}
-      </label>
-      <input
-        id={id}
-        type={type}
-        required
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-11 rounded-xl border border-line bg-surface px-3 text-sm text-ink outline-none focus:border-line-strong"
-      />
+    <div className="w-full max-w-sm rounded-2xl border border-line bg-surface p-5 shadow-sm">
+      <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-ink-3">Leaderboard</p>
+      <div className="flex flex-col gap-3">
+        {rows.map((r, i) => (
+          <div key={r.name} className="grid grid-cols-[16px_90px_1fr_auto] items-center gap-2 text-sm">
+            <span className="text-xs font-bold text-ink-3">{i + 1}</span>
+            <span className="truncate font-medium text-ink">{r.name}</span>
+            <div className="h-2.5 rounded-full bg-[var(--surface-2)]">
+              <div className="h-full rounded-full" style={{ width: `${r.pct}%`, background: i === 0 ? "var(--bike)" : "var(--gym)" }} />
+            </div>
+            <span className="text-xs tabular-nums text-ink-3">{r.km} km</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

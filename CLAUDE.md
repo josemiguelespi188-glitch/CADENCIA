@@ -3030,3 +3030,62 @@ before building, since guessing either wrong meant real rework:
   `athletes` row looks correct, and that an already-registered
   visitor hitting `/` gets redirected straight to `/calendar` instead
   of seeing the registration form again.
+
+### Real marketing landing page, registration form moved to `/register` (Nov 2026)
+
+Immediate direct follow-up: "quiero antes de entrar ahí que haya una
+landing page explicativa. te comparto unas imagenes para que te guies
+en la info y lo que tenemos que poner. siguiendo nuestro manual de
+marca." Five reference screenshots were shared (FinalSurge, Intervals.icu,
+TrainingPeaks) — explicitly for content/structure (hero + subheadline +
+CTAs, a "connects with" integrations strip, athlete-facing vs.
+coach-facing feature sections, a closing CTA band), not visual style:
+this page is built entirely from Cadencia's own existing design tokens
+(monochrome ink/surface/line, IBM Plex Sans + JetBrains Mono wordmark,
+pill buttons, rounded-2xl cards), never FinalSurge's red or
+Intervals.icu's indigo.
+
+- **`app/page.tsx`** is now a real marketing page, not the registration
+  form — header (logo + "Log In"/"Sign Up"), a hero (headline,
+  subheadline, two CTA buttons, a "Connects with" strip), two
+  `FeatureSection`s ("For athletes" / "For coaches," each with real
+  bullet points pulled from this app's actual built features — no
+  invented claims), a closing dark CTA band, and a minimal footer.
+  The two `*Mock` components (`CalendarMock`, `LeaderboardMock`) are
+  decorative but genuine — built from this app's own real `.s-<sport>`
+  calendar-chip color pattern and the Compare feature's own fixed
+  bike/gym color pair, not a fabricated screenshot.
+- **Deliberately NOT borrowed from Intervals.icu**: its usage-stats row
+  ("200,000+ Active Athletes," "300M+ Activities Analyzed," etc.) —
+  this app has no real users to report, and making up a number here
+  would be exactly the kind of overclaiming this codebase avoids
+  everywhere else (see the "never fabricate" rule already documented
+  repeatedly in this file — Best Efforts, Fitness/Fatigue/Form, etc).
+- **"Connects with" strip lists Strava, WHOOP, Garmin, COROS** as
+  plain bold text wordmarks (no logo images — this app has no real
+  brand-asset files for any of them, and text fits this app's
+  restrained monochrome brand better than borrowed color logos would
+  anyway). All four genuinely have a working connect flow in this app
+  today, which is the bar for being listed here — even though COROS's
+  actual structured-workout push isn't built yet (see its own CLAUDE.md
+  section), the OAuth connection itself is real and confirmed live.
+- **The actual registration form moved to `app/register/page.tsx`**
+  (relocated from `/`, same logic unchanged — see the section above
+  for the full behavior) — the landing page's "Sign Up"/"Get Started"
+  buttons, and the register page's own "Already have an account? Sign
+  in" link, tie the two pages together. `/register` was added to
+  `lib/auth-context.tsx`'s `PUBLIC_PATHS` (a normal prefix-matched
+  entry, unlike `/` itself which still needs its own exact-match
+  check — see that file's own comment on why).
+- `layout.tsx`'s `<meta name="description">` was also updated in the
+  same pass (direct request, reported via a WhatsApp link-preview
+  screenshot showing the stale copy) from the original "Training log
+  for Juan and José" — no longer accurate once registration opened up
+  beyond just the two of them — to a generic description matching
+  this new landing page's own pitch.
+- Not yet tested against a real Supabase project from this sandbox
+  (same standing limitation as every other Supabase-dependent feature
+  here) — confirm once deployed: that `/` renders correctly on mobile
+  (the two `FeatureSection`s stack, the hero CTAs wrap cleanly), and
+  that both CTAs ("Get Started" -> `/register`, "Log In" -> `/calendar`)
+  land where expected.

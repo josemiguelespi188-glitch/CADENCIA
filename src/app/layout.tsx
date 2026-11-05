@@ -18,7 +18,7 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "Cadencia",
-  description: "Training log for Juan and José.",
+  description: "Plan your training, sync real data from Strava, WHOOP and Garmin, and train with purpose.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

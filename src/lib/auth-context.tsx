@@ -19,6 +19,8 @@ const PUBLIC_PATHS = [
   // application reviewers to read it, per the "Garmin Personal API"
   // section in CLAUDE.md.
   "/privacy",
+  // The actual self-registration form, linked from "/"'s landing page.
+  "/register",
 ];
 
 interface AuthCtx {
