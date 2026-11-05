@@ -3430,3 +3430,13 @@ old COROS Partner-API scaffold's removal, documented above):
   bucket in the sibling Operations Hub codebase). No athlete had
   connected via this tier before it was removed, so there's no real data
   loss either way.
+
+## Sign Out lands on the landing page, not the gated sign-in screen (Nov 2026)
+
+Direct instruction. `signOut()` (`lib/auth-context.tsx`) now calls
+`router.push("/")` right after `supabase.auth.signOut()` — fixed in this
+one shared function rather than at each call site, since every Sign Out
+button in the app (`NoProfileScreen`'s button, Settings' own Sign Out
+link) already goes through it. `/` is in the exact-match public-path
+check, so landing there renders the real marketing page with no gating,
+same as any other visitor.

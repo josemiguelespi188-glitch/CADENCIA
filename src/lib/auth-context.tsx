@@ -199,6 +199,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function signOut() {
     const supabase = createClient();
     await supabase.auth.signOut();
+    // Direct instruction (Nov 2026): land back on the public marketing
+    // page, not the gated sign-in screen — every Sign Out button in the
+    // app (Settings, NoProfileScreen) goes through this one function, so
+    // fixing it here covers all of them.
+    router.push("/");
   }
 
   const value: AuthCtx = {
