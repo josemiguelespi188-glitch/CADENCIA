@@ -68,7 +68,18 @@ export default function CommunityMemberProfilePage({ params }: { params: Promise
                     <Fact label="VO2max" value={athlete.garmin_vo2max ?? athlete.vo2max ? `${(athlete.garmin_vo2max ?? athlete.vo2max)} ml/kg/min` : "–"} />
                     <Fact label={isEn ? "Height / weight" : "Altura / peso"} value={athlete.height_cm || athlete.weight_kg ? `${athlete.height_cm ?? "–"} cm · ${athlete.weight_kg ?? "–"} kg` : "–"} />
                   </div>
-                  {athlete.goal_notes && <p className="mt-3 text-sm text-ink-2">{athlete.goal_notes}</p>}
+                  {/* Found live (Nov 2026, direct feedback: "se ve feo esto") —
+                      this used to render as a bare, unlabeled line of text
+                      floating right under the stat grid with no visual
+                      relationship to anything (e.g. a goal time like "4:50"
+                      looked like a stray leftover fragment). A divider +
+                      an explicit "Goal:" label fixes that. */}
+                  {athlete.goal_notes && (
+                    <p className="mt-3 border-t border-line pt-3 text-sm text-ink-2">
+                      <span className="font-semibold text-ink">{isEn ? "Goal: " : "Objetivo: "}</span>
+                      {athlete.goal_notes}
+                    </p>
+                  )}
                 </Card>
 
                 {athlete.personal_bests.length > 0 && (

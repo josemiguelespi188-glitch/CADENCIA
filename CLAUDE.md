@@ -3737,3 +3737,23 @@ input "facts" are already English-only strings.
   typed into "Generate with AI" now comes back with English title/
   notes/Strava Description, and that a sync-time fallback description
   (no human `strava_comment` set) is in English too.
+
+## Two small visual-polish fixes on the Community member page (Nov 2026)
+
+Direct complaint with a screenshot: "se ve feo esto" (a bare "4:50"
+floating under the Basics stat grid with no label, and "Pace zones"
+visually inconsistent with the other two zone cards).
+
+- **`app/community/[slug]/member/[athleteId]/page.tsx`**: `goal_notes`
+  used to render as an unlabeled line of text right under the stat
+  grid — looked like a stray leftover fragment, especially for a short
+  value like a goal time ("4:50"). Now has a `border-t` divider and an
+  explicit "Goal:" label.
+- **`ZoneTables.tsx`**: the "Pace zones" card never got the "Computed"/
+  "From Strava" badge the HR and Power cards both show (pace is
+  ALWAYS computed — Strava's zones endpoint has no pace zones at all —
+  so it was never wired through the `fromStrava` conditional the other
+  two use). Added a plain, unconditional "Computed" badge for visual
+  consistency across all three cards — a real functional difference
+  (no `fromStrava` branch needed) no longer reads as a missing/broken
+  element.

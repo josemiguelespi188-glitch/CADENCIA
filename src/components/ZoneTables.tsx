@@ -50,7 +50,17 @@ export function ZoneTables({ athlete }: { athlete: Athlete }) {
       </Card>
 
       <Card>
-        <CardTitle>{t("pace_zones")}</CardTitle>
+        <CardTitle>
+          {t("pace_zones")}
+          {/* Found live (Nov 2026, direct feedback: "se ve feo esto") —
+              this card never got the "Computed"/"From Strava" badge the
+              HR and Power cards both have, which read as visually
+              inconsistent sitting between two cards that do. Pace is
+              ALWAYS computed (Strava's zones endpoint has no pace zones
+              at all, see this file's own header comment), so this badge
+              never needs the fromStrava conditional the other two use. */}
+          <span className="ml-2 text-xs font-normal text-ink-3">{t("computed")}</span>
+        </CardTitle>
         <div className="mt-3 divide-y divide-line">
           {paceZones ? (
             paceZones.map((z) => (
