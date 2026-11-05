@@ -56,7 +56,10 @@ export default function AdminPage() {
           ) : (
             <>
               {error && <p className="mb-4 text-sm text-error">{error}</p>}
-              <InviteNewAthlete onDone={afterChange} />
+              <AiInstructionsPanel />
+              <div className="mt-8">
+                <InviteNewAthlete onDone={afterChange} />
+              </div>
               <div className="mt-8">
                 {athletes === null ? (
                   <p className="text-ink-3">{t("loading")}</p>
@@ -73,6 +76,82 @@ export default function AdminPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+/**
+ * Global AI "guardrails" instructions, appended to every Claude call this
+ * app makes (Generate with AI + the automatic Strava description
+ * write-back) — direct request: "se puede crear un prompt guardrails
+ * instruction section para modificar lo que busca el ai? Sería bueno
+ * para que venga todo en ingles y con una estructura." See
+ * lib/aiAccess.ts's getAiInstructions() and CLAUDE.md's "AI access
+ * control" section.
+ */
+function AiInstructionsPanel() {
+  const [instructions, setInstructions] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/admin/ai-settings")
+      .then((res) => res.json())
+      .then((data) => {
+        setInstructions(data.instructions ?? "");
+        setLoaded(true);
+      });
+  }, []);
+
+  async function save() {
+    setSaving(true);
+    setSaved(false);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/ai-settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instructions }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error);
+        return;
+      }
+      setSaved(true);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card>
+      <p className="text-sm font-semibold">AI instructions</p>
+      <p className="mt-1 text-xs text-ink-3">
+        Appended to every AI generation on this platform (Generate with AI, and the automatic Strava description write-back) — e.g.
+        &ldquo;Always respond in English&rdquo; or a required structure for workout descriptions. Leave blank for no extra instructions.
+      </p>
+      <textarea
+        rows={5}
+        value={instructions}
+        onChange={(e) => {
+          setInstructions(e.target.value);
+          setSaved(false);
+        }}
+        disabled={!loaded}
+        placeholder="E.g. Always respond in English, regardless of the language the prompt was written in. Keep workout descriptions to 2-3 short sentences: purpose, main set, key target."
+        className="mt-3 w-full rounded-xl border border-line bg-bg px-3 py-2 text-sm"
+        style={{ fontFamily: "var(--font-mono)" }}
+      />
+      <div className="mt-2 flex items-center gap-3">
+        <Button size="sm" onClick={save} disabled={saving || !loaded}>
+          {saving ? "Saving…" : "Save"}
+        </Button>
+        {saved && <span className="text-xs text-ink-3">Saved</span>}
+        {error && <span className="text-xs text-error">{error}</span>}
+      </div>
+    </Card>
   );
 }
 
@@ -258,6 +337,53 @@ function AthleteRow({ athlete, me, onChange }: { athlete: Athlete; me: Athlete; 
     }
   }
 
+  // Nov 2026, see CLAUDE.md's "AI access control" section — unlike
+  // is_coach, ai_enabled/ai_weekly_limit are admin-only (a trigger
+  // reverts any other write path), disabled by default for every
+  // athlete: "Desactivado por defecto, admin debe activarlo."
+  const [weeklyLimit, setWeeklyLimit] = useState(athlete.ai_weekly_limit);
+  const [savingLimit, setSavingLimit] = useState(false);
+
+  async function toggleAi() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/athletes/${athlete.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ aiEnabled: !athlete.ai_enabled }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error);
+        return;
+      }
+      await onChange();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveWeeklyLimit() {
+    setSavingLimit(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/athletes/${athlete.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ aiWeeklyLimit: weeklyLimit }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error);
+        return;
+      }
+      await onChange();
+    } finally {
+      setSavingLimit(false);
+    }
+  }
+
   // Nov 2026, see CLAUDE.md's "Community" section — is_coach is
   // self-editable from Settings too; this is just an admin convenience
   // for setting it on someone else's behalf.
@@ -297,10 +423,18 @@ function AthleteRow({ athlete, me, onChange }: { athlete: Athlete; me: Athlete; 
         {athlete.is_coach && (
           <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-2">Coach</span>
         )}
+        {athlete.ai_enabled && (
+          <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-2">AI</span>
+        )}
         <div className="ml-auto flex items-center gap-2">
           {athlete.auth_user_id && (
             <Button size="sm" variant="ghost" onClick={toggleCoach} disabled={busy}>
               {athlete.is_coach ? "Remove coach" : "Make coach"}
+            </Button>
+          )}
+          {athlete.auth_user_id && (
+            <Button size="sm" variant="ghost" onClick={toggleAi} disabled={busy}>
+              {athlete.ai_enabled ? "Disable AI" : "Enable AI"}
             </Button>
           )}
           {athlete.auth_user_id ? (
@@ -329,6 +463,22 @@ function AthleteRow({ athlete, me, onChange }: { athlete: Athlete; me: Athlete; 
         <div className="mt-2 flex items-center gap-3">
           <span className="h-2 w-2 shrink-0 rounded-full bg-ink-3" />
           <span className="text-xs text-ink-3">No account yet</span>
+        </div>
+      )}
+
+      {athlete.ai_enabled && (
+        <div className="mt-2 flex items-center gap-2">
+          <span className="text-xs text-ink-3">AI prompts per week:</span>
+          <input
+            type="number"
+            min={0}
+            value={weeklyLimit}
+            onChange={(e) => setWeeklyLimit(Number(e.target.value))}
+            className="h-8 w-16 rounded-lg border border-line bg-bg px-2 text-xs"
+          />
+          <Button size="sm" variant="ghost" onClick={saveWeeklyLimit} disabled={savingLimit || weeklyLimit === athlete.ai_weekly_limit}>
+            {savingLimit ? "Saving…" : "Save"}
+          </Button>
         </div>
       )}
 

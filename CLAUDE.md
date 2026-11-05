@@ -3757,3 +3757,127 @@ visually inconsistent with the other two zone cards).
   consistency across all three cards — a real functional difference
   (no `fromStrava` branch needed) no longer reads as a missing/broken
   element.
+
+## AI access control (Nov 2026)
+
+Two direct requests in the same message, with a screenshot of
+`/admin`: *"EN el admin section se puede crear un prompt guardrails
+instruction section para modificar lo que busca el ai? Sería bueno
+para que venga todo en ingles y con una estructura."* and *"lOS
+USUARIOS TIENEN QUE tener permiso para usar ai. Y sería buenazo poner
+un limite de prompts que tienen a la semana."* Given how costly
+guessing wrong on any of these would be (a security posture, an exact
+numeric limit, and which forms of AI use the limit covers), confirmed
+via `AskUserQuestion` before building: **AI access is disabled by
+default, an admin must explicitly enable it per athlete** (this
+blocked Juan's and José's own existing AI usage the moment this
+shipped, until re-enabled from `/admin`), and **the weekly limit is
+exactly 5** (the user typed this exact number, overriding the
+suggested 20/50 options).
+
+- **Migration `036_ai_access_control.sql`** (mirrored in `schema.sql`
+  — **needs this migration run in the Supabase SQL editor**):
+  `athletes.ai_enabled` (boolean, default `false`) and
+  `athletes.ai_weekly_limit` (integer, default `5`) — both admin-only,
+  same reasoning `is_admin` already needed a trigger for: RLS only
+  checks row ownership, not which *column* is being written, so an
+  athlete's own `athletes_update_own` policy would otherwise let them
+  flip these on themselves. The old `athletes_guard_is_admin`
+  trigger/function was dropped and replaced with a widened
+  `athletes_guard_admin_fields()` that reverts `is_admin`,
+  `ai_enabled`, AND `ai_weekly_limit` back to their previous value on
+  any write that didn't come from the service-role client — one
+  trigger covering all three admin-only columns instead of a second,
+  near-duplicate one.
+- **`ai_usage_log`** (new table, service-role only, RLS enabled no
+  policies): one row per "Generate with AI" attempt
+  (`athlete_id`, `created_at`), indexed on `(athlete_id, created_at)`.
+  Deliberately a log, not a counter column that resets weekly — the
+  limit is enforced as a **rolling 7-day window**
+  (`now() - interval '7 days'`), not a calendar-week reset, so there's
+  no Sunday-midnight edge case where using the limit right before a
+  reset and right after effectively doubles it.
+- **`ai_settings`** (new table, service-role only): the same
+  singleton-row idiom `coros_mcp_client` already established
+  (`id boolean primary key default true check (id)`), one `instructions`
+  text column — the admin-editable "guardrails" block from the first
+  request above.
+- **`lib/aiAccess.ts`** (new) is the one shared helper every AI-gated
+  code path imports: `getAiUsageStatus(athlete)` (reads the rolling
+  7-day count, returns `{enabled, weeklyLimit, usedThisWeek,
+  remaining}`), `logAiUsage(athleteId)` (inserts one row — called
+  right before the real Claude call, once permission/limit checks
+  already passed, so a prompt that fails downstream still counts
+  against the quota rather than giving free retries), and
+  `getAiInstructions()` (reads the singleton `ai_settings` row,
+  best-effort — a read failure just means no extra instructions get
+  appended, never blocks generation).
+- **The permission/limit split is deliberate**: `ai_enabled` gates
+  BOTH the interactive "Generate with AI" box in `WorkoutDialog.tsx`
+  AND the automatic Strava sync-time AI description write-back
+  (`generateActivityDescription()`, called from `/api/strava/sync`
+  only when a matched workout's own `strava_comment` is blank) — if an
+  athlete doesn't have AI permission, neither path should call Claude
+  on their behalf. `ai_weekly_limit` only gates the interactive
+  "Generate with AI" box — the automatic background write-back isn't
+  a user-submitted "prompt," so it doesn't count against or get
+  blocked by the weekly limit (only by `ai_enabled` itself). A
+  **human-written** `strava_comment` always still wins and goes
+  through regardless of `ai_enabled`, since typing one yourself isn't
+  an AI call at all.
+- **`lib/integrations/claude.ts`**: both `generateActivityDescription()`
+  and `generateWorkoutFromPrompt()` gained an optional trailing
+  `extraInstructions?: string` parameter, appended to each function's
+  system prompt as `"\n\nAdditional instructions from this platform's
+  admin:\n" + extraInstructions` when non-empty — the actual mechanism
+  behind the "guardrails" request (e.g. an admin can paste "Always
+  respond in English" or a required structure, on top of this app's
+  own already-existing English-only instruction baked into both
+  prompts separately — see the "AI-generated content now always
+  writes in English" section above).
+- **`POST /api/workouts/generate`** now checks `getAiUsageStatus(me)`
+  first — 403 (`"AI generation isn't enabled for your account yet —
+  ask an admin."`) if disabled, 429 (`"You've used all N AI
+  generations for this week."`) if the limit's exhausted — before
+  calling `logAiUsage()` and the real Claude call. Gated on the
+  **caller's** own permission/limit, not the workout's assigned
+  athlete (any signed-in athlete can already edit any other athlete's
+  workout, the existing "shared coach log" model — this is about who's
+  spending AI quota, not whose workout it's for).
+- **`/api/strava/sync`** resolves `aiEnabled = athlete.ai_enabled` and
+  only fetches `getAiInstructions()` / calls
+  `generateActivityDescription()` when true; otherwise the fallback
+  description path resolves to `null` (a human `strava_comment`, if
+  present, still always wins first regardless).
+- **`GET /api/admin/ai-settings`** / **`PATCH .../ai-settings`**
+  (`requireAdmin()`-gated) read/write the singleton `ai_settings` row.
+  **`GET /api/ai/usage`** (signed-in-athlete-gated) returns the
+  caller's own `getAiUsageStatus()` — purely to drive
+  `WorkoutDialog.tsx`'s UI state, never the actual enforcement, which
+  stays server-side in `/api/workouts/generate` regardless of what
+  this returns.
+- **`PATCH /api/admin/athletes/[id]`** extended to also accept
+  `aiEnabled`/`aiWeeklyLimit` in the same request body shape
+  `isAdmin`/`isCoach` already use — no last-admin-style invariant
+  needed for either, unlike `isAdmin`.
+- **`/admin`'s UI**: a new `AiInstructionsPanel` (textarea + Save,
+  reading/writing the routes above) renders near the top of the page.
+  Each `AthleteRow` gained an "AI" badge (shown when `ai_enabled`), an
+  Enable AI/Disable AI button, and — only once enabled — an editable
+  "AI prompts per week" number input with its own Save button.
+- **`WorkoutDialog.tsx`**'s "Generate with AI" box now fetches `GET
+  /api/ai/usage` when the dialog opens: shows a plain "ask an admin"
+  message instead of the textarea when disabled; shows "N of M AI
+  generations left this week" and disables the textarea/button once
+  `remaining <= 0`; optimistically decrements the local `remaining`
+  count right after a successful generation (instead of refetching) so
+  the hint stays accurate across multiple generations in the same
+  dialog session without an extra round trip.
+- Not yet tested against a real Supabase project from this sandbox
+  (same standing limitation as every other Supabase-dependent feature
+  here) — confirm once deployed: run migration 036, that Juan's and
+  José's existing AI usage is correctly blocked until an admin
+  re-enables it from `/admin`, that the weekly limit of 5 actually
+  blocks a 6th generation in the same rolling week and recovers after
+  7 days pass, and that a saved admin instruction (e.g. a required
+  structure) actually shows up influencing a real generation's output.

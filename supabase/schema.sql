@@ -18,11 +18,17 @@ create table if not exists athletes (
   auth_user_id uuid unique references auth.users(id) on delete set null,
   email text unique,
   -- Can reach /admin — only ever set server-side via the service-role
-  -- admin API; see the athletes_guard_is_admin trigger below.
+  -- admin API; see the athletes_guard_admin_fields trigger below.
   is_admin boolean not null default false,
   -- Can create Communities + bulk-assign workouts — see migration 034.
   -- Self-editable, not admin-guarded (unlike is_admin above).
   is_coach boolean not null default false,
+  -- Can use "Generate with AI" + the automatic Strava description
+  -- write-back — see migration 036. Admin-only write, same guard trigger
+  -- as is_admin below.
+  ai_enabled boolean not null default false,
+  -- Max "Generate with AI" prompts per rolling 7 days — see migration 036.
+  ai_weekly_limit integer not null default 5,
   -- Has this athlete finished /onboarding (profile + connections)? See
   -- migration 035. Defaults false so every new account (self-registered
   -- or admin-invited) starts needing it.
@@ -88,7 +94,7 @@ comment on column athletes.resting_hr is 'Resting heart rate (bpm), self-reporte
 comment on column athletes.max_hr is 'Max heart rate (bpm), self-reported or from a field test.';
 comment on column athletes.personal_bests is 'Array of {id, sport, distanceLabel, distanceMeters, timeSec, date, raceName} — see src/lib/racePredictor.ts.';
 comment on column athletes.email is 'Login email — set at invite time.';
-comment on column athletes.is_admin is 'Can reach /admin. Only ever changed server-side — see athletes_guard_is_admin below.';
+comment on column athletes.is_admin is 'Can reach /admin. Only ever changed server-side — see athletes_guard_admin_fields below.';
 
 insert into athletes (slug, name, initials, email, is_admin)
 values
@@ -96,26 +102,67 @@ values
   ('jose', 'José Miguel', 'JE', 'josemiguel.espi188@gmail.com', true)
 on conflict (slug) do nothing;
 
--- Blocks self-promotion to admin from any write path except the
--- service-role client (the admin API routes) — see migration 013.
-create or replace function athletes_guard_is_admin()
+-- Blocks self-editing is_admin/ai_enabled/ai_weekly_limit from any write
+-- path except the service-role client (the admin API routes) — originally
+-- just is_admin (migration 013), widened to the two AI permission columns
+-- in migration 036 since those are admin-granted permissions too, not
+-- athlete preferences.
+create or replace function athletes_guard_admin_fields()
 returns trigger
 language plpgsql
 security definer
 set search_path = public
 as $$
 begin
-  if auth.role() <> 'service_role' and new.is_admin is distinct from old.is_admin then
-    new.is_admin := old.is_admin;
+  if auth.role() <> 'service_role' then
+    if new.is_admin is distinct from old.is_admin then
+      new.is_admin := old.is_admin;
+    end if;
+    if new.ai_enabled is distinct from old.ai_enabled then
+      new.ai_enabled := old.ai_enabled;
+    end if;
+    if new.ai_weekly_limit is distinct from old.ai_weekly_limit then
+      new.ai_weekly_limit := old.ai_weekly_limit;
+    end if;
   end if;
   return new;
 end;
 $$;
 
 drop trigger if exists athletes_guard_is_admin_trigger on athletes;
-create trigger athletes_guard_is_admin_trigger
+drop trigger if exists athletes_guard_admin_fields_trigger on athletes;
+create trigger athletes_guard_admin_fields_trigger
   before update on athletes
-  for each row execute function athletes_guard_is_admin();
+  for each row execute function athletes_guard_admin_fields();
+
+-- ─── ai_usage_log / ai_settings ─────────────────────────────────────────────
+-- See migration 036 and CLAUDE.md's "AI access control" section. One row
+-- per "Generate with AI" attempt that passed the permission gate — the
+-- weekly limit is a rolling 7-day count, not a calendar-week reset.
+-- Service-role only, same strictness as every connections/usage table in
+-- this app.
+create table if not exists ai_usage_log (
+  id uuid primary key default gen_random_uuid(),
+  athlete_id uuid not null references athletes(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists ai_usage_log_athlete_created_idx on ai_usage_log (athlete_id, created_at);
+
+alter table ai_usage_log enable row level security;
+
+-- Global, admin-editable text appended to both Claude system prompts
+-- (generateWorkoutFromPrompt, generateActivityDescription) — a real
+-- single-row singleton, same idiom coros_mcp_client already uses.
+create table if not exists ai_settings (
+  id boolean primary key default true check (id),
+  instructions text not null default '',
+  updated_at timestamptz not null default now()
+);
+
+alter table ai_settings enable row level security;
+
+insert into ai_settings (id, instructions) values (true, '') on conflict (id) do nothing;
 
 -- ─── workouts ──────────────────────────────────────────────────────────────
 create table if not exists workouts (

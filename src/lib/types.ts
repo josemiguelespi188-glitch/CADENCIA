@@ -26,6 +26,13 @@ export interface Athlete {
   is_coach: boolean;
   /** Has this athlete finished the /onboarding wizard (profile + connections)? */
   onboarding_completed: boolean;
+  /** Can use "Generate with AI" + the automatic Strava description
+   * write-back — admin-granted, only ever set server-side. See
+   * CLAUDE.md's "AI access control" section. */
+  ai_enabled: boolean;
+  /** Max "Generate with AI" prompts per rolling 7 days — admin-editable,
+   * only ever set server-side. */
+  ai_weekly_limit: number;
   /** Lactate threshold heart rate, in bpm. */
   threshold_hr: number | null;
   /** Running threshold pace ("race predictor"), in seconds per km. */

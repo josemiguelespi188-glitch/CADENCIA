@@ -17,7 +17,8 @@ const TARGET_TYPES: WorkoutStepTargetType[] = ["pace", "hr", "power", "cadence",
  */
 export async function generateActivityDescription(
   activity: Pick<StravaActivity, "name" | "sport_type" | "moving_time_s" | "distance_m" | "average_cadence" | "average_speed">,
-  matchedWorkout: Pick<Workout, "title" | "notes"> | null
+  matchedWorkout: Pick<Workout, "title" | "notes"> | null,
+  extraInstructions?: string
 ): Promise<string | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
@@ -43,7 +44,8 @@ export async function generateActivityDescription(
         model: MODEL,
         max_tokens: 200,
         system:
-          "You write short Strava activity descriptions for an athlete's training log. Always write in English, even if the facts given to you (e.g. a planned workout's objective) are in another language — translate, don't mirror the input language, since this platform is English by default. Plain text, no hashtags, no emoji, 1-3 sentences. Describe what the workout was and, if a planned workout's objective is given, briefly note whether the activity matches it. Never invent data not given to you.",
+          "You write short Strava activity descriptions for an athlete's training log. Always write in English, even if the facts given to you (e.g. a planned workout's objective) are in another language — translate, don't mirror the input language, since this platform is English by default. Plain text, no hashtags, no emoji, 1-3 sentences. Describe what the workout was and, if a planned workout's objective is given, briefly note whether the activity matches it. Never invent data not given to you." +
+          (extraInstructions ? `\n\nAdditional instructions from this platform's admin:\n${extraInstructions}` : ""),
         messages: [{ role: "user", content: facts.join("\n") }],
       }),
     });
@@ -147,7 +149,7 @@ export interface GeneratedWorkout {
  * Returned steps have no `id` — the caller (WorkoutDialog.tsx) assigns
  * a fresh client-side id to each, same as a manually-added step.
  */
-export async function generateWorkoutFromPrompt(prompt: string): Promise<GeneratedWorkout> {
+export async function generateWorkoutFromPrompt(prompt: string, extraInstructions?: string): Promise<GeneratedWorkout> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("AI generation is not configured (no ANTHROPIC_API_KEY).");
 
@@ -172,7 +174,8 @@ export async function generateWorkoutFromPrompt(prompt: string): Promise<Generat
         "For steps: convert any mm:ss pace the athlete gives (e.g. \"4:30/km\") into total seconds per kilometer for a pace target. " +
         "If the athlete gives a single number for a target, set targetLow and targetHigh equal. " +
         "If the athlete names an intensity with no number anywhere to derive it from (e.g. \"5K pace\", \"easy\", \"hard\", \"threshold\"), set targetType to \"open\" and targetLow/targetHigh to 0 — never invent a number you weren't given. " +
-        "repeatCount is how many times ONE step repeats (6 for \"6x400m\"), not a count of separate steps — keep the repeated step as a single entry with repeatCount set, don't list it 6 times.",
+        "repeatCount is how many times ONE step repeats (6 for \"6x400m\"), not a count of separate steps — keep the repeated step as a single entry with repeatCount set, don't list it 6 times." +
+        (extraInstructions ? `\n\nAdditional instructions from this platform's admin:\n${extraInstructions}` : ""),
       tools: [GENERATE_WORKOUT_TOOL],
       tool_choice: { type: "auto" },
       messages: [{ role: "user", content: prompt }],

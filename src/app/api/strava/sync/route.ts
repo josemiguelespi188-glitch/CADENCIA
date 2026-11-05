@@ -11,6 +11,7 @@ import {
 } from "@/lib/integrations/strava";
 import { mapStravaSportType } from "@/lib/sport";
 import { generateActivityDescription } from "@/lib/integrations/claude";
+import { getAiInstructions } from "@/lib/aiAccess";
 import type { StravaActivity, Workout } from "@/lib/types";
 
 /** How far back the lightweight daily-load history fetch reaches — see the
@@ -197,6 +198,14 @@ export async function POST() {
    * requests. */
   const CONCURRENCY = 5;
 
+  // Fetched once per sync, not per activity — the automatic AI
+  // write-back is gated on the signed-in athlete's own ai_enabled (see
+  // CLAUDE.md's "AI access control" section); a human-written
+  // strava_comment still always goes through regardless, since that's
+  // not an AI call.
+  const aiEnabled = athlete.ai_enabled;
+  const aiInstructions = aiEnabled ? await getAiInstructions() : "";
+
   // athleteId/token passed explicitly (not read off the outer `athlete`/
   // `accessToken` closure) because TS doesn't propagate null-narrowing
   // into a nested `function` declaration's body.
@@ -260,7 +269,9 @@ export async function POST() {
     if (needsDescribe) {
       const description = matchedWorkout?.strava_comment
         ? matchedWorkout.strava_comment
-        : await generateActivityDescription(act, matchedWorkout).catch(() => null);
+        : aiEnabled
+          ? await generateActivityDescription(act, matchedWorkout, aiInstructions).catch(() => null)
+          : null;
       if (description) {
         try {
           await updateStravaActivityDescription(token, act.id, description);

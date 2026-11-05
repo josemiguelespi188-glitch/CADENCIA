@@ -93,6 +93,19 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
   const [aiMessage, setAiMessage] = useState<string | null>(null);
+  // Nov 2026, see CLAUDE.md's "AI access control" section — this is
+  // purely UI state to show a clear disabled/limit-reached/remaining
+  // hint up front; the real enforcement is server-side in
+  // /api/workouts/generate regardless of what this says.
+  const [aiUsage, setAiUsage] = useState<{ enabled: boolean; weeklyLimit: number; usedThisWeek: number; remaining: number } | null>(null);
+
+  useEffect(() => {
+    if (!editing) return;
+    fetch("/api/ai/usage")
+      .then((res) => (res.ok ? res.json() : null))
+      .then(setAiUsage)
+      .catch(() => setAiUsage(null));
+  }, [editing]);
 
   async function generateWorkoutFromAI() {
     if (!aiPrompt.trim()) return;
@@ -124,6 +137,7 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
           stravaComment: data.stravaComment,
           workoutSteps: steps,
         }));
+        setAiUsage((u) => (u ? { ...u, usedThisWeek: u.usedThisWeek + 1, remaining: Math.max(0, u.remaining - 1) } : u));
       } else {
         setAiMessage(data.error);
       }
@@ -301,24 +315,40 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
 
         <div className="rounded-2xl border border-line-strong bg-surface-2 p-4">
           <label className="mb-1.5 block text-xs font-medium text-ink-2">{t("steps_ai_label")}</label>
-          <textarea
-            rows={2}
-            placeholder={t("steps_ai_placeholder")}
-            value={aiPrompt}
-            onChange={(e) => setAiPrompt(e.target.value)}
-            className="w-full resize-none rounded-lg border border-line bg-bg px-3 py-2 text-sm"
-          />
-          <div className="mt-2 flex items-center justify-end">
-            <Button
-              type="button"
-              size="sm"
-              disabled={aiBusy || !aiPrompt.trim()}
-              onClick={generateWorkoutFromAI}
-              className="shrink-0 whitespace-nowrap"
-            >
-              {aiBusy ? t("steps_ai_generating") : t("steps_ai_generate")}
-            </Button>
-          </div>
+          {aiUsage && !aiUsage.enabled ? (
+            <p className="rounded-lg border border-line bg-bg px-3 py-2 text-xs text-ink-3">
+              AI generation isn&apos;t enabled for your account yet — ask an admin.
+            </p>
+          ) : (
+            <>
+              <textarea
+                rows={2}
+                placeholder={t("steps_ai_placeholder")}
+                value={aiPrompt}
+                onChange={(e) => setAiPrompt(e.target.value)}
+                disabled={!!aiUsage && aiUsage.remaining <= 0}
+                className="w-full resize-none rounded-lg border border-line bg-bg px-3 py-2 text-sm disabled:opacity-50"
+              />
+              <div className="mt-2 flex items-center justify-between gap-3">
+                {aiUsage && (
+                  <span className="text-xs text-ink-3">
+                    {aiUsage.remaining <= 0
+                      ? `You've used all ${aiUsage.weeklyLimit} AI generations for this week.`
+                      : `${aiUsage.remaining} of ${aiUsage.weeklyLimit} AI generations left this week`}
+                  </span>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={aiBusy || !aiPrompt.trim() || (!!aiUsage && aiUsage.remaining <= 0)}
+                  onClick={generateWorkoutFromAI}
+                  className="ml-auto shrink-0 whitespace-nowrap"
+                >
+                  {aiBusy ? t("steps_ai_generating") : t("steps_ai_generate")}
+                </Button>
+              </div>
+            </>
+          )}
           {aiMessage && <p className="mt-2 text-xs text-error">{aiMessage}</p>}
         </div>
 

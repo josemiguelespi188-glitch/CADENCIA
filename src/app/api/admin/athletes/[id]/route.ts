@@ -64,7 +64,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
-  const { isAdmin, isCoach } = body;
+  const { isAdmin, isCoach, aiEnabled, aiWeeklyLimit } = body;
 
   const db = createServiceClient();
 
@@ -80,8 +80,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (typeof isAdmin !== "boolean") return NextResponse.json({ ok: true });
   }
 
+  // ai_enabled/ai_weekly_limit (Nov 2026, see CLAUDE.md's "AI access
+  // control" section) — unlike is_coach, these ARE admin-only
+  // (athletes_guard_admin_fields blocks every other write path), but
+  // need no last-admin-style invariant the way is_admin does.
+  if (typeof aiEnabled === "boolean" || typeof aiWeeklyLimit === "number") {
+    const patch: Record<string, boolean | number> = {};
+    if (typeof aiEnabled === "boolean") patch.ai_enabled = aiEnabled;
+    if (typeof aiWeeklyLimit === "number" && Number.isFinite(aiWeeklyLimit) && aiWeeklyLimit >= 0) {
+      patch.ai_weekly_limit = Math.round(aiWeeklyLimit);
+    }
+    const { error: aiError } = await db.from("athletes").update(patch).eq("id", id);
+    if (aiError) return NextResponse.json({ error: aiError.message }, { status: 500 });
+    if (typeof isAdmin !== "boolean") return NextResponse.json({ ok: true });
+  }
+
   if (typeof isAdmin !== "boolean") {
-    return NextResponse.json({ error: "isAdmin or isCoach must be provided." }, { status: 400 });
+    return NextResponse.json({ error: "isAdmin, isCoach, aiEnabled, or aiWeeklyLimit must be provided." }, { status: 400 });
   }
 
   if (!isAdmin) {
