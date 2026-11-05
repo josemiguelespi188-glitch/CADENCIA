@@ -62,12 +62,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
   const [athletes, setAthletes] = useState<Athlete[]>([]);
+  // Separate from `athletes.length > 0` — a brand-new account with a
+  // real session but a genuinely missing/not-yet-created athletes row
+  // (found live, Nov 2026: the Settings page's "Loading…" never
+  // resolved, and the header's nav stayed fully clickable the whole
+  // time since it doesn't check onboarding state at all) needs its own
+  // "the fetch finished, there's really nothing here" state, distinct
+  // from "still fetching."
+  const [athletesLoaded, setAthletesLoaded] = useState(false);
   const [viewing, setViewing] = useState<string[]>([]);
 
   const loadAthletes = useCallback(async () => {
     const supabase = createClient();
-    const { data } = await supabase.from("athletes").select("*").order("name");
+    const { data, error } = await supabase.from("athletes").select("*").order("name");
+    if (error) console.error("Failed to load athletes", error);
     setAthletes((data as Athlete[]) ?? []);
+    setAthletesLoaded(true);
   }, []);
 
   useEffect(() => {
@@ -96,6 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loadAthletes();
     } else {
       setAthletes([]);
+      setAthletesLoaded(false);
     }
   }, [userId, loadAthletes]);
 
@@ -178,13 +189,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
   }
 
+  // A session exists but the athletes fetch hasn't finished yet — show a
+  // blank loading state, not `children` (which would render whatever
+  // page's own nav/header with nothing to gate against yet). Once this
+  // flips to true with `me` still null, that's a REAL problem (a session
+  // with no matching athletes row), handled by the next block instead of
+  // silently falling through to an infinite per-page "Loading…".
+  if (!athletesLoaded) {
+    return <Ctx.Provider value={value}><div className="flex min-h-screen items-center justify-center bg-bg" /></Ctx.Provider>;
+  }
+
+  if (!me) {
+    return <Ctx.Provider value={value}><NoProfileScreen signOut={signOut} /></Ctx.Provider>;
+  }
+
   if (needsOnboarding) {
-    // Avoid flashing the real destination page's content for the one
-    // tick before the redirect effect above fires.
+    // Avoid flashing the real destination page's content (including its
+    // own nav — direct complaint, Nov 2026: "que no te deje aplastar en
+    // calendar, community o generate") for the one tick before the
+    // redirect effect above fires.
     return <Ctx.Provider value={value}><div className="flex min-h-screen items-center justify-center bg-bg" /></Ctx.Provider>;
   }
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+/** A real session exists but no `athletes` row links to it — shown
+ * instead of letting every page sit on its own infinite "Loading…"
+ * forever with the full nav still clickable underneath (found live,
+ * Nov 2026). Gives the one real recourse available: sign out and try
+ * again (e.g. a fresh invite/registration whose athlete-row creation
+ * failed partway). */
+function NoProfileScreen({ signOut }: { signOut: () => Promise<void> }) {
+  const { locale } = useLocale();
+  const isEn = locale === "en";
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-bg px-6 text-center">
+      <span
+        className="text-2xl font-black tracking-[0.05em] text-ink"
+        style={{ fontFamily: "var(--font-jetbrains-mono, 'JetBrains Mono', monospace)" }}
+      >
+        cadencia
+      </span>
+      <p className="max-w-sm text-sm text-ink-2">
+        {isEn
+          ? "We couldn't find a profile linked to your account. Try signing out and signing back in — if this keeps happening, ask an admin for help."
+          : "No encontramos un perfil vinculado a tu cuenta. Intenta cerrar sesión y volver a entrar — si esto sigue pasando, pide ayuda a un admin."}
+      </p>
+      <Button variant="outline" onClick={signOut}>
+        {isEn ? "Sign out" : "Cerrar sesión"}
+      </Button>
+    </div>
+  );
 }
 
 export function useAuth() {

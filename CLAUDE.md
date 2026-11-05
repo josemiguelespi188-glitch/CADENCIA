@@ -3260,3 +3260,56 @@ no longer calls `signInWithOAuth`. Flip this back to a real call once
 Google is confirmed enabled in Supabase Auth -> Providers -> Google
 (see CLAUDE.md's "Google sign-in" section for the two manual setup
 steps that were apparently never actually completed).
+
+### Onboarding gate hardened: no page (or its nav) renders until the athlete row actually resolves (Nov 2026)
+
+Found live from a real screenshot right after the wizard above shipped:
+`/settings` sat on an infinite "Loading…" — and the header's full nav
+(Calendar/Community/Generate/Settings) stayed visible and clickable the
+whole time, since `SiteHeader` has never checked onboarding state at
+all. Direct, verbatim follow-up: "que no te deje aplastar en calendar,
+community o generate. que sea obligatorio registrar la encuesta para
+entrar a la plataforma."
+
+Root cause of both: `needsOnboarding` (and therefore the redirect to
+`/onboarding`) only ever evaluated once `me` resolved — but if a
+signed-in session's `athletes` row genuinely never resolves (the real
+bug underneath the stuck "Loading…"), `me` stays `null` forever,
+`needsOnboarding` never becomes `true`, and the old code fell through
+to rendering `children` anyway — the real page (with its own full
+`SiteHeader` nav) rather than being held back by anything.
+
+- **`AuthProvider`** now tracks `athletesLoaded` separately from
+  `athletes.length > 0`, set once the `athletes` fetch actually
+  finishes (success OR failure — the error is now `console.error`'d
+  too, previously silently swallowed). The render path is now a strict
+  sequence with no way to skip a step: blank screen while
+  `!athletesLoaded` -> a real, non-skippable `NoProfileScreen` (new)
+  if the fetch finished but still found no matching `athletes` row at
+  all (session + no profile = a genuine problem, not something to hide
+  behind an infinite spinner) -> blank screen while `needsOnboarding`
+  (same as before) -> only then `children`. **No branch in this chain
+  ever renders `children` (and therefore never renders `SiteHeader`'s
+  nav) until an athlete row is both found AND onboarded** — closing
+  the exact gap that let the header stay clickable while stuck.
+- **`NoProfileScreen`**: a dead-end-feeling but honest screen ("We
+  couldn't find a profile linked to your account") with a Sign Out
+  button as the one real recourse — covers a partially-failed
+  self-registration (e.g. `ensure-athlete` never completing) or any
+  other case where a real `auth.users` row exists with no matching
+  `athletes` row, instead of leaving the person on a page that will
+  never finish loading with no way out except closing the tab.
+- A Google-Fonts build failure was also hit twice this same session on
+  Vercel (`next/font/google` fetches IBM Plex Sans/JetBrains Mono at
+  **build** time, and that fetch failed) — confirmed as a genuine
+  transient network blip, not a real problem: rebuilding locally with
+  a clean `.next` cache succeeded immediately after. Not worth
+  switching to self-hosted fonts (`next/font/local`) over one-off
+  flakiness; revisit only if it starts failing more than rarely.
+- Not yet tested against a real Supabase project from this sandbox
+  (same standing limitation as every other Supabase-dependent feature
+  here) — confirm once deployed: that a genuinely broken account (no
+  matching `athletes` row) now shows `NoProfileScreen` instead of a
+  silent infinite spinner, and that clicking Calendar/Community/
+  Generate while onboarding isn't done bounces straight back to
+  `/onboarding` with no flash of the target page's own nav/content.
