@@ -171,6 +171,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (needsOnboarding) router.replace(ONBOARDING_PATH);
   }, [needsOnboarding, router]);
 
+  // Auto-sync Strava on login (Nov 2026, direct instruction: "Cada vez
+  // que se hace log in a la plataforma debería pushear a strava los
+  // comments a descriptions de la actividad"). Fires once per real
+  // session establishment — keyed on `userId` (not on every client-side
+  // route change, since that never changes `userId`) — once the
+  // onboarding gate has cleared, so it never fires mid-onboarding before
+  // the athlete has had a chance to connect anything. Best-effort and
+  // silent either way: `/api/strava/sync` already no-ops for an athlete
+  // with no Strava connection (the common case for most logins), and
+  // the same route already does the real work this exists to trigger —
+  // matching a planned workout's own `strava_comment` (or an
+  // AI-drafted one) onto the Strava activity's description, see
+  // CLAUDE.md's "Strava integration" section.
+  useEffect(() => {
+    if (!userId || needsOnboarding) return;
+    fetch("/api/strava/sync", { method: "POST" }).catch(() => {});
+  }, [userId, needsOnboarding]);
+
   useEffect(() => {
     if (!me) return;
     try {

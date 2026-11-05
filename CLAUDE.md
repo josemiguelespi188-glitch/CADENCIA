@@ -3440,3 +3440,36 @@ button in the app (`NoProfileScreen`'s button, Settings' own Sign Out
 link) already goes through it. `/` is in the exact-match public-path
 check, so landing there renders the real marketing page with no gating,
 same as any other visitor.
+
+## Auto-sync Strava on every login (Nov 2026)
+
+Direct instruction: "Cada vez que se hace log in a la plataforma
+debería pushear a strava los comments a descriptions de la actividad."
+`AuthProvider` (`lib/auth-context.tsx`) now fires a `POST
+/api/strava/sync` automatically once a session is established and the
+onboarding gate has cleared — no more waiting on the athlete to
+remember to click "Sync now" on `/settings` (that button still exists
+and still works exactly as before, this is purely additive).
+
+- Keyed on `userId`, not on every client-side route change (navigating
+  between `/calendar`/`/community`/etc. never changes `userId`, so this
+  doesn't refire on every click) — fires once per real session
+  establishment, which in practice means once per full page load/app
+  open with a session present, matching "every login" closely enough
+  for the intended effect (fresher Strava data without manual action).
+- Gated on `!needsOnboarding` so it never fires mid-onboarding, before
+  the athlete has had a chance to even connect Strava.
+- Fully best-effort and silent either way — `/api/strava/sync` already
+  returns a clean 400 for an athlete with no Strava connection (the
+  common case on most logins), and that response is never surfaced
+  here; a real sync failure is swallowed the same way. No loading
+  indicator, no toast — this is meant to be invisible plumbing, not a
+  user-facing action.
+- Doesn't change what the sync route itself does — it's the exact same
+  `/api/strava/sync` already documented under "Strava integration"
+  above (auto-complete a matching planned workout, then write that
+  workout's own `strava_comment` — or an AI-drafted one if left blank —
+  onto the Strava activity's description). This section only adds a
+  new trigger for that existing route, not new behavior inside it.
+- Scoped to Strava only, per the literal request — WHOOP/Garmin/COROS
+  still require a manual "Sync now" click on `/settings`, unchanged.
