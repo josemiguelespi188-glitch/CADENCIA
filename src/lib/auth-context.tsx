@@ -71,6 +71,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // from "still fetching."
   const [athletesLoaded, setAthletesLoaded] = useState(false);
   const [viewing, setViewing] = useState<string[]>([]);
+  // Real race found live (Nov 2026, reported with a fresh never-before-
+  // seen account, not a stale session): `supabase.auth.signUp()` fires
+  // this provider's `onAuthStateChange` listener the instant the new
+  // session is set, which kicks off `loadAthletes()` immediately — but
+  // the caller (`/register`, Google's callback, `/accept-invite`) only
+  // creates the matching `athletes` row in a SEPARATE request
+  // (`ensureAthleteForUser()`) that's still in flight at that exact
+  // moment. `loadAthletes()` wins the race, finds nothing, and since
+  // `userId` never changes afterward, the `athletes` array in state is
+  // never refetched — `me` stays null forever even though the row shows
+  // up in the database a moment later. Retrying a few times before
+  // concluding "no profile" closes this for every entry path at once,
+  // instead of patching each one to call `refreshAthletes()` itself.
+  const [noProfileRetries, setNoProfileRetries] = useState(0);
+  const MAX_NO_PROFILE_RETRIES = 6;
 
   const loadAthletes = useCallback(async () => {
     const supabase = createClient();
@@ -104,6 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (userId) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       loadAthletes();
+      setNoProfileRetries(0);
     } else {
       setAthletes([]);
       setAthletesLoaded(false);
@@ -114,6 +130,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!session) return null;
     return athletes.find((a) => a.auth_user_id === session.user.id) ?? null;
   }, [session, athletes]);
+
+  // Bounded retry: a session resolved, the athletes fetch finished, but
+  // no row matched yet. Could be the race described above (the row is
+  // about to appear) or a genuinely orphaned session — retry a few times
+  // with a short delay before treating it as the latter.
+  useEffect(() => {
+    if (!session || !athletesLoaded || me || noProfileRetries >= MAX_NO_PROFILE_RETRIES) return;
+    const t = setTimeout(() => {
+      setNoProfileRetries((n) => n + 1);
+      loadAthletes();
+    }, 600);
+    return () => clearTimeout(t);
+  }, [session, athletesLoaded, me, noProfileRetries, loadAthletes]);
 
   const athleteBySlug = useMemo(() => Object.fromEntries(athletes.map((a) => [a.slug, a])), [athletes]);
 
@@ -200,6 +229,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   if (!me) {
+    if (noProfileRetries < MAX_NO_PROFILE_RETRIES) {
+      // Still retrying — this is almost always the ensure-athlete race
+      // described above resolving itself within a second or two, not a
+      // real problem yet.
+      return <Ctx.Provider value={value}><div className="flex min-h-screen items-center justify-center bg-bg" /></Ctx.Provider>;
+    }
     return <Ctx.Provider value={value}><NoProfileScreen signOut={signOut} /></Ctx.Provider>;
   }
 

@@ -3313,3 +3313,49 @@ to rendering `children` anyway — the real page (with its own full
   silent infinite spinner, and that clicking Calendar/Community/
   Generate while onboarding isn't done bounces straight back to
   `/onboarding` with no flash of the target page's own nav/content.
+
+### Real race found live: a brand-new account also hit `NoProfileScreen` (Nov 2026)
+
+Reported live right after the hardening above shipped, with a genuinely
+**new** account (not a stale/deleted session) — proof the gate had a
+second, different bug: `NoProfileScreen` ("We couldn't find a profile
+linked to your account") appeared immediately after registering.
+
+- **Root cause**: `supabase.auth.signUp()` sets the new session the
+  instant it resolves, which fires `AuthProvider`'s global
+  `onAuthStateChange` listener right away — `AuthProvider` wraps the
+  whole app, so this fires regardless of which page is open. That
+  listener's `userId` effect immediately calls `loadAthletes()`. But the
+  matching `athletes` row doesn't exist yet at that exact moment — every
+  self-registration path (`/register`, Google via `/auth/callback`,
+  `/accept-invite`) creates it in a **separate**, still-in-flight request
+  (`ensureAthleteForUser()`, called after `signUp()`/the OAuth exchange
+  resolves, not before). `loadAthletes()` wins this race, finds nothing,
+  and — since `userId` never changes again for this session — the
+  `athletes` array in React state is never refetched afterward. The row
+  really does get created a moment later in the database, but the
+  already-rendered app never learns about it, so `me` stays `null`
+  forever and the hardened gate (correctly, per its own logic) showed
+  `NoProfileScreen` for what was actually a transient ordering problem,
+  not a real orphaned account.
+- **Fixed with a bounded retry in `AuthProvider`** (`lib/auth-context.tsx`)
+  rather than patching every individual entry point to call
+  `refreshAthletes()` itself — this closes the race for `/register`,
+  Google, and `/accept-invite` all at once, including any future
+  self-registration path, with no per-page awareness needed. A new
+  `noProfileRetries` counter: whenever a session exists, the athletes
+  fetch has finished, but `me` is still null, a `useEffect` waits 600ms,
+  calls `loadAthletes()` again, and increments the counter — up to
+  `MAX_NO_PROFILE_RETRIES = 6` (~3.6s total). The render path shows the
+  same blank loading screen while retries remain, and only falls through
+  to `NoProfileScreen` once they're exhausted. Counter resets to 0 on
+  every real sign-in (`userId` change), so it can't carry over stale
+  state from a previous session. This keeps `NoProfileScreen` correctly
+  firing fast for a genuinely orphaned session (no retry ever succeeds,
+  since there's really no row to find) while giving the normal
+  create-the-row-then-set-the-session ordering enough room to resolve
+  itself invisibly.
+- Not yet confirmed live after this specific fix — confirm next: that a
+  brand-new `/register` sign-up (with "Confirm email" off, so the
+  session is immediate) now lands cleanly on `/onboarding` within a
+  second or two instead of ever flashing `NoProfileScreen`.
