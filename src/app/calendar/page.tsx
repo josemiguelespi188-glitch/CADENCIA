@@ -146,6 +146,27 @@ export default function CalendarPage() {
     }
   }
 
+  // Found live (Nov 2026, direct feedback: "el view de completo ya no
+  // debería ser el mismo que el training... me gustaba el anterior view
+  // que no puedes editar la info... y que viene la data del
+  // entrenamiento literal") — a workout already linked to a real Strava
+  // activity opens the read-only ActivityDetailDialog (real stats, map,
+  // Planned vs Completed) instead of the editable WorkoutDialog form.
+  // Only a still-unmatched planned workout opens the edit form. Falls
+  // back to the edit form if the linked activity somehow isn't in the
+  // loaded last-30-days window (shouldn't normally happen, since a match
+  // only ever happens against an activity from that same window).
+  function openWorkout(w: WorkoutWithSlug) {
+    if (w.strava_activity_id) {
+      const act = activities.find((a) => a.id === w.strava_activity_id);
+      if (act) {
+        setOpenActivity(act);
+        return;
+      }
+    }
+    setEditing({ record: w });
+  }
+
   function openAdd(date: string) {
     setLauncherDate(date);
   }
@@ -200,7 +221,7 @@ export default function CalendarPage() {
                   t={t}
                   onAdd={openAdd}
                   onToggle={toggleDone}
-                  onEdit={(w) => setEditing({ record: w })}
+                  onEdit={openWorkout}
                   onOpenActivity={setOpenActivity}
                 />
               ) : (

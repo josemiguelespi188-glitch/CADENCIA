@@ -3665,3 +3665,75 @@ sex, height, weight) was editable except the name itself.
   profile (Community's own read-only member view is a separate,
   purpose-built component), so there's no risk of this letting anyone
   edit someone else's name.
+
+## A matched workout opens the read-only activity view, not the edit form (Nov 2026)
+
+Direct follow-up, with the exact `ActivityDetailDialog` screenshot
+attached as "what I want back": "el view de completo ya no debería ser
+el mismo que el training. me gustaba el anterior view que no puedes
+editar la info. y que viene la data del entrenamiento literal." Once
+the "always retry merge" fix above started successfully auto-matching
+workouts that previously sat unmatched, clicking one of those now-
+matched workout chips opened `WorkoutDialog` (the editable plan form,
+no map) — the dashed, map-having `ActivityDetailDialog` chip had
+simply disappeared from the calendar the moment it got linked (matched
+activities are filtered out of the unmatched-activities chip list by
+design). Net effect: matching a workout actually took the map AWAY
+from view, the opposite of what should happen once there's real
+completed data to show.
+
+- **`calendar/page.tsx`**'s new `openWorkout(w)` replaces the inline
+  `(w) => setEditing({ record: w })` handler wired to `WeekView`'s
+  `onEdit`: if the workout has a `strava_activity_id`, it looks up that
+  activity in the already-loaded `activities` state (the full,
+  unfiltered last-30-days list `DashboardPanel` also uses — not the
+  chip-filtered `visibleActivities`) and opens `ActivityDetailDialog`
+  for it instead of `WorkoutDialog` — the real stats, the map, and the
+  "Planned vs Completed" comparison, matching exactly what clicking the
+  old unmatched Strava chip used to show. Falls back to `WorkoutDialog`
+  only if the linked activity somehow isn't in that loaded window
+  (shouldn't normally happen, since a match only ever happens against
+  an activity already in it).
+- **Still genuinely read-only once matched**, per the user's own
+  explicit preference ("me gustaba... que no puedes editar la info") —
+  the only edit surface `ActivityDetailDialog` has is the "Strava
+  Description" box added earlier the same day, which the user hasn't
+  objected to. There's currently no way to edit a matched workout's
+  title/notes/RPE/structured steps or delete it from the UI anymore
+  (that's all `WorkoutDialog`-only) — an explicit, accepted tradeoff
+  here, not an oversight; revisit only if a real need for it comes up.
+- A still-**unmatched** planned workout (no `strava_activity_id` yet)
+  is completely unaffected — clicking it still opens the editable
+  `WorkoutDialog` exactly as before.
+
+## AI-generated content now always writes in English (Nov 2026)
+
+Direct complaint, with a screenshot showing a workout's AI-generated
+"Details" (`notes`) in Spanish inside an otherwise-English UI: "sería
+bueno que todos los strava Descriptions sean en ingles igual que el
+details... necesitamos coherencia en el idioma en toda la plataforma."
+Root cause: neither of `lib/integrations/claude.ts`'s two system
+prompts ever told Claude what language to answer in — `generateWorkoutFromPrompt`
+(the "Generate with AI" box in `WorkoutDialog`, producing `title`/
+`notes`/`workoutType`/`stravaComment`) just mirrored whatever language
+the athlete's own typed description happened to be in, and
+`generateActivityDescription` (the sync-time fallback Strava
+description, used when a matched workout's own `strava_comment` is
+blank) had no explicit language instruction either, even though its
+input "facts" are already English-only strings.
+
+- Both system prompts now explicitly say to always answer in English,
+  translating the athlete's own words rather than mirroring their
+  language — consistent with this app's already-established "siempre
+  predeterminado en inglés" default (see the "Default locale, default
+  single-athlete view" section above).
+- This only changes future AI generations — it doesn't retroactively
+  translate any workout's `notes`/`stravaComment` that was already
+  generated in Spanish before this fix (e.g. the "8x800m Intervalos"
+  workout shown in the screenshot); those would need a manual edit or
+  a fresh "Generate with AI" run to pick up the new English-only
+  instruction.
+- Not yet confirmed live — confirm next: that a Spanish-language prompt
+  typed into "Generate with AI" now comes back with English title/
+  notes/Strava Description, and that a sync-time fallback description
+  (no human `strava_comment` set) is in English too.

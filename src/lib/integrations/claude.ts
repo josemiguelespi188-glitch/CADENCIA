@@ -43,7 +43,7 @@ export async function generateActivityDescription(
         model: MODEL,
         max_tokens: 200,
         system:
-          "You write short Strava activity descriptions for an athlete's training log. Plain text, no hashtags, no emoji, 1-3 sentences. Describe what the workout was and, if a planned workout's objective is given, briefly note whether the activity matches it. Never invent data not given to you.",
+          "You write short Strava activity descriptions for an athlete's training log. Always write in English, even if the facts given to you (e.g. a planned workout's objective) are in another language — translate, don't mirror the input language, since this platform is English by default. Plain text, no hashtags, no emoji, 1-3 sentences. Describe what the workout was and, if a planned workout's objective is given, briefly note whether the activity matches it. Never invent data not given to you.",
         messages: [{ role: "user", content: facts.join("\n") }],
       }),
     });
@@ -163,6 +163,7 @@ export async function generateWorkoutFromPrompt(prompt: string): Promise<Generat
       max_tokens: 2000,
       system:
         "You convert an athlete's plain-language description of a workout into a complete structured workout by calling set_workout exactly once, and never reply with plain text. " +
+        "Always write title, notes, workoutType, and stravaComment in English — even if the athlete's own description is written in another language (e.g. Spanish), translate the content into English rather than mirroring their language, since this platform defaults to English throughout and needs consistent wording regardless of what language a given prompt was typed in. " +
         "sport: the most likely sport the description fits; default to \"run\" only if truly nothing suggests otherwise. " +
         "title: a short, specific name for this workout. workoutType: a short category label. " +
         "minutes/km: your best estimate for the WHOLE session (warmup + main set + cooldown combined), 0 if you really can't estimate either. " +
