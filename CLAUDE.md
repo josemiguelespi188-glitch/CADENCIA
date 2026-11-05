@@ -1039,6 +1039,43 @@ that every page behind it.
    the page as a fallback (harmless, just unused once the templates are
    switched), not ripped out.
 
+### Juan hit "invalid or expired" live; a third, related Supabase email
+### rate limit also found (Nov 2026)
+
+Juan reported the exact error from item 2 above, confirming the
+Supabase dashboard's email-template setting still isn't confirmed
+applied (#2 is still open, not actually fixed). Two concrete follow-
+ups from that report:
+
+- **`accept-invite/page.tsx` now distinguishes two failure causes**
+  instead of one generic message — `LinkErrorKind` (`"no_token" |
+  "verify_failed"`): if the page's URL carried no `token_hash`/`code`
+  at all, that's near-certain proof the email template is still
+  `{{ .ConfirmationURL }}` (item 2 above), so the shown message says
+  so directly and points at this file instead of the generic "invalid
+  or expired" text, which is now reserved for when a real token WAS
+  present but verification still failed (genuinely expired/already
+  used). Pure diagnostic improvement — doesn't fix the underlying
+  dashboard setting, which still needs doing (see item 2 above).
+- **A separate, real Supabase error surfaced the same day**: `POST
+  /api/admin/athletes/invite` returned "email rate limit exceeded"
+  (shown verbatim in `/admin`'s invite form, which already passes the
+  API's raw error through). This is Supabase Auth's own built-in email
+  sender — used whenever **no custom SMTP is configured** for this
+  project — which caps outbound auth emails very low (a handful per
+  hour) specifically to prevent abuse of its shared relay. Not a code
+  bug; this project has never had custom SMTP configured. **Fix**:
+  Supabase Dashboard -> Authentication -> Emails -> SMTP Settings ->
+  enable Custom SMTP with a real provider (Resend, SendGrid, Gmail,
+  etc. — the Operations Hub codebase's own CLAUDE.md documents the
+  exact Resend SMTP settings already used for a sibling AxisKey
+  project, reusable here with this project's own sender address) —
+  once set, this strict default limit no longer applies. Until that's
+  done, repeated invite/reset attempts in a short window will keep
+  hitting this same error, and may also be a contributing cause behind
+  Juan's own link failure if several were sent back to back the same
+  day.
+
 ## COROS structured-workout push (prep work, Oct 2026)
 
 Built per explicit instruction, ahead of COROS's response to the Partner

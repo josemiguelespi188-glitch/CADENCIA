@@ -35,12 +35,21 @@ const OTP_TYPES: EmailOtpType[] = ["signup", "invite", "magiclink", "recovery", 
  * first place — gating it the same way as every other route would be
  * circular.
  */
+/** Three distinct ways this page can fail to establish a session —
+ * surfaced separately (not one generic "invalid or expired" message)
+ * specifically so a real failure can be told apart from a Supabase Auth
+ * email template that still links with the default `{{ .ConfirmationURL }}`
+ * instead of the `?token_hash=...&type=...` pattern this page needs (see
+ * CLAUDE.md's "Two live-testing bugs" section — found live reported by
+ * Juan, Nov 2026, same standing unconfirmed dashboard step). */
+type LinkErrorKind = "no_token" | "verify_failed" | "timeout";
+
 export default function AcceptInvitePage() {
   const { locale } = useLocale();
   const isEn = locale === "en";
   const router = useRouter();
   const [ready, setReady] = useState(false);
-  const [linkError, setLinkError] = useState(false);
+  const [linkError, setLinkError] = useState<LinkErrorKind | null>(null);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [isCoach, setIsCoach] = useState<"athlete" | "coach">("athlete");
@@ -64,7 +73,7 @@ export default function AcceptInvitePage() {
           window.history.replaceState({}, "", window.location.pathname);
         } else if (verifyError) {
           console.error("verifyOtp failed", verifyError);
-          setLinkError(true);
+          setLinkError("verify_failed");
         }
       });
     }
@@ -79,7 +88,7 @@ export default function AcceptInvitePage() {
           window.history.replaceState({}, "", window.location.pathname);
         } else if (exchangeError) {
           console.error("exchangeCodeForSession failed", exchangeError);
-          if (!tokenHash) setLinkError(true);
+          if (!tokenHash) setLinkError("verify_failed");
         }
       });
     }
@@ -97,11 +106,17 @@ export default function AcceptInvitePage() {
       }
     });
 
-    // If nothing established a session within a few seconds (no code, no
-    // hash, or an expired/already-used link), stop showing "Checking…"
-    // forever and say so.
+    // If nothing established a session within a few seconds, stop showing
+    // "Checking…" forever and say so — distinguishing the two real causes
+    // instead of one generic message (found live, Nov 2026, from Juan's
+    // report): no token/code in the URL AT ALL almost always means the
+    // Supabase email template still links with the default
+    // `{{ .ConfirmationURL }}` instead of `?token_hash=...&type=...` (see
+    // CLAUDE.md's "Two live-testing bugs" section) — a one-time dashboard
+    // setting, not a code bug. A token/code WAS present but still failed
+    // means the link itself is genuinely expired or already used.
     const timeout = window.setTimeout(() => {
-      if (!settled) setLinkError(true);
+      if (!settled) setLinkError(tokenHash || code ? "verify_failed" : "no_token");
     }, 6000);
 
     return () => {
@@ -156,7 +171,13 @@ export default function AcceptInvitePage() {
           <p className="mt-1 text-[10px] uppercase tracking-[0.5em] text-ink-3">{isEn ? "training log" : "registro de entreno"}</p>
         </div>
 
-        {linkError ? (
+        {linkError === "no_token" ? (
+          <p className="text-center text-sm text-error">
+            {isEn
+              ? "This page didn't receive a valid token from the link you clicked. If this keeps happening, the Supabase email template for Invite/Reset Password may still need to be updated to use token_hash (see CLAUDE.md)."
+              : "Esta página no recibió un token válido del enlace que abriste. Si esto sigue pasando, puede que falte actualizar en Supabase la plantilla de correo de Invite/Reset Password para que use token_hash (ver CLAUDE.md)."}
+          </p>
+        ) : linkError === "verify_failed" ? (
           <p className="text-center text-sm text-error">
             {isEn
               ? "This link is invalid or has expired. Ask for a new invite or password reset."
