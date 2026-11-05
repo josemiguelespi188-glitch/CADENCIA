@@ -7,7 +7,7 @@ import { useAuth } from "@/lib/auth-context";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { AthleteProfileCard } from "@/components/AthleteProfileCard";
-import { AthleteCorosCard, AthleteGarminCard, AthleteGarminDevCard, AthleteStravaCard, AthleteWhoopCard, AthleteZonesCard } from "@/components/settings/ConnectionCards";
+import { AthleteCorosCard, AthleteGarminDevCard, AthleteStravaCard, AthleteWhoopCard, AthleteZonesCard } from "@/components/settings/ConnectionCards";
 
 /**
  * First-run onboarding wizard (Nov 2026, direct, verbatim instruction
@@ -102,7 +102,6 @@ export default function OnboardingPage() {
                 <AthleteWhoopCard />
                 <AthleteGarminDevCard />
                 <AthleteCorosCard />
-                <AthleteGarminCard />
               </div>
               <div className="mt-8 flex items-center justify-between">
                 <Button variant="ghost" onClick={() => setStep(1)}>

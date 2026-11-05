@@ -449,11 +449,14 @@ export function AthleteZonesCard({ slug }: { slug: string }) {
 }
 
 /**
- * The real Garmin Connect Developer Program (Starter Access, OAuth tier)
- * — separate from AthleteGarminCard below (the Personal API key-paste
- * flow). Mirrors AthleteCorosCard's Connect/Disconnect pattern exactly,
- * since this is also real OAuth. See CLAUDE.md's "Garmin Connect
- * Developer Program" section and lib/integrations/garminDeveloper.ts.
+ * The real Garmin Connect Developer Program (Starter Access, OAuth tier).
+ * Mirrors AthleteCorosCard's Connect/Disconnect pattern exactly, since
+ * this is also real OAuth. See CLAUDE.md's "Garmin Connect Developer
+ * Program" section and lib/integrations/garminDeveloper.ts. (The
+ * read-only Garmin Personal API key card that used to sit next to this
+ * one was removed, Nov 2026 — fully superseded, since this card already
+ * covers read access and can also push, which the Personal key tier
+ * never could. See CLAUDE.md.)
  */
 export function AthleteGarminDevCard() {
   const { locale } = useLocale();
@@ -506,135 +509,6 @@ export function AthleteGarminDevCard() {
           <a href="/api/garmin-dev/connect">
             <Button size="sm">{isEn ? "Connect" : "Conectar"}</Button>
           </a>
-        )}
-      </div>
-    </Card>
-  );
-}
-
-/**
- * Garmin's **Personal API** — deliberately NOT an OAuth connect button
- * like Strava/COROS above. This is a long-lived key the athlete
- * generates for THEMSELVES at Garmin Connect's own settings page, per
- * Garmin's own terms ("meant for individual Garmin users... not
- * intended for commercial applications serving multiple end users") —
- * see CLAUDE.md's "Garmin Personal API" section for the full story,
- * including why this app can't use it to push workouts (read-only,
- * pull-only) the way the COROS Partner API is meant to. Saving the key
- * validates it live server-side (a real token exchange) before storing.
- */
-export function AthleteGarminCard() {
-  const { locale } = useLocale();
-  const isEn = locale === "en";
-  const [status, setStatus] = useState<StravaStatus | null>(null);
-  const [apiKey, setApiKey] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-
-  const loadStatus = useCallback(async () => {
-    const res = await fetch("/api/garmin/status");
-    if (res.ok) setStatus(await res.json());
-  }, []);
-
-  useEffect(() => {
-    // Initial data fetch on mount — see the same note in calendar/page.tsx.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadStatus();
-  }, [loadStatus]);
-
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setMessage(null);
-    try {
-      const res = await fetch("/api/garmin/connect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setMessage(isEn ? "Garmin connected." : "Garmin conectado.");
-        setApiKey("");
-        await loadStatus();
-      } else {
-        setMessage(data.error);
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function disconnect() {
-    setBusy(true);
-    try {
-      await fetch("/api/garmin/disconnect", { method: "POST" });
-      await loadStatus();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Card>
-      <CardTitle>Garmin (Personal key)</CardTitle>
-
-      <div className="mt-4 flex items-center gap-3">
-        <span className="h-2.5 w-2.5 rounded-full" style={{ background: status?.connected ? "var(--success)" : "var(--ink-3)" }} />
-        <span className="text-sm">{status?.connected ? (isEn ? "Connected" : "Conectado") : isEn ? "Not connected" : "No conectado"}</span>
-      </div>
-
-      <p className="mt-2 text-xs text-ink-3">
-        {isEn
-          ? "Read-only, personal use only: this uses your own Garmin Personal API key to read your own data. It cannot push workouts to your watch (Garmin doesn't allow that for this type of key). For pushing structured workouts, use the Garmin (Developer API) card above."
-          : "Solo lectura, uso personal: usa tu propia clave Personal API de Garmin para leer tus propios datos. No puede mandar entrenos a tu reloj (Garmin no lo permite con este tipo de clave). Para mandar entrenos estructurados, usa la tarjeta de Garmin (Developer API) arriba."}
-      </p>
-
-      {!status?.connected && (
-        <ol className="mt-3 list-decimal space-y-1 pl-5 text-xs text-ink-2">
-          <li>
-            {isEn ? "Go to" : "Ve a"}{" "}
-            <a
-              href="https://connect.garmin.com/app/settings/personalApiToken"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="break-all underline"
-            >
-              connect.garmin.com/app/settings/personalApiToken
-            </a>{" "}
-            {isEn ? "(sign in to Garmin Connect first if asked)." : "(inicia sesión en Garmin Connect si te lo pide)."}
-          </li>
-          <li>{isEn ? "Click to generate a new Personal API key." : "Genera una nueva clave Personal API."}</li>
-          <li>
-            {isEn
-              ? "Copy it immediately, Garmin only shows it once."
-              : "Cópiala de inmediato, Garmin solo la muestra una vez."}
-          </li>
-          <li>{isEn ? "Paste it below and save." : "Pégala abajo y guarda."}</li>
-        </ol>
-      )}
-
-      {message && <p className="mt-2 text-xs text-ink-2">{message}</p>}
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        {status?.connected ? (
-          <Button size="sm" variant="danger" onClick={disconnect} disabled={busy}>
-            {isEn ? "Disconnect" : "Desconectar"}
-          </Button>
-        ) : (
-          <form onSubmit={save} className="flex w-full flex-wrap gap-2">
-            <input
-              type="password"
-              required
-              placeholder={isEn ? "Paste your Garmin Personal API key" : "Pega tu clave Personal API de Garmin"}
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              className="h-10 min-w-[260px] flex-1 rounded-xl border border-line bg-bg px-3 text-sm"
-            />
-            <Button type="submit" size="sm" disabled={busy}>
-              {busy ? (isEn ? "Checking…" : "Verificando…") : isEn ? "Save" : "Guardar"}
-            </Button>
-          </form>
         )}
       </div>
     </Card>

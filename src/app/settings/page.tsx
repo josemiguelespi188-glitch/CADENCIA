@@ -8,7 +8,6 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { AthleteProfileCard } from "@/components/AthleteProfileCard";
 import {
   AthleteCorosCard,
-  AthleteGarminCard,
   AthleteGarminDevCard,
   AthleteStravaCard,
   AthleteWhoopCard,
@@ -105,18 +104,16 @@ function SettingsContent() {
               </div>
 
               {/* Found live (Nov 2026, direct feedback: "la organización de
-                  las cosas") — the 5 integration cards used to sit in three
-                  separate 2-col grids stacked with mt-4 gaps, which left
-                  WHOOP alone in its own row (an orphan slot) and read as a
-                  loose pile of cards with no section heading. One labeled
-                  section, one responsive grid now — ordered by how real/
-                  usable each connection actually is today (Strava and
-                  WHOOP fully working, Garmin Developer confirmed working,
-                  then COROS — real MCP connection works now, but pushing a
-                  workout doesn't yet, see CLAUDE.md — and the
-                  lower-capability Garmin Personal key last, so if the grid
-                  ever leaves an orphan cell on a wide screen it falls on
-                  one of the two least-essential cards, not a primary one). */}
+                  las cosas") — one labeled section, one responsive grid —
+                  ordered by how real/usable each connection actually is
+                  today (Strava and WHOOP fully working, Garmin Developer
+                  confirmed working, then COROS — real MCP connection
+                  works now, but pushing a workout doesn't yet, see
+                  CLAUDE.md). The read-only Garmin Personal key card that
+                  used to sit here was removed (Nov 2026, "garmin personal
+                  key ya no es necesario") — fully superseded by Garmin
+                  Developer above, which already covers read access and
+                  can also push. */}
               <h2 className="mt-8 mb-3 text-sm uppercase tracking-widest text-ink-3">
                 {isEn ? "Connections" : "Conexiones"}
               </h2>
@@ -125,7 +122,6 @@ function SettingsContent() {
                 <AthleteWhoopCard />
                 <AthleteGarminDevCard />
                 <AthleteCorosCard />
-                <AthleteGarminCard />
               </div>
 
               <div className="mt-8 flex flex-wrap items-center gap-5 border-t border-line pt-6">

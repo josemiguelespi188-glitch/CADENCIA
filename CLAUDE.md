@@ -3402,3 +3402,31 @@ and then tried registering fresh with the same email.
   account lands cleanly past onboarding without any manual steps, and
   that a genuinely new email still creates a fresh row exactly as
   before.
+
+## Garmin Personal API key card removed (Nov 2026)
+
+Direct instruction: "garmin personal key ya no es necesario" — fully
+superseded by the Garmin Connect Developer Program card (see "Garmin
+Connect Developer Program (real OAuth + push, Nov 2026)" above), which
+already covers everything the Personal key tier could do (read access)
+plus what it explicitly couldn't (pushing structured workouts — Garmin's
+own terms bar that for a Personal API key). Removed outright rather than
+just hidden, matching this codebase's own standing practice of deleting
+confirmed-unused code instead of leaving it as a zombie (see e.g. the
+old COROS Partner-API scaffold's removal, documented above):
+
+- `AthleteGarminCard` deleted from `components/settings/ConnectionCards.tsx`,
+  and its usage removed from both `/settings` and `/onboarding`'s
+  connections grid (now just Strava/WHOOP/Garmin Developer/COROS).
+- `app/api/garmin/{connect,status,disconnect}` routes deleted outright —
+  nothing else referenced them.
+- `lib/integrations/garmin.ts` (the Personal API key validation/token-
+  exchange client) deleted — its only callers were the routes above.
+- **Deliberately left alone**: the `garmin_connections` table itself
+  (migration `015_garmin_personal_api.sql`/`schema.sql`) — dropping a
+  table means removing its data first, not worth a migration purely for
+  cleanup when the table is simply unused going forward, same reasoning
+  already applied elsewhere in this file (the dead `communications-html`
+  bucket in the sibling Operations Hub codebase). No athlete had
+  connected via this tier before it was removed, so there's no real data
+  loss either way.
