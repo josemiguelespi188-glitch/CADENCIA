@@ -1706,11 +1706,11 @@ only filled `workoutSteps`; now it fills the entire workout.
   matches "edita absolutamente todo," and running it again on an
   already-filled dialog is expected to overwrite with the new
   description, not partially blend two descriptions together.
-  `athleteSlug`/`date`/`start`/`stravaComment`/`done`/`rpe` are left
-  alone — context the dialog itself already supplies, or (for
-  `stravaComment`) a field with its own separate "AI drafts it at sync
-  time if left blank" behavior that this generator deliberately
-  doesn't duplicate.
+  `athleteSlug`/`date`/`start`/`done`/`rpe` are left alone — context
+  the dialog itself already supplies. (`stravaComment` was ALSO left
+  alone in this original pass, relying on its own separate "AI drafts
+  it at sync time if left blank" fallback instead — reversed in the
+  "always AI-filled" follow-up below.)
 - **Visual redesign** of the rest of the dialog alongside this, same
   feedback pass: the form scrolls internally now
   (`max-h-[calc(100dvh-24px)] overflow-y-auto` on the `<form>` itself,
@@ -1722,6 +1722,33 @@ only filled `workoutSteps`; now it fills the entire workout.
   `border-t border-line pt-4` divider separates the structured-steps
   section and the Done/RPE section from what's above, instead of
   everything running together in one undifferentiated block.
+
+### "Strava comment" is now always AI-filled by the generator too (Nov 2026)
+
+Direct, verbatim instruction: "este strava comment siempre hay que
+llenarlo con el ai. es un breve resumen del entrenamiento que va a la
+descripción de la actividad de strava cuando se hace push." Reverses
+the one field the pass above deliberately left alone.
+
+- **`lib/integrations/claude.ts`**: `GENERATE_WORKOUT_TOOL`'s schema
+  (and `GeneratedWorkout`) gained a required `stravaComment` field — a
+  short, **past-tense** recap (1-2 sentences, e.g. "Tempo run with a
+  15min warmup, 30min at tempo pace, 10min cooldown.") written as if
+  the session already happened, since it's meant to be posted verbatim
+  as the Strava activity's own description once synced — the system
+  prompt explicitly calls this out as "must always be filled in, never
+  left blank," same as `notes` already was.
+- **`WorkoutDialog.tsx`**'s `generateWorkoutFromAI()` full-replace now
+  also sets `stravaComment` from the result, alongside everything else
+  it already replaced.
+- **This is additive, not a replacement** for the existing sync-time
+  fallback (`generateActivityDescription()` in the same file, called
+  from `/api/strava/sync` only when `strava_comment` is still empty at
+  match time) — a workout built with "Generate with AI" now already
+  has a comment the moment it's created, so that fallback simply never
+  fires for it; a workout NOT built via the AI generator (manual entry,
+  a template, Excel import) still relies on the sync-time fallback
+  exactly as before, unchanged.
 
 ## WorkoutDialog usability pass + header cleanup (Nov 2026)
 

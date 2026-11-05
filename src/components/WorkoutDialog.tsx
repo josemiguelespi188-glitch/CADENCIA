@@ -115,6 +115,13 @@ export function WorkoutDialog({ editing, templates, athletes, onClose, onSave, o
           minutes: data.minutes,
           km: data.km,
           notes: data.notes,
+          // Always AI-filled from here on (direct request, Nov 2026: "este
+          // strava comment siempre hay que llenarlo con el ai") — a brief
+          // recap ready to post verbatim once this workout syncs to
+          // Strava, instead of staying blank until sync time's own
+          // separate best-effort AI write-back (generateActivityDescription)
+          // kicks in later.
+          stravaComment: data.stravaComment,
           workoutSteps: steps,
         }));
       } else {

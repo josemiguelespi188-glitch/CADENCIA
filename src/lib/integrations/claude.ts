@@ -104,9 +104,14 @@ const GENERATE_WORKOUT_TOOL = {
         type: "string" as const,
         description: "1-3 sentences describing the workout's purpose/objective, in the athlete's own terms — explains why this workout exists.",
       },
+      stravaComment: {
+        type: "string" as const,
+        description:
+          "A brief 1-2 sentence summary of the workout, written in the past tense as if the session had already happened (e.g. \"Tempo run with a 15min warmup, 30min at tempo pace, 10min cooldown.\") — this goes verbatim onto the matching Strava activity's description once synced, so it should read as a short recap, not an instruction.",
+      },
       steps: { type: "array" as const, items: WORKOUT_STEP_SCHEMA },
     },
-    required: ["sport", "title", "workoutType", "minutes", "km", "notes", "steps"],
+    required: ["sport", "title", "workoutType", "minutes", "km", "notes", "stravaComment", "steps"],
     additionalProperties: false,
   },
 };
@@ -118,6 +123,7 @@ export interface GeneratedWorkout {
   minutes: number;
   km: number;
   notes: string;
+  stravaComment: string;
   steps: Omit<WorkoutStep, "id">[];
 }
 
@@ -161,6 +167,7 @@ export async function generateWorkoutFromPrompt(prompt: string): Promise<Generat
         "title: a short, specific name for this workout. workoutType: a short category label. " +
         "minutes/km: your best estimate for the WHOLE session (warmup + main set + cooldown combined), 0 if you really can't estimate either. " +
         "notes: explain the workout's purpose in 1-3 sentences, as if telling the athlete why they're doing it. " +
+        "stravaComment: a short past-tense recap (1-2 sentences) of the same workout, ready to post verbatim as the Strava activity description once it's actually done and synced — this field must always be filled in, never left blank. " +
         "For steps: convert any mm:ss pace the athlete gives (e.g. \"4:30/km\") into total seconds per kilometer for a pace target. " +
         "If the athlete gives a single number for a target, set targetLow and targetHigh equal. " +
         "If the athlete names an intensity with no number anywhere to derive it from (e.g. \"5K pace\", \"easy\", \"hard\", \"threshold\"), set targetType to \"open\" and targetLow/targetHigh to 0 — never invent a number you weren't given. " +
@@ -207,6 +214,7 @@ export async function generateWorkoutFromPrompt(prompt: string): Promise<Generat
     minutes: typeof input.minutes === "number" && input.minutes > 0 ? input.minutes : 0,
     km: typeof input.km === "number" && input.km > 0 ? input.km : 0,
     notes: typeof input.notes === "string" ? input.notes : "",
+    stravaComment: typeof input.stravaComment === "string" ? input.stravaComment : "",
     steps,
   };
 }
