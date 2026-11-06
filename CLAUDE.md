@@ -4145,3 +4145,123 @@ field, si hay." All of this lives in `lib/excelPlan.ts`
   actually attaches `workout_steps` onto the right `workouts` rows in
   Supabase, and that one of those rows can then actually be pushed to a
   connected Garmin device via the "Download week" button.
+
+## COROS push actually built, Structured Steps moved into Plan, Excel scoped per athlete (Nov 2026)
+
+Three direct follow-ups in one message, plus the user pasting the real
+captured `coros_connections.tools_catalog` JSON (from `/settings`' "View
+captured schema" button) right after asking how to fix the COROS "not
+built yet" error.
+
+- **`pushStructuredWorkoutToCorosMcp()` is now real**, built directly
+  against that pasted catalog's `createScheduledWorkout` tool schema —
+  see `lib/integrations/corosMcp.ts`'s own file header and that
+  function's own comment for exactly which parts are a direct schema
+  read vs. this codebase's own interpretive choices. Confirmed schema
+  facts used as-is: `course.sportType` (1=running, 2=cycling, 5=trail
+  running — Cadencia only ever sends 1 or 2, see below),
+  `section.sectionType` (1=warmup, 2=training, 3=recovery, 4=cooldown),
+  `targetType` (1=distance m, 2=time s, 4=free mode), `intensityType`
+  (1=HR, 2=pace, 4=power) with absolute-range
+  `intensityValueStart`/`intensityValueEnd` (the schema's own words:
+  "use requested bpm/pace/W as given, never approximate them as zones
+  or percentages" — exactly the shape Cadencia's own `targetLow`/
+  `targetHigh` already store), and the real `intervalGroup`/`repeats`/
+  `sets` container for a genuine repeating block.
+  - **`corosSportType()`** only accepts `run`→1 and `bike`→2 —
+    `swim`/`gym`/`race`/`brick` are rejected with a clear error rather
+    than guessed onto the closest sport (forcing "race" onto "running"
+    would silently mis-schedule a swim or bike race day as a run on the
+    athlete's real COROS account). Swim is also still unavailable
+    through COROS MCP at all per COROS's own reply.
+  - **`corosSectionType()`**: COROS has no standalone "rest" section
+    type (only warmup/training/recovery/cooldown) — Cadencia's `rest`
+    kind maps to `3` (recovery) as the closest real fit, an
+    interpretive choice flagged in the code, not a confirmed mapping.
+  - **The interval-grouping heuristic** (`corosSectionsFromSteps()`):
+    Cadencia's own `WorkoutStep[]` model was built "flat, at most ONE
+    level of repeat grouping" on the ORIGINAL assumption (from the old
+    Partner-API research) that COROS couldn't support real nested
+    groups — turns out the real confirmed schema DOES have a genuine
+    `intervalGroup`/`sets` container, a better fit than flattening. A
+    run of CONSECUTIVE steps sharing the same `repeatCount > 1` (e.g.
+    "work x5" immediately followed by "recovery x5") is folded into one
+    `intervalGroup`, representing "5x(5min work, 3min recovery)" the
+    way a human would actually describe it — a documented, interpretive
+    grouping rule, not confirmed from any spec example.
+  - **`cadence` targets have no COROS intensity metric at all** (only
+    HR/pace/power) — silently produce no intensity fields rather than
+    guessing one, same treatment as `open`.
+  - `/api/coros/push` now mirrors `/api/garmin-dev/push`'s exact shape
+    (fetches the full workout, passes `athlete_id` + the row) instead
+    of calling the old no-argument stub. Settings' COROS card copy
+    updated to say pushing now works for running/cycling, instead of
+    the old blanket "not built yet."
+  - **`lib/deviceSync.ts`**'s "Download week" bulk push now attempts
+    BOTH Garmin and COROS in parallel (previously skipped COROS outright
+    since it always failed identically) — `pushWeekToDevices()`/
+    `describeWeekDeviceSync()` replace the old Garmin-only versions,
+    with COROS's own real constraint (`unsupportedSport`, e.g. a gym/
+    swim workout in the week) surfaced as its own category rather than
+    a generic failure.
+  - Still completely untested live from this sandbox (`mcp.coros.com`
+    stays unreachable here) — confirm once deployed: that a real
+    running or cycling workout with structured steps actually lands on
+    José's COROS training schedule via "Push to COROS" or "Download
+    week," that the interval-grouping heuristic renders sensibly in the
+    COROS app, and that a swim/gym workout correctly surfaces the
+    "unsupported sport" message instead of silently failing.
+
+- **"el structure step tiene que ir en plan"**: the Structured Steps
+  sheet from the previous pass is gone — direct correction that it
+  belongs IN the Plan sheet, not a separate one. It's now a single
+  "Structured Steps" column (the Plan sheet's last column) holding a
+  compact, semicolon-separated mini-syntax instead of a real table:
+  `<Kind> <Duration> [x<Repeat>] [@<Target> <Low>[-<High>]]` — e.g.
+  `"Warmup 15min; Work 5min x5 @Pace 240-260; Recovery 3min x5 @HR
+  120-140; Cooldown 10min"`. `parseStepToken()`/
+  `parseStructuredStepsCell()` (`lib/excelPlan.ts`) implement the
+  grammar; a malformed step is reported as its own per-row import error
+  ("Pasos Estructurados: paso N (...): ..."), never silently dropped —
+  same discipline this file already applies to every other field. A
+  single target value with no dash (e.g. `"@Power 220"`) mirrors into
+  both `targetLow` and `targetHigh` — found live during this pass's own
+  round-trip test (the Guide sheet already documented this rule, the
+  first implementation didn't actually do it; fixed to match both the
+  docs and COROS MCP's own confirmed "single value" instruction). The
+  Guide sheet's own "Structured Steps" section was rewritten to teach
+  this syntax with worked examples instead of explaining the old
+  matching rules.
+- **"este excel es por usuario. no puede venir información de juan.
+  solo tiene que venir de mike"**: `GET /api/plan/template` now
+  returns exactly ONE athlete's data, never the whole roster — the
+  Plan sheet's Athlete column has that one name as its only dropdown
+  option, and the Athlete Profile/Personal Bests/Training Zones sheets
+  carry only that athlete. Defaults to the signed-in caller's own
+  athlete; a new `?athlete=<slug>` param scopes it to someone else
+  explicitly. No new permission check for the `?athlete=` path — any
+  signed-in athlete can already view/edit any other athlete's full
+  profile and workouts (the "shared coach log" model this whole
+  codebase already has), so downloading their prefilled Excel needed
+  no new gate.
+- **"en community siendo coach si veo el perfil de juanes... debería
+  poder descargar su excel"**: `/community/[slug]/member/[athleteId]`
+  gained a "Download Excel" button next to "Compare," linking to
+  `/api/plan/template?athlete=<that member's slug>` — downloads a
+  template prefilled with exactly that member's own profile, ready to
+  fill in their week and upload back from `/templates` like any other
+  Excel plan.
+- Verified with real round-trip tests (build the template, parse it
+  back) before shipping: both locales produce the documented 4-step
+  example with zero errors, `@Pace`/`@HR`/`@Power` targets parse with
+  correct units and ranges, a single-value target mirrors into both
+  ends, and an unrecognized step word (e.g. a typo'd step type) is
+  correctly reported as a per-row error rather than silently dropped —
+  same discipline this file's original Excel import round-trip test
+  already established. Not yet tested against a real Supabase project
+  from this sandbox (same standing limitation as every other Supabase-
+  dependent feature here) — confirm once deployed: that `?athlete=`
+  from the Community member page actually downloads that member's own
+  file (not the caller's), and that a Structured Steps cell filled in
+  by hand in a real spreadsheet app (not generated by this codebase)
+  still parses correctly.

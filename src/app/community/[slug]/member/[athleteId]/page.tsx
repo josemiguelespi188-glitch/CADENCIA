@@ -54,9 +54,25 @@ export default function CommunityMemberProfilePage({ params }: { params: Promise
                     )}
                   </div>
                 </div>
-                <Link href={`/community/${slug}/compare?with=${athlete.id}`}>
-                  <Button size="sm">{isEn ? "Compare" : "Comparar"}</Button>
-                </Link>
+                <div className="flex items-center gap-2">
+                  {/* Nov 2026, direct request: "en community siendo coach si
+                      veo el perfil de juanes y quiero editar sus entrenos,
+                      debería poder descargar su excel." Scoped to this one
+                      athlete only (?athlete=<slug>) — see the ?athlete param
+                      on GET /api/plan/template. No extra permission check
+                      here: any signed-in athlete can already view/edit any
+                      other athlete's workouts (the "shared coach log" model),
+                      so downloading their prefilled Excel is consistent with
+                      permissions that already exist. */}
+                  <a href={`/api/plan/template?locale=${locale}&athlete=${athlete.slug}`}>
+                    <Button variant="steel" size="sm">
+                      {isEn ? "Download Excel" : "Descargar Excel"}
+                    </Button>
+                  </a>
+                  <Link href={`/community/${slug}/compare?with=${athlete.id}`}>
+                    <Button size="sm">{isEn ? "Compare" : "Comparar"}</Button>
+                  </Link>
+                </div>
               </div>
 
               <div className="flex flex-col gap-5">

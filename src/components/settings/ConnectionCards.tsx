@@ -263,8 +263,8 @@ export function AthleteCorosCard() {
 
       <p className="mt-2 text-xs text-ink-3">
         {isEn
-          ? "Real COROS MCP connection (no approval needed). Pushing structured workouts isn't built yet — the exact payload format COROS expects still needs confirming. See CLAUDE.md."
-          : "Conexión real a COROS MCP (no necesita aprobación). Mandar entrenos estructurados todavía no está construido — falta confirmar el formato exacto que espera COROS. Ver CLAUDE.md."}
+          ? "Real COROS MCP connection (no approval needed). Pushing structured workouts to the watch now works for running and cycling — swim, gym, race-day, and brick workouts aren't supported by COROS MCP yet. See CLAUDE.md."
+          : "Conexión real a COROS MCP (no necesita aprobación). Mandar entrenos estructurados al reloj ya funciona para correr y bici — natación, gimnasio, día de carrera y brick todavía no los soporta COROS MCP. Ver CLAUDE.md."}
       </p>
 
       <div className="mt-5 flex flex-wrap gap-2">

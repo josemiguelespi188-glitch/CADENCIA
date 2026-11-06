@@ -29,14 +29,18 @@ import { computeHrZones, computePaceZones, computePowerZones, type ZoneKey } fro
  * expected to carry its own warmup/work/recovery/cooldown structure,
  * since that's what actually gets pushed to a connected watch (see
  * lib/integrations/garminDeveloper.ts's `pushStructuredWorkoutToGarmin`
- * — it throws outright for a workout with no structured steps). Steps
- * live on their OWN sheet, one row per step, not as extra columns on
- * the Plan sheet itself — a workout can have anywhere from 0 to several
- * steps, which doesn't fit a fixed-width row the way the rest of a
- * workout's own fields do. A step row is matched back to its parent
- * workout by an exact (case-insensitive) Athlete + Date + Title match
- * against the Plan sheet — see `parsePlanWorkbook()`'s own comment for
- * what happens when that match is missing or ambiguous.
+ * and lib/integrations/corosMcp.ts's `pushStructuredWorkoutToCorosMcp`
+ * — both throw outright for a workout with no structured steps).
+ * **Lives in the Plan sheet itself, as its own column** — direct
+ * follow-up correction: "el structure step tiene que ir en plan" (the
+ * first version put it on a separate sheet, matched by Athlete+Date+
+ * Title; moved into Plan per this explicit instruction). Since a
+ * workout can have any number of steps, one cell can't hold a normal
+ * table — it holds a compact, semicolon-separated mini-syntax instead:
+ * `<Kind> <Duration> [x<Repeat>] [@<Target> <Low>[-<High>]]`, steps
+ * separated by `;`. See `parseStructuredStepsCell()`'s own comment for
+ * the exact grammar and `addGuideSheet()`'s "Structured Steps" section
+ * for the athlete-facing explanation with worked examples.
  */
 
 const SPORT_LABEL: Record<Sport, { es: string; en: string }> = {
@@ -139,6 +143,7 @@ const COLS = (locale: Locale) =>
         "Notes / objective",
         "Strava Description",
         "Done (Yes/No)",
+        "Structured Steps (optional, see Guide)",
       ]
     : [
         "Atleta",
@@ -153,6 +158,7 @@ const COLS = (locale: Locale) =>
         "Notas / objetivo",
         "Strava Description",
         "Hecho (Sí/No)",
+        "Pasos Estructurados (opcional, ver Guía)",
       ];
 
 export async function buildPlanTemplate(locale: Locale = "es", athletes: AthleteProfileExport[] = []): Promise<Buffer> {
@@ -171,14 +177,16 @@ export async function buildPlanTemplate(locale: Locale = "es", athletes: Athlete
   // One example row, left in on purpose as a visible reference — added
   // BEFORE the data-validation loop below, so it lands on row 2 (setting
   // dataValidation on a cell materializes that row, which would otherwise
-  // push addRow()'s result past all of them). Nov 2026: this example is
-  // now a real interval session (not a plain easy run), matched by its
-  // own 4 example rows on the Structured Steps sheet below — a filled-in
-  // demonstration of the whole feature, not just the plain columns, plus
-  // a worked example of what a good Strava Description actually reads
-  // like (short, past tense, matches the "AI-generated content" style
-  // this app's own generator already writes — see CLAUDE.md).
-  const EXAMPLE_TITLE = locale === "en" ? "Interval session" : "Serie de intervalos";
+  // push addRow()'s result past all of them). This is a real interval
+  // session (not a plain easy run), with a filled-in Structured Steps
+  // cell demonstrating the mini-syntax end to end, plus a worked example
+  // of what a good Strava Description actually reads like (short, past
+  // tense, matches the "AI-generated content" style this app's own
+  // generator already writes — see CLAUDE.md).
+  const EXAMPLE_STEPS =
+    locale === "en"
+      ? "Warmup 15min; Work 5min x5; Recovery 3min x5; Cooldown 10min"
+      : "Calentamiento 15min; Trabajo 5min x5; Recuperación 3min x5; Enfriamiento 10min";
   ws.addRow([
     athleteNames[0] ?? "",
     "2026-11-03",
@@ -186,7 +194,7 @@ export async function buildPlanTemplate(locale: Locale = "es", athletes: Athlete
     "06:00",
     "06:33",
     "",
-    EXAMPLE_TITLE,
+    locale === "en" ? "Interval session" : "Serie de intervalos",
     locale === "en" ? "Intervals" : "Series",
     5,
     locale === "en" ? "5x5min at threshold effort, 3min easy jog recovery between reps." : "5x5min a esfuerzo de umbral, 3min de trote suave de recuperación entre repeticiones.",
@@ -194,6 +202,7 @@ export async function buildPlanTemplate(locale: Locale = "es", athletes: Athlete
       ? "Interval session: 15min warmup, 5x5min at threshold with 3min recovery, 10min cooldown."
       : "Serie de intervalos: 15min de calentamiento, 5x5min a umbral con 3min de recuperación, 10min de enfriamiento.",
     doneOptions[1],
+    EXAMPLE_STEPS,
   ]);
   ws.getRow(2).font = { italic: true, color: { argb: "FF8A8B8E" } };
 
@@ -208,18 +217,17 @@ export async function buildPlanTemplate(locale: Locale = "es", athletes: Athlete
   // hoja pongas todas las opciones que pueden haber de sport" — a
   // plain gray reference list next to the table (column C's own
   // dropdown already enforces this, but a visible written list next to
-  // it is what was actually asked for). Column N is the gap after L
-  // (Done), so this sits with one blank column of breathing room.
-  ws.getCell("N1").value = locale === "en" ? "Sport options" : "Opciones de deporte";
-  ws.getCell("N1").font = { bold: true, color: { argb: "FF8A8B8E" } };
+  // it is what was actually asked for). Column O leaves column N as a
+  // gap after M (Structured Steps, the table's last column).
+  ws.getCell("O1").value = locale === "en" ? "Sport options" : "Opciones de deporte";
+  ws.getCell("O1").font = { bold: true, color: { argb: "FF8A8B8E" } };
   sportNames.forEach((name, i) => {
-    const cell = ws.getCell(`N${i + 2}`);
+    const cell = ws.getCell(`O${i + 2}`);
     cell.value = name;
     cell.font = { color: { argb: "FF8A8B8E" } };
   });
-  ws.getColumn("N").width = Math.max(16, ...sportNames.map((s) => s.length + 2));
+  ws.getColumn("O").width = Math.max(16, ...sportNames.map((s) => s.length + 2));
 
-  addStructuredStepsSheet(wb, locale, athleteNames, EXAMPLE_TITLE);
   addGuideSheet(wb, locale);
 
   if (athletes.length) {
@@ -228,78 +236,6 @@ export async function buildPlanTemplate(locale: Locale = "es", athletes: Athlete
 
   const buf = await wb.xlsx.writeBuffer();
   return Buffer.from(buf);
-}
-
-/**
- * One row per structured step, linked back to its parent workout by an
- * exact (case-insensitive) Athlete + Date + Workout Title match against
- * the Plan sheet — see this file's own header and `parsePlanWorkbook()`
- * for the full rationale and the matching rules. The example rows here
- * are the real 4-step breakdown of the Plan sheet's own example workout
- * (`exampleTitle`), so downloading the template and uploading it
- * unmodified already demonstrates the feature end to end.
- */
-function addStructuredStepsSheet(wb: ExcelJS.Workbook, locale: Locale, athleteNames: string[], exampleTitle: string) {
-  const isEn = locale === "en";
-  const ws = wb.addWorksheet(isEn ? "Structured Steps" : "Pasos Estructurados");
-  const cols = isEn
-    ? [
-        "Athlete",
-        "Date (YYYY-MM-DD)",
-        "Workout Title (must match the Plan sheet exactly)",
-        "Step order",
-        "Step type",
-        "Duration type",
-        "Duration (min if Time, m if Distance)",
-        "Target type",
-        "Target low",
-        "Target high",
-        "Repeat count",
-      ]
-    : [
-        "Atleta",
-        "Fecha (AAAA-MM-DD)",
-        "Título del entreno (debe coincidir exacto con la hoja Plan)",
-        "Orden",
-        "Tipo de paso",
-        "Tipo de duración",
-        "Duración (min si es Tiempo, m si es Distancia)",
-        "Tipo de objetivo",
-        "Objetivo mínimo",
-        "Objetivo máximo",
-        "Repeticiones",
-      ];
-  ws.columns = cols.map((header) => ({ header, width: Math.max(16, Math.min(32, header.length + 2)) }));
-  ws.getRow(1).font = { bold: true };
-  ws.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE9E9E6" } };
-
-  const kindNames = STEP_KINDS.map((k) => STEP_KIND_LABEL[k][locale]);
-  const durationTypeNames = DURATION_TYPES.map((d) => DURATION_TYPE_LABEL[d][locale]);
-  const targetTypeNames = TARGET_TYPES.map((t) => TARGET_TYPE_LABEL[t][locale]);
-
-  // The Plan sheet's own example workout, broken into its 4 real steps
-  // (warmup, work x5, recovery x5, cooldown) — matches the screenshot
-  // this feature was built from.
-  const exampleSteps: [string, string, number, string, string, string, string][] = [
-    [kindNames[0], durationTypeNames[0], 15, targetTypeNames[4], "", "", ""],
-    [kindNames[1], durationTypeNames[0], 5, targetTypeNames[4], "", "", "5"],
-    [kindNames[2], durationTypeNames[0], 3, targetTypeNames[4], "", "", "5"],
-    [kindNames[3], durationTypeNames[0], 10, targetTypeNames[4], "", "", ""],
-  ];
-  exampleSteps.forEach((step, i) => {
-    ws.addRow([athleteNames[0] ?? "", "2026-11-03", exampleTitle, i + 1, step[0], step[1], step[2], step[3], step[4], step[5], step[6]]);
-  });
-  for (let r = 2; r <= exampleSteps.length + 1; r++) {
-    ws.getRow(r).font = { italic: true, color: { argb: "FF8A8B8E" } };
-  }
-
-  const LAST_ROW = 400; // several steps per workout, so this sheet needs more rows than the Plan sheet
-  for (let r = 2; r <= LAST_ROW; r++) {
-    ws.getCell(`A${r}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${athleteNames.join(",")}"`] };
-    ws.getCell(`E${r}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${kindNames.join(",")}"`] };
-    ws.getCell(`F${r}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${durationTypeNames.join(",")}"`] };
-    ws.getCell(`H${r}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${targetTypeNames.join(",")}"`] };
-  }
 }
 
 /**
@@ -373,16 +309,24 @@ function addGuideSheet(wb: ExcelJS.Workbook, locale: Locale) {
   heading(isEn ? "Structured Steps (for syncing to a watch)" : "Pasos Estructurados (para sincronizar al reloj)");
   (isEn
     ? [
-        "This is on its own sheet, \"Structured Steps\" — one row per step, not extra columns on the Plan sheet, since a workout can have any number of steps.",
-        "Every step row needs the SAME Athlete + Date + Workout Title as its parent row on the Plan sheet, matched exactly (not case-sensitive) — that's how a step finds its workout.",
-        "This should always be filled in when the workout is meant to go onto a watch (Garmin for now) — a workout with no structured steps can't be pushed, only one with real steps can.",
-        "A brick (bike + run) is still just ONE workout row — don't split it into two Plan rows; its steps can mix bike and run segments in order if you want that level of detail.",
+        'It\'s one column on the Plan sheet, "Structured Steps" — several steps in ONE cell, separated by semicolons ( ; ).',
+        "Each step: <Step type> <Duration> [x<Repeat>] [@<Target type> <Low>[-<High>]]",
+        'Duration is a number + "min" for Time (e.g. "15min"), a number + "m" for Distance (e.g. "400m"), or the word "Open" for no fixed duration.',
+        'Example with no targets: "Warmup 15min; Work 5min x5; Recovery 3min x5; Cooldown 10min" — this is the Plan sheet\'s own example row.',
+        'Example with targets: "Work 5min x5 @Pace 240-260; Recovery 3min x5 @HR 120-140" — pace is seconds per km (240 = 4:00/km), HR is bpm. A single value with no dash (e.g. "@Power 220") sets both ends to that number.',
+        "This should always be filled in when the workout is meant to go onto a watch (Garmin and COROS both work now, running and cycling only for COROS) — a workout with no structured steps can't be pushed, only one with real steps can.",
+        "A brick (bike + run) is still just ONE Plan row — don't split it into two; mix bike and run steps in order in the same Structured Steps cell if you want that level of detail.",
+        "Leave the cell blank for a workout you don't need on a watch — Structured Steps is optional, everything else in this guide still applies without it.",
       ]
     : [
-        "Está en su propia hoja, \"Pasos Estructurados\" — una fila por paso, no columnas extra en la hoja Plan, ya que un entreno puede tener cualquier cantidad de pasos.",
-        "Cada fila de paso necesita el MISMO Atleta + Fecha + Título del entreno que su fila en la hoja Plan, coincidiendo exacto (sin importar mayúsculas/minúsculas) — así es como un paso encuentra su entreno.",
-        "Esto debería llenarse siempre que el entreno vaya a ir al reloj (Garmin por ahora) — un entreno sin pasos estructurados no se puede mandar, solo uno con pasos reales.",
-        "Un brick (bici + trote) sigue siendo UNA sola fila de entreno — no lo dividas en dos filas de Plan; sus pasos pueden mezclar segmentos de bici y de trote en orden si quieres ese nivel de detalle.",
+        'Es una sola columna en la hoja Plan, "Pasos Estructurados" — varios pasos en UNA celda, separados por punto y coma ( ; ).',
+        "Cada paso: <Tipo de paso> <Duración> [x<Repeticiones>] [@<Tipo de objetivo> <Mínimo>[-<Máximo>]]",
+        'La duración es un número + "min" para Tiempo (ej. "15min"), un número + "m" para Distancia (ej. "400m"), o la palabra "Libre"/"Open" para sin duración fija.',
+        'Ejemplo sin objetivos: "Calentamiento 15min; Trabajo 5min x5; Recuperación 3min x5; Enfriamiento 10min" — es la fila de ejemplo de la hoja Plan.',
+        'Ejemplo con objetivos: "Trabajo 5min x5 @Pace 240-260; Recuperación 3min x5 @FC 120-140" — pace es segundos por km (240 = 4:00/km), FC es lpm. Un solo valor sin guión (ej. "@Potencia 220") pone ambos extremos en ese número. También acepta las palabras en inglés (Warmup, Work, HR, etc.) si las prefieres.',
+        "Esto debería llenarse siempre que el entreno vaya a ir al reloj (Garmin y COROS ya funcionan, COROS solo para correr y bici) — un entreno sin pasos estructurados no se puede mandar, solo uno con pasos reales.",
+        "Un brick (bici + trote) sigue siendo UNA sola fila de Plan — no lo dividas en dos; mezcla pasos de bici y de trote en orden en la misma celda de Pasos Estructurados si quieres ese nivel de detalle.",
+        "Deja la celda vacía para un entreno que no necesitas en el reloj — Pasos Estructurados es opcional, el resto de esta guía sigue aplicando sin él.",
       ]
   ).forEach(line);
   blank();
@@ -599,14 +543,6 @@ function matchStepKind(raw: string): WorkoutStepKind | null {
   return null;
 }
 
-function matchDurationType(raw: string): WorkoutStepDurationType | null {
-  const s = raw.trim().toLowerCase();
-  for (const d of DURATION_TYPES) {
-    if (d === s || DURATION_TYPE_LABEL[d].es.toLowerCase() === s || DURATION_TYPE_LABEL[d].en.toLowerCase() === s) return d;
-  }
-  return null;
-}
-
 function matchTargetType(raw: string): WorkoutStepTargetType | null {
   const s = raw.trim().toLowerCase();
   for (const t of TARGET_TYPES) {
@@ -617,6 +553,106 @@ function matchTargetType(raw: string): WorkoutStepTargetType | null {
 
 function newStepId() {
   return typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+}
+
+type ParsedStepToken = Omit<WorkoutStep, "id">;
+
+/**
+ * Parses ONE step token (already split off the `;`-separated
+ * Structured Steps cell, already trimmed) against the grammar
+ * documented in `addGuideSheet()`'s "Structured Steps" section:
+ * `<Kind> <Duration> [x<Repeat>] [@<Target> <Low>[-<High>]]`. Returns
+ * `{error}` instead of throwing — the caller attaches the row/step
+ * context the raw error message doesn't have.
+ */
+function parseStepToken(raw: string): ParsedStepToken | { error: string } {
+  const atIndex = raw.indexOf("@");
+  const main = (atIndex >= 0 ? raw.slice(0, atIndex) : raw).trim();
+  const targetPart = atIndex >= 0 ? raw.slice(atIndex + 1).trim() : "";
+
+  const mainWords = main.split(/\s+/).filter(Boolean);
+  if (mainWords.length === 0) return { error: "paso vacío" };
+
+  const kind = matchStepKind(mainWords[0]);
+  if (!kind) return { error: `tipo de paso no reconocido: "${mainWords[0]}"` };
+
+  let durationType: WorkoutStepDurationType | null = null;
+  let durationValue: number | null = null;
+  let repeatCount: number | null = null;
+
+  for (const word of mainWords.slice(1)) {
+    const repeatMatch = word.match(/^x(\d+)$/i);
+    if (repeatMatch) {
+      repeatCount = Number(repeatMatch[1]);
+      continue;
+    }
+    const durationMatch = word.match(/^(\d+(?:\.\d+)?)(min|m)$/i);
+    if (durationMatch) {
+      const value = Number(durationMatch[1]);
+      const unit = durationMatch[2].toLowerCase();
+      durationType = unit === "min" ? "time" : "distance";
+      durationValue = unit === "min" ? Math.round(value * 60) : Math.round(value);
+      continue;
+    }
+    if (/^(open|libre)$/i.test(word)) {
+      durationType = "open";
+      durationValue = null;
+      continue;
+    }
+    return { error: `no se pudo interpretar "${word}"` };
+  }
+
+  if (!durationType) return { error: 'falta la duración (ej. "15min", "400m" o "Open")' };
+
+  let targetType: WorkoutStepTargetType = "open";
+  let targetLow: number | null = null;
+  let targetHigh: number | null = null;
+
+  if (targetPart) {
+    const targetWords = targetPart.split(/\s+/).filter(Boolean);
+    const matchedTarget = matchTargetType(targetWords[0] ?? "");
+    if (!matchedTarget) return { error: `tipo de objetivo no reconocido: "${targetWords[0] ?? ""}"` };
+    targetType = matchedTarget;
+    if (targetType !== "open") {
+      const rangeWord = targetWords[1];
+      if (!rangeWord) return { error: `falta el valor del objetivo para "${targetWords[0]}"` };
+      const rangeMatch = rangeWord.match(/^(\d+(?:\.\d+)?)(?:-(\d+(?:\.\d+)?))?$/);
+      if (!rangeMatch) return { error: `valor de objetivo inválido: "${rangeWord}"` };
+      targetLow = Number(rangeMatch[1]);
+      // A single value with no dash mirrors into both ends, per the
+      // Guide sheet's own documented rule — matches COROS MCP's own
+      // confirmed instruction ("for a single value... set both
+      // endpoints to that value; do not widen it into a range").
+      targetHigh = rangeMatch[2] !== undefined ? Number(rangeMatch[2]) : targetLow;
+    }
+  }
+
+  return { kind, durationType, durationValue, repeatCount, targetType, targetLow, targetHigh };
+}
+
+/**
+ * Parses a whole Structured Steps cell — zero or more `;`-separated step
+ * tokens — into `WorkoutStep[]`. An empty/blank cell is valid (no
+ * structure, same as leaving the WorkoutDialog editor empty) and
+ * returns no steps and no errors.
+ */
+function parseStructuredStepsCell(raw: string): { steps: WorkoutStep[]; errors: string[] } {
+  const errors: string[] = [];
+  const steps: WorkoutStep[] = [];
+  if (!raw.trim()) return { steps, errors };
+  const tokens = raw
+    .split(";")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  tokens.forEach((token, i) => {
+    const parsed = parseStepToken(token);
+    if ("error" in parsed) {
+      errors.push(`paso ${i + 1} ("${token}"): ${parsed.error}`);
+      return;
+    }
+    steps.push({ id: newStepId(), ...parsed });
+  });
+  return { steps, errors };
 }
 
 function matchSport(raw: string): Sport | null {
@@ -685,6 +721,14 @@ export async function parsePlanWorkbook(buffer: ArrayBuffer, roster: { slug: str
     const doneRaw = cellToString(get(12)).toLowerCase();
     const done = ["sí", "si", "yes", "true", "1"].includes(doneRaw);
 
+    // Nov 2026, see this file's own header — Structured Steps is one
+    // column (13), not a separate sheet; a blank cell is valid (no
+    // structure), and any malformed step inside it is reported as its
+    // own error tagged with this same row number, never silently
+    // dropped or guessed — same discipline every other field here uses.
+    const { steps: workoutSteps, errors: stepErrors } = parseStructuredStepsCell(cellToString(get(13)));
+    stepErrors.forEach((message) => errors.push({ rowNumber, message: `Pasos Estructurados: ${message}` }));
+
     rows.push({
       rowNumber,
       athleteSlug,
@@ -698,102 +742,9 @@ export async function parsePlanWorkbook(buffer: ArrayBuffer, roster: { slug: str
       notes: cellToString(get(10)),
       stravaComment: cellToString(get(11)),
       done,
-      workoutSteps: [],
+      workoutSteps,
     });
   });
-
-  // Nov 2026, see this file's own header — the Structured Steps sheet is
-  // optional (an older template, or a user who deleted it, still imports
-  // fine with every workout's workoutSteps staying empty); when present,
-  // each step row is matched back to its parent Plan row by an exact
-  // (case-insensitive) Athlete + Date + Title match. Zero matches or more
-  // than one match (an ambiguous same-day same-title duplicate) is
-  // reported as a real import error for that step row, never guessed —
-  // same discipline this whole file already applies to every other field.
-  const stepsSheet = wb.worksheets.find((s) => s.name === "Structured Steps" || s.name === "Pasos Estructurados");
-  if (stepsSheet) {
-    const planRowsByKey = new Map<string, number[]>();
-    for (const r of rows) {
-      const key = `${r.athleteSlug}|${r.date}|${r.title.trim().toLowerCase()}`;
-      const arr = planRowsByKey.get(key) ?? [];
-      arr.push(r.rowNumber);
-      planRowsByKey.set(key, arr);
-    }
-
-    const stepsByPlanRow = new Map<number, { order: number; step: WorkoutStep }[]>();
-
-    stepsSheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-      if (rowNumber === 1) return; // header
-      const get = (col: number) => row.getCell(col).value;
-      const athleteRaw = cellToString(get(1));
-      const dateRaw = get(2);
-      const titleRaw = cellToString(get(3));
-      if (!athleteRaw && !dateRaw && !titleRaw) return; // skip fully blank row
-
-      const athleteSlug = matchAthlete(athleteRaw, roster);
-      const date = cellToDateStr(dateRaw);
-      if (!athleteSlug) return void errors.push({ rowNumber, message: `Pasos Estructurados: atleta no reconocido: "${athleteRaw}"` });
-      if (!date) return void errors.push({ rowNumber, message: `Pasos Estructurados: fecha inválida (usa AAAA-MM-DD): "${cellToString(dateRaw)}"` });
-      if (!titleRaw) return void errors.push({ rowNumber, message: "Pasos Estructurados: falta el título del entreno" });
-
-      const key = `${athleteSlug}|${date}|${titleRaw.trim().toLowerCase()}`;
-      const matches = planRowsByKey.get(key) ?? [];
-      if (matches.length === 0) {
-        return void errors.push({
-          rowNumber,
-          message: `Pasos Estructurados: ningún entreno en la hoja Plan coincide con "${athleteRaw}" / "${date}" / "${titleRaw}"`,
-        });
-      }
-      if (matches.length > 1) {
-        return void errors.push({
-          rowNumber,
-          message: `Pasos Estructurados: más de un entreno coincide con "${athleteRaw}" / "${date}" / "${titleRaw}" (ambiguo)`,
-        });
-      }
-
-      const kindRaw = cellToString(get(5));
-      const durationTypeRaw = cellToString(get(6));
-      const targetTypeRaw = cellToString(get(8));
-      const kind = matchStepKind(kindRaw);
-      const durationType = matchDurationType(durationTypeRaw);
-      const targetType = matchTargetType(targetTypeRaw);
-      if (!kind) return void errors.push({ rowNumber, message: `Pasos Estructurados: tipo de paso no reconocido: "${kindRaw}"` });
-      if (!durationType) return void errors.push({ rowNumber, message: `Pasos Estructurados: tipo de duración no reconocido: "${durationTypeRaw}"` });
-      if (!targetType) return void errors.push({ rowNumber, message: `Pasos Estructurados: tipo de objetivo no reconocido: "${targetTypeRaw}"` });
-
-      const orderRaw = Number(cellToString(get(4)));
-      const order = Number.isFinite(orderRaw) && orderRaw > 0 ? orderRaw : rowNumber; // fallback: sheet order
-
-      // Duration: minutes if Time (converted to seconds for storage, same
-      // unit WorkoutDialog.tsx's own editor uses), meters if Distance, no
-      // value at all if Open — mirrors WorkoutStep.durationValue's own
-      // documented unit convention.
-      const durationRaw = Number(cellToString(get(7)));
-      const hasDuration = Number.isFinite(durationRaw) && durationRaw > 0;
-      const durationValue = durationType === "open" || !hasDuration ? null : durationType === "time" ? Math.round(durationRaw * 60) : Math.round(durationRaw);
-
-      const targetLowRaw = Number(cellToString(get(9)));
-      const targetHighRaw = Number(cellToString(get(10)));
-      const targetLow = targetType === "open" || !Number.isFinite(targetLowRaw) || targetLowRaw <= 0 ? null : targetLowRaw;
-      const targetHigh = targetType === "open" || !Number.isFinite(targetHighRaw) || targetHighRaw <= 0 ? null : targetHighRaw;
-
-      const repeatRaw = Number(cellToString(get(11)));
-      const repeatCount = Number.isFinite(repeatRaw) && repeatRaw > 1 ? Math.round(repeatRaw) : null;
-
-      const step: WorkoutStep = { id: newStepId(), kind, durationType, durationValue, targetType, targetLow, targetHigh, repeatCount };
-      const planRowNumber = matches[0];
-      const arr = stepsByPlanRow.get(planRowNumber) ?? [];
-      arr.push({ order, step });
-      stepsByPlanRow.set(planRowNumber, arr);
-    });
-
-    for (const r of rows) {
-      const steps = stepsByPlanRow.get(r.rowNumber);
-      if (steps) {
-        r.workoutSteps = steps.sort((a, b) => a.order - b.order).map((s) => s.step);
-      }
-    }
-  }
 
   return { rows, errors };
 }

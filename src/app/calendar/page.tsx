@@ -24,7 +24,7 @@ import { addDays, fmt, hm, monday, parseYmd, today, ymd } from "@/lib/dates";
 import { buildWeekIcs, downloadIcs } from "@/lib/ics";
 import { mapStravaSportType } from "@/lib/sport";
 import { defaultStartTimeForNew } from "@/lib/scheduling";
-import { describeWeekGarminPushResult, pushWeekToGarmin } from "@/lib/deviceSync";
+import { describeWeekDeviceSync, pushWeekToDevices } from "@/lib/deviceSync";
 import { cn } from "@/lib/utils";
 
 type EditingState = {
@@ -341,8 +341,8 @@ function Toolbar({
 
     setSyncing(true);
     setSyncMessage(null);
-    const result = await pushWeekToGarmin(items);
-    setSyncMessage(describeWeekGarminPushResult(result, locale === "en"));
+    const result = await pushWeekToDevices(items);
+    setSyncMessage(describeWeekDeviceSync(result, locale === "en"));
     setSyncing(false);
   }
 

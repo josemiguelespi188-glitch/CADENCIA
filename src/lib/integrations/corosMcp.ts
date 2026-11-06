@@ -11,6 +11,7 @@ import {
 import type { OAuthClientInformationFull } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { Sport, Workout, WorkoutStep, WorkoutStepKind } from "@/lib/types";
 
 /**
  * COROS MCP — the REAL path for pushing/reading structured workouts,
@@ -43,19 +44,18 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
  *   spec directly, so trust them the same way this codebase already
  *   trusts "generic OAuth2 is safe to code" for Strava/WHOOP.
  *
- * **What's still NOT confirmed**: the internal schema of a `course`
- * object (a workout's warmup/interval/recovery/cooldown sections and
- * pace/HR/power targets) that every write tool takes — no doc reachable
- * from this sandbox spells it out. MCP is self-describing though: once
- * a real connection exists, `captureCorosToolCatalog()` below calls the
- * protocol's own `tools/list` and stores the raw result (same "capture
- * now, parse later" discipline this codebase already applies to Garmin
- * webhook payloads) — read `coros_connections.tools_catalog` for the
- * real schema before writing a push function, rather than guessing it.
- * `pushStructuredWorkoutToCorosMcp()` is deliberately NOT built yet for
- * this exact reason.
+ * **The `course` schema is now confirmed (Nov 2026)** — the user pasted
+ * the real `coros_connections.tools_catalog` captured by
+ * `captureCorosToolCatalog()` below straight from `/settings`' "View
+ * captured schema" button (a real connected account's own `tools/list`
+ * response, not a doc summary). `pushStructuredWorkoutToCorosMcp()`
+ * below is built directly against `createScheduledWorkout`'s real,
+ * confirmed input schema from that catalog — see that function's own
+ * header for exactly which parts are a direct schema read vs. this
+ * codebase's own interpretive mapping choices (section-type for "rest",
+ * the interval-grouping heuristic, cadence targets).
  *
- * This sandbox could never test any of this live — `mcp.coros.com` and
+ * This sandbox still can't test any of this live — `mcp.coros.com` and
  * `support.coros.com` both fail the egress proxy's CONNECT tunnel, the
  * same way `developer.garmin.com` did before Garmin's real docs got
  * pasted directly into chat. Confirm the whole flow once deployed.
@@ -256,19 +256,182 @@ export async function captureCorosToolCatalog(athleteId: string, accessToken: st
   }
 }
 
-/**
- * NOT BUILT YET — on purpose. The real `course` payload schema (how a
- * workout's warmup/interval/recovery/cooldown sections and pace/HR/
- * power targets are represented) is unconfirmed from any source reached
- * so far. Read `coros_connections.tools_catalog` (captured by
- * `captureCorosToolCatalog` above) for the real `createScheduledWorkout`
- * input schema before implementing this — guessing it would repeat the
- * exact mistake the old Partner-API `tp/list/push` scaffold already
- * made. Throws a clear error rather than attempting a call that's very
- * likely wrong.
- */
-export async function pushStructuredWorkoutToCorosMcp(): Promise<never> {
+/** Cadencia's Sport -> COROS MCP's confirmed `course.sportType`
+ * (createScheduledWorkout: 1=running, 2=cycling, 5=trail running — no
+ * other sport is accepted, and nothing in Cadencia's own model maps to
+ * "trail running" specifically). `swim`/`gym`/`race`/`brick` have no
+ * honest equivalent — rejected with a clear error rather than guessed
+ * at (e.g. forcing "race" onto "running" would silently mis-schedule a
+ * swim or bike race day as a run on the athlete's real COROS account).
+ * Swim is also explicitly still unavailable through COROS MCP at all
+ * per COROS's own reply — see this file's header. */
+function corosSportType(sport: Sport): 1 | 2 {
+  if (sport === "run") return 1;
+  if (sport === "bike") return 2;
   throw new Error(
-    "Not built yet: COROS MCP's real `course` payload schema is unconfirmed. See coros_connections.tools_catalog (captured on connect) for the real schema, and lib/integrations/corosMcp.ts's file header."
+    `COROS MCP can only schedule running or cycling workouts (not "${sport}") — swim, gym, race-day, and brick workouts have no real COROS MCP equivalent yet.`
   );
+}
+
+/** Cadencia's WorkoutStepKind -> COROS's confirmed `sectionType` (1=
+ * warmup, 2=training, 3=recovery, 4=cooldown). COROS has no standalone
+ * "rest" section type — `rest` maps to 3 (recovery) as the closest real
+ * fit, an interpretive choice (not a confirmed mapping) since COROS's
+ * schema simply has no 5th option for it. */
+function corosSectionType(kind: WorkoutStepKind): 1 | 2 | 3 | 4 {
+  switch (kind) {
+    case "warmup":
+      return 1;
+    case "work":
+      return 2;
+    case "recovery":
+    case "rest":
+      return 3;
+    case "cooldown":
+      return 4;
+  }
+}
+
+interface CorosSection {
+  sectionType?: 1 | 2 | 3 | 4;
+  targetType?: 1 | 2 | 4;
+  targetValue?: number;
+  intensityType?: 1 | 2 | 4;
+  intensityValueStart?: number;
+  intensityValueEnd?: number;
+  intervalGroup?: true;
+  repeats?: number;
+  sets?: CorosSection[];
+}
+
+/** Cadencia's duration -> COROS's confirmed `targetType`/`targetValue`.
+ * Both running(1) and cycling(2) — the only two sports this function
+ * ever gets called for, see `corosSportType` — accept targetType 1
+ * (distance, meters) or 2 (time, seconds); targetType 3 (climb) is
+ * trail-running-only and never reachable here. `durationValue` is
+ * already in Cadencia's own internal units (seconds for time, meters
+ * for distance — see WorkoutStep's own doc comment), the exact units
+ * COROS's schema asks for, so no conversion is needed either way. */
+function corosTarget(step: WorkoutStep): Pick<CorosSection, "targetType" | "targetValue"> {
+  if (step.durationType === "open" || !step.durationValue) return { targetType: 4 };
+  if (step.durationType === "time") return { targetType: 2, targetValue: Math.round(step.durationValue) };
+  return { targetType: 1, targetValue: Math.round(step.durationValue) };
+}
+
+/** Cadencia's target -> COROS's confirmed `intensityType` +
+ * `intensityValueStart`/`intensityValueEnd` (the absolute-range format
+ * — always used here, never a zone or percent range, since Cadencia's
+ * own `targetLow`/`targetHigh` are already real bpm/sec-per-km/watt
+ * numbers, and the schema explicitly says to "use requested bpm/pace/W
+ * as given, never approximate them as zones or percentages"). `cadence`
+ * has no COROS intensity metric at all (only heart rate/pace/%effort-
+ * pace/power) — silently produces no intensity fields rather than
+ * guessing one, same as `open`. A single value (targetHigh unset) sends
+ * the same number for both endpoints, per the schema's own stated rule
+ * for "a single value". */
+function corosIntensity(step: WorkoutStep): Pick<CorosSection, "intensityType" | "intensityValueStart" | "intensityValueEnd"> {
+  if (step.targetLow === null || step.targetLow === undefined) return {};
+  const low = Math.round(step.targetLow);
+  const high = Math.round(step.targetHigh ?? step.targetLow);
+  switch (step.targetType) {
+    case "hr":
+      return { intensityType: 1, intensityValueStart: low, intensityValueEnd: high };
+    case "pace":
+      return { intensityType: 2, intensityValueStart: low, intensityValueEnd: high };
+    case "power":
+      return { intensityType: 4, intensityValueStart: low, intensityValueEnd: high };
+    default:
+      return {}; // cadence / open — no COROS equivalent
+  }
+}
+
+function corosPlainSection(step: WorkoutStep): CorosSection {
+  return { sectionType: corosSectionType(step.kind), ...corosTarget(step), ...corosIntensity(step) };
+}
+
+/**
+ * Builds COROS's confirmed `sections` array from Cadencia's flat
+ * `WorkoutStep[]` — see WorkoutStep's own doc comment for why Cadencia
+ * never nests repeats itself ("at most ONE level of repeat grouping",
+ * originally assumed necessary for COROS specifically; turns out COROS
+ * DOES support a real `intervalGroup`/`sets` container after all, a
+ * nicer fit than flattening). **Grouping heuristic** (interpretive, not
+ * confirmed from any spec): a run of CONSECUTIVE steps sharing the same
+ * `repeatCount > 1` (e.g. "work x5" immediately followed by "recovery
+ * x5") is folded into one `intervalGroup` with that `repeats` value and
+ * those steps as its `sets` — representing "5x(5min work, 3min
+ * recovery)" the way a human would actually describe it, rather than
+ * flattening into 10 separate top-level sections. A step with no
+ * repeatCount (or one that doesn't match its neighbor) stays a plain
+ * top-level section.
+ */
+function corosSectionsFromSteps(steps: WorkoutStep[]): CorosSection[] {
+  const sections: CorosSection[] = [];
+  let i = 0;
+  while (i < steps.length) {
+    const step = steps[i];
+    if (step.repeatCount && step.repeatCount > 1) {
+      const group = [step];
+      let j = i + 1;
+      while (j < steps.length && steps[j].repeatCount === step.repeatCount) {
+        group.push(steps[j]);
+        j++;
+      }
+      sections.push({ intervalGroup: true, repeats: step.repeatCount, sets: group.map(corosPlainSection) });
+      i = j;
+    } else {
+      sections.push(corosPlainSection(step));
+      i++;
+    }
+  }
+  return sections;
+}
+
+/**
+ * Pushes one workout onto the athlete's real COROS training schedule via
+ * `createScheduledWorkout` — confirmed real tool name/schema (Nov 2026,
+ * see this file's header). Places it on exactly `workout.date`; COROS's
+ * own confirmed constraint is that date must fall within [today, today
+ * + 90 days] in the athlete's COROS timezone — not pre-validated here,
+ * the real API error is left to surface as-is if it doesn't (same "let
+ * the real error bubble up" approach this file already uses for token
+ * refresh failures).
+ */
+export async function pushStructuredWorkoutToCorosMcp(athleteId: string, workout: Workout): Promise<void> {
+  if (!workout.workout_steps.length) {
+    throw new Error("This workout has no structured steps to push.");
+  }
+  const sportType = corosSportType(workout.sport);
+
+  const accessToken = await getValidCorosMcpAccessToken(athleteId);
+  if (!accessToken) throw new Error("This athlete has no COROS connection.");
+
+  const date = workout.date.replace(/-/g, ""); // YYYY-MM-DD -> yyyyMMdd
+  const courseName = (workout.title || "Workout").slice(0, 100);
+  const courseDescription = workout.strava_comment || workout.notes || workout.title || "Structured workout from Cadencia.";
+
+  const { client, transport } = corosMcpClient(accessToken);
+  try {
+    await client.connect(transport);
+    const result = await client.callTool({
+      name: "createScheduledWorkout",
+      arguments: {
+        date,
+        course: {
+          sportType,
+          courseName,
+          courseDescription,
+          sections: corosSectionsFromSteps(workout.workout_steps),
+        },
+      },
+    });
+    if (result.isError) {
+      const text = Array.isArray(result.content)
+        ? result.content.map((c) => ("text" in c ? c.text : "")).join(" ")
+        : JSON.stringify(result.content);
+      throw new Error(`COROS rejected the workout: ${text || "unknown error"}`);
+    }
+  } finally {
+    await client.close().catch(() => {});
+  }
 }
