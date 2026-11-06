@@ -1,5 +1,14 @@
 import ExcelJS from "exceljs";
-import { SPORTS, type AthleteSlug, type PersonalBest, type Sport } from "@/lib/types";
+import {
+  SPORTS,
+  type AthleteSlug,
+  type PersonalBest,
+  type Sport,
+  type WorkoutStep,
+  type WorkoutStepDurationType,
+  type WorkoutStepKind,
+  type WorkoutStepTargetType,
+} from "@/lib/types";
 import { durationLabel } from "@/lib/dates";
 import { predictRaceTimes } from "@/lib/racePredictor";
 import { computeHrZones, computePaceZones, computePowerZones, type ZoneKey } from "@/lib/zones";
@@ -10,8 +19,24 @@ import { computeHrZones, computePaceZones, computePowerZones, type ZoneKey } fro
  * workout at once. Per explicit instruction, it carries EVERYTHING a
  * workout needs: who, when (start/end time so the calendar event's exact
  * window is unambiguous), what, and both the internal notes AND the
- * separate Strava-bound comment. See CLAUDE.md's "Excel weekly-plan
+ * separate Strava Description. See CLAUDE.md's "Excel weekly-plan
  * import" section for the full rationale.
+ *
+ * **Structured Steps (Nov 2026)**: direct instruction — "de alguna
+ * manera tenemos que añadir al excel el structured steps. porque la
+ * idea es que eso siempre vaya. para que se cargue al reloj el
+ * entrenamiento" — every workout imported through this file is now
+ * expected to carry its own warmup/work/recovery/cooldown structure,
+ * since that's what actually gets pushed to a connected watch (see
+ * lib/integrations/garminDeveloper.ts's `pushStructuredWorkoutToGarmin`
+ * — it throws outright for a workout with no structured steps). Steps
+ * live on their OWN sheet, one row per step, not as extra columns on
+ * the Plan sheet itself — a workout can have anywhere from 0 to several
+ * steps, which doesn't fit a fixed-width row the way the rest of a
+ * workout's own fields do. A step row is matched back to its parent
+ * workout by an exact (case-insensitive) Athlete + Date + Title match
+ * against the Plan sheet — see `parsePlanWorkbook()`'s own comment for
+ * what happens when that match is missing or ambiguous.
  */
 
 const SPORT_LABEL: Record<Sport, { es: string; en: string }> = {
@@ -24,6 +49,34 @@ const SPORT_LABEL: Record<Sport, { es: string; en: string }> = {
 };
 
 type Locale = "es" | "en";
+
+// Nov 2026 — same label strings WorkoutDialog.tsx's `t("step_...")`/
+// `t("duration_...")`/`t("target_...")` keys already use, mirrored here
+// since this file builds/parses the standalone Excel file server-side
+// and has no access to the i18n context. See this file's own header for
+// why structured steps now live in the Excel template at all.
+const STEP_KIND_LABEL: Record<WorkoutStepKind, { es: string; en: string }> = {
+  warmup: { es: "Calentamiento", en: "Warmup" },
+  work: { es: "Trabajo", en: "Work" },
+  recovery: { es: "Recuperación", en: "Recovery" },
+  cooldown: { es: "Enfriamiento", en: "Cooldown" },
+  rest: { es: "Descanso", en: "Rest" },
+};
+const DURATION_TYPE_LABEL: Record<WorkoutStepDurationType, { es: string; en: string }> = {
+  time: { es: "Tiempo", en: "Time" },
+  distance: { es: "Distancia", en: "Distance" },
+  open: { es: "Libre", en: "Open" },
+};
+const TARGET_TYPE_LABEL: Record<WorkoutStepTargetType, { es: string; en: string }> = {
+  pace: { es: "Pace", en: "Pace" },
+  hr: { es: "FC", en: "HR" },
+  power: { es: "Potencia", en: "Power" },
+  cadence: { es: "Cadencia", en: "Cadence" },
+  open: { es: "Libre", en: "Open" },
+};
+const STEP_KINDS: WorkoutStepKind[] = ["warmup", "work", "recovery", "cooldown", "rest"];
+const DURATION_TYPES: WorkoutStepDurationType[] = ["time", "distance", "open"];
+const TARGET_TYPES: WorkoutStepTargetType[] = ["pace", "hr", "power", "cadence", "open"];
 
 const ZONE_LABEL: Record<ZoneKey, { es: string; en: string }> = {
   recovery: { es: "Recuperación", en: "Recovery" },
@@ -65,6 +118,12 @@ export interface AthleteProfileExport {
   personalBests: PersonalBest[];
 }
 
+// "Strava Description" (Nov 2026) — literally this, in BOTH locales, not
+// translated — matches the app-wide rename documented in CLAUDE.md's
+// "Auto-complete retried every sync, direct per-activity description
+// edit" section ("Cambia la palabra comentarios por Strava Description"):
+// this is the field's real/actual name now, the same "Generate" already
+// got, not a phrase to translate.
 const COLS = (locale: Locale) =>
   locale === "en"
     ? [
@@ -78,7 +137,7 @@ const COLS = (locale: Locale) =>
         "Workout type",
         "Distance (km)",
         "Notes / objective",
-        "Strava comment",
+        "Strava Description",
         "Done (Yes/No)",
       ]
     : [
@@ -92,7 +151,7 @@ const COLS = (locale: Locale) =>
         "Tipo de entreno",
         "Distancia (km)",
         "Notas / objetivo",
-        "Comentario para Strava",
+        "Strava Description",
         "Hecho (Sí/No)",
       ];
 
@@ -112,19 +171,28 @@ export async function buildPlanTemplate(locale: Locale = "es", athletes: Athlete
   // One example row, left in on purpose as a visible reference — added
   // BEFORE the data-validation loop below, so it lands on row 2 (setting
   // dataValidation on a cell materializes that row, which would otherwise
-  // push addRow()'s result past all of them).
+  // push addRow()'s result past all of them). Nov 2026: this example is
+  // now a real interval session (not a plain easy run), matched by its
+  // own 4 example rows on the Structured Steps sheet below — a filled-in
+  // demonstration of the whole feature, not just the plain columns, plus
+  // a worked example of what a good Strava Description actually reads
+  // like (short, past tense, matches the "AI-generated content" style
+  // this app's own generator already writes — see CLAUDE.md).
+  const EXAMPLE_TITLE = locale === "en" ? "Interval session" : "Serie de intervalos";
   ws.addRow([
     athleteNames[0] ?? "",
     "2026-11-03",
     sportNames[2],
     "06:00",
-    "07:00",
+    "06:33",
     "",
-    locale === "en" ? "Easy run" : "Rodaje suave",
-    locale === "en" ? "Easy" : "Rodaje",
-    10,
-    locale === "en" ? "Zone 2, conversational pace." : "Zona 2, ritmo conversacional.",
-    locale === "en" ? "Easy 10K to open the week." : "Rodaje de 10K para abrir la semana.",
+    EXAMPLE_TITLE,
+    locale === "en" ? "Intervals" : "Series",
+    5,
+    locale === "en" ? "5x5min at threshold effort, 3min easy jog recovery between reps." : "5x5min a esfuerzo de umbral, 3min de trote suave de recuperación entre repeticiones.",
+    locale === "en"
+      ? "Interval session: 15min warmup, 5x5min at threshold with 3min recovery, 10min cooldown."
+      : "Serie de intervalos: 15min de calentamiento, 5x5min a umbral con 3min de recuperación, 10min de enfriamiento.",
     doneOptions[1],
   ]);
   ws.getRow(2).font = { italic: true, color: { argb: "FF8A8B8E" } };
@@ -136,26 +204,23 @@ export async function buildPlanTemplate(locale: Locale = "es", athletes: Athlete
     ws.getCell(`L${r}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${doneOptions.join(",")}"`] };
   }
 
-  const notes = wb.addWorksheet(locale === "en" ? "Notes" : "Notas");
-  notes.columns = [{ width: 100 }];
-  const lines =
-    locale === "en"
-      ? [
-          "One row per workout. Delete the example row (row 2) before uploading, or leave it: it will just create one more workout.",
-          "Athlete / Sport / Done have dropdowns, pick from the list so the import can match them.",
-          "Give either Start time + End time, OR just Minutes, not both. Times win if both are present.",
-          "Date must be YYYY-MM-DD.",
-          "Notes is the internal objective; Strava comment is written verbatim onto the Strava activity once it's matched (leave blank to let the AI draft one instead).",
-        ]
-      : [
-          "Una fila por entreno. Borra la fila de ejemplo (fila 2) antes de subir, o déjala: solo va a crear un entreno más.",
-          "Atleta / Deporte / Hecho tienen listas desplegables, elige de ahí para que la importación los reconozca.",
-          "Pon Hora inicio + Hora fin, O solo Minutos, no hace falta ambos. Si pones las dos horas, esas mandan sobre Minutos.",
-          "La fecha debe ir como AAAA-MM-DD.",
-          "Notas es el objetivo interno; Comentario para Strava se escribe tal cual en la actividad de Strava una vez que se vincule (déjalo vacío para que la IA redacte uno).",
-        ];
-  lines.forEach((l) => notes.addRow([l]));
-  notes.getColumn(1).alignment = { wrapText: true };
+  // Nov 2026, direct instruction: "quiero que en gris en la primera
+  // hoja pongas todas las opciones que pueden haber de sport" — a
+  // plain gray reference list next to the table (column C's own
+  // dropdown already enforces this, but a visible written list next to
+  // it is what was actually asked for). Column N is the gap after L
+  // (Done), so this sits with one blank column of breathing room.
+  ws.getCell("N1").value = locale === "en" ? "Sport options" : "Opciones de deporte";
+  ws.getCell("N1").font = { bold: true, color: { argb: "FF8A8B8E" } };
+  sportNames.forEach((name, i) => {
+    const cell = ws.getCell(`N${i + 2}`);
+    cell.value = name;
+    cell.font = { color: { argb: "FF8A8B8E" } };
+  });
+  ws.getColumn("N").width = Math.max(16, ...sportNames.map((s) => s.length + 2));
+
+  addStructuredStepsSheet(wb, locale, athleteNames, EXAMPLE_TITLE);
+  addGuideSheet(wb, locale);
 
   if (athletes.length) {
     addAthleteProfileSheets(wb, locale, athletes);
@@ -163,6 +228,187 @@ export async function buildPlanTemplate(locale: Locale = "es", athletes: Athlete
 
   const buf = await wb.xlsx.writeBuffer();
   return Buffer.from(buf);
+}
+
+/**
+ * One row per structured step, linked back to its parent workout by an
+ * exact (case-insensitive) Athlete + Date + Workout Title match against
+ * the Plan sheet — see this file's own header and `parsePlanWorkbook()`
+ * for the full rationale and the matching rules. The example rows here
+ * are the real 4-step breakdown of the Plan sheet's own example workout
+ * (`exampleTitle`), so downloading the template and uploading it
+ * unmodified already demonstrates the feature end to end.
+ */
+function addStructuredStepsSheet(wb: ExcelJS.Workbook, locale: Locale, athleteNames: string[], exampleTitle: string) {
+  const isEn = locale === "en";
+  const ws = wb.addWorksheet(isEn ? "Structured Steps" : "Pasos Estructurados");
+  const cols = isEn
+    ? [
+        "Athlete",
+        "Date (YYYY-MM-DD)",
+        "Workout Title (must match the Plan sheet exactly)",
+        "Step order",
+        "Step type",
+        "Duration type",
+        "Duration (min if Time, m if Distance)",
+        "Target type",
+        "Target low",
+        "Target high",
+        "Repeat count",
+      ]
+    : [
+        "Atleta",
+        "Fecha (AAAA-MM-DD)",
+        "Título del entreno (debe coincidir exacto con la hoja Plan)",
+        "Orden",
+        "Tipo de paso",
+        "Tipo de duración",
+        "Duración (min si es Tiempo, m si es Distancia)",
+        "Tipo de objetivo",
+        "Objetivo mínimo",
+        "Objetivo máximo",
+        "Repeticiones",
+      ];
+  ws.columns = cols.map((header) => ({ header, width: Math.max(16, Math.min(32, header.length + 2)) }));
+  ws.getRow(1).font = { bold: true };
+  ws.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE9E9E6" } };
+
+  const kindNames = STEP_KINDS.map((k) => STEP_KIND_LABEL[k][locale]);
+  const durationTypeNames = DURATION_TYPES.map((d) => DURATION_TYPE_LABEL[d][locale]);
+  const targetTypeNames = TARGET_TYPES.map((t) => TARGET_TYPE_LABEL[t][locale]);
+
+  // The Plan sheet's own example workout, broken into its 4 real steps
+  // (warmup, work x5, recovery x5, cooldown) — matches the screenshot
+  // this feature was built from.
+  const exampleSteps: [string, string, number, string, string, string, string][] = [
+    [kindNames[0], durationTypeNames[0], 15, targetTypeNames[4], "", "", ""],
+    [kindNames[1], durationTypeNames[0], 5, targetTypeNames[4], "", "", "5"],
+    [kindNames[2], durationTypeNames[0], 3, targetTypeNames[4], "", "", "5"],
+    [kindNames[3], durationTypeNames[0], 10, targetTypeNames[4], "", "", ""],
+  ];
+  exampleSteps.forEach((step, i) => {
+    ws.addRow([athleteNames[0] ?? "", "2026-11-03", exampleTitle, i + 1, step[0], step[1], step[2], step[3], step[4], step[5], step[6]]);
+  });
+  for (let r = 2; r <= exampleSteps.length + 1; r++) {
+    ws.getRow(r).font = { italic: true, color: { argb: "FF8A8B8E" } };
+  }
+
+  const LAST_ROW = 400; // several steps per workout, so this sheet needs more rows than the Plan sheet
+  for (let r = 2; r <= LAST_ROW; r++) {
+    ws.getCell(`A${r}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${athleteNames.join(",")}"`] };
+    ws.getCell(`E${r}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${kindNames.join(",")}"`] };
+    ws.getCell(`F${r}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${durationTypeNames.join(",")}"`] };
+    ws.getCell(`H${r}`).dataValidation = { type: "list", allowBlank: true, formulae: [`"${targetTypeNames.join(",")}"`] };
+  }
+}
+
+/**
+ * The former "Notes" sheet, rewritten into an actual guide (Nov 2026,
+ * direct instruction: "quiero que en la segunda hoja en vez de notes
+ * sea mas prompt. como poner bien un strava description... todas las
+ * opciones que hay por cada field, si hay") — a real writing guide for
+ * the Strava Description field (what it's for, what a good one looks
+ * like, worked examples) plus a complete reference of every fixed
+ * option set this whole workbook uses, not just the quick reminders the
+ * old version had.
+ */
+function addGuideSheet(wb: ExcelJS.Workbook, locale: Locale) {
+  const isEn = locale === "en";
+  const ws = wb.addWorksheet(isEn ? "Guide" : "Guía");
+  ws.columns = [{ width: 100 }];
+
+  function heading(text: string) {
+    const row = ws.addRow([text]);
+    row.font = { bold: true };
+  }
+  function line(text: string) {
+    ws.addRow([text]);
+  }
+  function blank() {
+    ws.addRow([""]);
+  }
+
+  heading(isEn ? "Basics" : "Lo básico");
+  (isEn
+    ? [
+        "One row per workout on the Plan sheet. Delete the example row (row 2) before uploading, or leave it: it will just create one more workout.",
+        "Athlete / Sport / Done have dropdowns, pick from the list so the import can match them.",
+        "Give either Start time + End time, OR just Minutes, not both. Times win if both are present.",
+        "Date must be YYYY-MM-DD.",
+        "Notes is the internal objective (for you, not posted anywhere); Strava Description is the one written to the actual Strava activity.",
+      ]
+    : [
+        "Una fila por entreno en la hoja Plan. Borra la fila de ejemplo (fila 2) antes de subir, o déjala: solo va a crear un entreno más.",
+        "Atleta / Deporte / Hecho tienen listas desplegables, elige de ahí para que la importación los reconozca.",
+        "Pon Hora inicio + Hora fin, O solo Minutos, no hace falta ambos. Si pones las dos horas, esas mandan sobre Minutos.",
+        "La fecha debe ir como AAAA-MM-DD.",
+        "Notas es el objetivo interno (para ti, no se publica en ningún lado); Strava Description es la que se escribe en la actividad real de Strava.",
+      ]
+  ).forEach(line);
+  blank();
+
+  heading(isEn ? "How to write a good Strava Description" : "Cómo escribir un buen Strava Description");
+  (isEn
+    ? [
+        "This is the short recap that gets posted verbatim onto the matched Strava activity once it syncs — think of it as the caption someone reads scrolling their Strava feed, not training notes.",
+        "Keep it to 1-2 sentences. Past tense, as if the session already happened (it's written at upload time, before the workout, but reads naturally once it's done).",
+        "Name the structure, not the feeling: warmup/main set/cooldown, reps x duration, the effort level. Skip subjective commentary (\"felt great\", \"tough one\") — that's not what this field is for.",
+        'Good example: "Interval session: 15min warmup, 5x5min at threshold with 3min recovery, 10min cooldown."',
+        'Good example: "Easy 10K to open the week, zone 2 the whole way."',
+        'Too vague: "Good run today."',
+        "Leave it blank to let the app's own AI draft one automatically once this workout syncs to Strava — only fill it in if you want the exact wording.",
+      ]
+    : [
+        "Es el resumen corto que se publica tal cual en la actividad de Strava una vez que se vincule — piénsalo como el pie de foto que alguien lee en su feed de Strava, no como notas de entrenamiento.",
+        "Máximo 1-2 oraciones. En pasado, como si la sesión ya hubiera pasado (se escribe al subir el Excel, antes del entreno, pero se lee natural una vez hecho).",
+        "Describe la estructura, no cómo te sentiste: calentamiento/bloque principal/enfriamiento, repeticiones x duración, el nivel de esfuerzo. Evita comentarios subjetivos (\"me sentí increíble\", \"durísimo\") — no es para eso este campo.",
+        'Buen ejemplo: "Serie de intervalos: 15min de calentamiento, 5x5min a umbral con 3min de recuperación, 10min de enfriamiento."',
+        'Buen ejemplo: "Rodaje suave de 10K para abrir la semana, zona 2 todo el camino."',
+        'Muy vago: "Buen entreno hoy."',
+        "Déjalo vacío para que la IA de la app redacte uno automáticamente cuando este entreno se sincronice con Strava — llénalo solo si quieres el texto exacto.",
+      ]
+  ).forEach(line);
+  blank();
+
+  heading(isEn ? "Structured Steps (for syncing to a watch)" : "Pasos Estructurados (para sincronizar al reloj)");
+  (isEn
+    ? [
+        "This is on its own sheet, \"Structured Steps\" — one row per step, not extra columns on the Plan sheet, since a workout can have any number of steps.",
+        "Every step row needs the SAME Athlete + Date + Workout Title as its parent row on the Plan sheet, matched exactly (not case-sensitive) — that's how a step finds its workout.",
+        "This should always be filled in when the workout is meant to go onto a watch (Garmin for now) — a workout with no structured steps can't be pushed, only one with real steps can.",
+        "A brick (bike + run) is still just ONE workout row — don't split it into two Plan rows; its steps can mix bike and run segments in order if you want that level of detail.",
+      ]
+    : [
+        "Está en su propia hoja, \"Pasos Estructurados\" — una fila por paso, no columnas extra en la hoja Plan, ya que un entreno puede tener cualquier cantidad de pasos.",
+        "Cada fila de paso necesita el MISMO Atleta + Fecha + Título del entreno que su fila en la hoja Plan, coincidiendo exacto (sin importar mayúsculas/minúsculas) — así es como un paso encuentra su entreno.",
+        "Esto debería llenarse siempre que el entreno vaya a ir al reloj (Garmin por ahora) — un entreno sin pasos estructurados no se puede mandar, solo uno con pasos reales.",
+        "Un brick (bici + trote) sigue siendo UNA sola fila de entreno — no lo dividas en dos filas de Plan; sus pasos pueden mezclar segmentos de bici y de trote en orden si quieres ese nivel de detalle.",
+      ]
+  ).forEach(line);
+  blank();
+
+  heading(isEn ? "All field options" : "Todas las opciones por campo");
+  line((isEn ? "Sport: " : "Deporte: ") + SPORTS.map((s) => SPORT_LABEL[s][locale]).join(", "));
+  line((isEn ? "Done: " : "Hecho: ") + (isEn ? "Yes, No" : "Sí, No"));
+  line((isEn ? "Step type: " : "Tipo de paso: ") + STEP_KINDS.map((k) => STEP_KIND_LABEL[k][locale]).join(", "));
+  line(
+    (isEn ? "Duration type: " : "Tipo de duración: ") +
+      DURATION_TYPES.map((d) => `${DURATION_TYPE_LABEL[d][locale]}${d === "time" ? " (min)" : d === "distance" ? " (m)" : ""}`).join(", ")
+  );
+  line(
+    (isEn ? "Target type: " : "Tipo de objetivo: ") +
+      TARGET_TYPES.map((t) => {
+        const unit = t === "pace" ? "sec/km" : t === "hr" ? "bpm" : t === "power" ? "W" : t === "cadence" ? "rpm" : null;
+        return `${TARGET_TYPE_LABEL[t][locale]}${unit ? ` (${unit})` : ""}`;
+      }).join(", ")
+  );
+  line(
+    isEn
+      ? "Pace target is in seconds per km (e.g. 300 = 5:00/km) — same unit the app's own structured-step editor uses."
+      : "El objetivo de pace es en segundos por km (p. ej. 300 = 5:00/km) — la misma unidad que usa el editor de pasos estructurados de la app."
+  );
+
+  ws.getColumn(1).alignment = { wrapText: true };
 }
 
 /**
@@ -279,6 +525,10 @@ export interface ParsedPlanRow {
   notes: string;
   stravaComment: string;
   done: boolean;
+  /** From the Structured Steps sheet, matched by Athlete+Date+Title — see
+   * parsePlanWorkbook()'s own comment. Empty array if this workout has
+   * no matching step rows (or the sheet is missing entirely). */
+  workoutSteps: WorkoutStep[];
 }
 
 export interface ParsePlanResult {
@@ -339,6 +589,34 @@ function matchAthlete(raw: string, roster: { slug: string; name: string }[]): At
   const s = raw.trim().toLowerCase();
   const found = roster.find((a) => a.slug.toLowerCase() === s || a.name.toLowerCase() === s);
   return found?.slug ?? null;
+}
+
+function matchStepKind(raw: string): WorkoutStepKind | null {
+  const s = raw.trim().toLowerCase();
+  for (const kind of STEP_KINDS) {
+    if (kind === s || STEP_KIND_LABEL[kind].es.toLowerCase() === s || STEP_KIND_LABEL[kind].en.toLowerCase() === s) return kind;
+  }
+  return null;
+}
+
+function matchDurationType(raw: string): WorkoutStepDurationType | null {
+  const s = raw.trim().toLowerCase();
+  for (const d of DURATION_TYPES) {
+    if (d === s || DURATION_TYPE_LABEL[d].es.toLowerCase() === s || DURATION_TYPE_LABEL[d].en.toLowerCase() === s) return d;
+  }
+  return null;
+}
+
+function matchTargetType(raw: string): WorkoutStepTargetType | null {
+  const s = raw.trim().toLowerCase();
+  for (const t of TARGET_TYPES) {
+    if (t === s || TARGET_TYPE_LABEL[t].es.toLowerCase() === s || TARGET_TYPE_LABEL[t].en.toLowerCase() === s) return t;
+  }
+  return null;
+}
+
+function newStepId() {
+  return typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 }
 
 function matchSport(raw: string): Sport | null {
@@ -420,8 +698,102 @@ export async function parsePlanWorkbook(buffer: ArrayBuffer, roster: { slug: str
       notes: cellToString(get(10)),
       stravaComment: cellToString(get(11)),
       done,
+      workoutSteps: [],
     });
   });
+
+  // Nov 2026, see this file's own header — the Structured Steps sheet is
+  // optional (an older template, or a user who deleted it, still imports
+  // fine with every workout's workoutSteps staying empty); when present,
+  // each step row is matched back to its parent Plan row by an exact
+  // (case-insensitive) Athlete + Date + Title match. Zero matches or more
+  // than one match (an ambiguous same-day same-title duplicate) is
+  // reported as a real import error for that step row, never guessed —
+  // same discipline this whole file already applies to every other field.
+  const stepsSheet = wb.worksheets.find((s) => s.name === "Structured Steps" || s.name === "Pasos Estructurados");
+  if (stepsSheet) {
+    const planRowsByKey = new Map<string, number[]>();
+    for (const r of rows) {
+      const key = `${r.athleteSlug}|${r.date}|${r.title.trim().toLowerCase()}`;
+      const arr = planRowsByKey.get(key) ?? [];
+      arr.push(r.rowNumber);
+      planRowsByKey.set(key, arr);
+    }
+
+    const stepsByPlanRow = new Map<number, { order: number; step: WorkoutStep }[]>();
+
+    stepsSheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      if (rowNumber === 1) return; // header
+      const get = (col: number) => row.getCell(col).value;
+      const athleteRaw = cellToString(get(1));
+      const dateRaw = get(2);
+      const titleRaw = cellToString(get(3));
+      if (!athleteRaw && !dateRaw && !titleRaw) return; // skip fully blank row
+
+      const athleteSlug = matchAthlete(athleteRaw, roster);
+      const date = cellToDateStr(dateRaw);
+      if (!athleteSlug) return void errors.push({ rowNumber, message: `Pasos Estructurados: atleta no reconocido: "${athleteRaw}"` });
+      if (!date) return void errors.push({ rowNumber, message: `Pasos Estructurados: fecha inválida (usa AAAA-MM-DD): "${cellToString(dateRaw)}"` });
+      if (!titleRaw) return void errors.push({ rowNumber, message: "Pasos Estructurados: falta el título del entreno" });
+
+      const key = `${athleteSlug}|${date}|${titleRaw.trim().toLowerCase()}`;
+      const matches = planRowsByKey.get(key) ?? [];
+      if (matches.length === 0) {
+        return void errors.push({
+          rowNumber,
+          message: `Pasos Estructurados: ningún entreno en la hoja Plan coincide con "${athleteRaw}" / "${date}" / "${titleRaw}"`,
+        });
+      }
+      if (matches.length > 1) {
+        return void errors.push({
+          rowNumber,
+          message: `Pasos Estructurados: más de un entreno coincide con "${athleteRaw}" / "${date}" / "${titleRaw}" (ambiguo)`,
+        });
+      }
+
+      const kindRaw = cellToString(get(5));
+      const durationTypeRaw = cellToString(get(6));
+      const targetTypeRaw = cellToString(get(8));
+      const kind = matchStepKind(kindRaw);
+      const durationType = matchDurationType(durationTypeRaw);
+      const targetType = matchTargetType(targetTypeRaw);
+      if (!kind) return void errors.push({ rowNumber, message: `Pasos Estructurados: tipo de paso no reconocido: "${kindRaw}"` });
+      if (!durationType) return void errors.push({ rowNumber, message: `Pasos Estructurados: tipo de duración no reconocido: "${durationTypeRaw}"` });
+      if (!targetType) return void errors.push({ rowNumber, message: `Pasos Estructurados: tipo de objetivo no reconocido: "${targetTypeRaw}"` });
+
+      const orderRaw = Number(cellToString(get(4)));
+      const order = Number.isFinite(orderRaw) && orderRaw > 0 ? orderRaw : rowNumber; // fallback: sheet order
+
+      // Duration: minutes if Time (converted to seconds for storage, same
+      // unit WorkoutDialog.tsx's own editor uses), meters if Distance, no
+      // value at all if Open — mirrors WorkoutStep.durationValue's own
+      // documented unit convention.
+      const durationRaw = Number(cellToString(get(7)));
+      const hasDuration = Number.isFinite(durationRaw) && durationRaw > 0;
+      const durationValue = durationType === "open" || !hasDuration ? null : durationType === "time" ? Math.round(durationRaw * 60) : Math.round(durationRaw);
+
+      const targetLowRaw = Number(cellToString(get(9)));
+      const targetHighRaw = Number(cellToString(get(10)));
+      const targetLow = targetType === "open" || !Number.isFinite(targetLowRaw) || targetLowRaw <= 0 ? null : targetLowRaw;
+      const targetHigh = targetType === "open" || !Number.isFinite(targetHighRaw) || targetHighRaw <= 0 ? null : targetHighRaw;
+
+      const repeatRaw = Number(cellToString(get(11)));
+      const repeatCount = Number.isFinite(repeatRaw) && repeatRaw > 1 ? Math.round(repeatRaw) : null;
+
+      const step: WorkoutStep = { id: newStepId(), kind, durationType, durationValue, targetType, targetLow, targetHigh, repeatCount };
+      const planRowNumber = matches[0];
+      const arr = stepsByPlanRow.get(planRowNumber) ?? [];
+      arr.push({ order, step });
+      stepsByPlanRow.set(planRowNumber, arr);
+    });
+
+    for (const r of rows) {
+      const steps = stepsByPlanRow.get(r.rowNumber);
+      if (steps) {
+        r.workoutSteps = steps.sort((a, b) => a.order - b.order).map((s) => s.step);
+      }
+    }
+  }
 
   return { rows, errors };
 }

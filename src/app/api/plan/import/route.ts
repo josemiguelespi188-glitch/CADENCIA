@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { parsePlanWorkbook } from "@/lib/excelPlan";
 import { getSignedInAthlete } from "@/lib/auth";
+import { assignDefaultStartTimes } from "@/lib/scheduling";
 
 /**
  * Bulk-creates workouts from an uploaded plan spreadsheet. Always
@@ -34,18 +35,29 @@ export async function POST(req: NextRequest) {
   const buffer = await file.arrayBuffer();
   const { rows, errors } = await parsePlanWorkbook(buffer, roster);
 
+  // Nov 2026, same default scheduling calendar/page.tsx's saveWorkout()
+  // and lib/ics.ts's export fallback already apply — the Excel template
+  // has no required time column (Start/End or Minutes only govern
+  // duration, not time-of-day), so without this every Excel-imported
+  // workout with no explicit Start time would land with start = null.
+  // See lib/scheduling.ts.
+  const startTimes = assignDefaultStartTimes(
+    rows.map((r) => ({ id: String(r.rowNumber), date: r.date, athleteSlug: r.athleteSlug, start: r.start }))
+  );
+
   const payload = rows.map((r) => ({
     athlete_id: athleteIdBySlug.get(r.athleteSlug),
     date: r.date,
     sport: r.sport,
     title: r.title,
     workout_type: r.workoutType,
-    start: r.start,
+    start: startTimes.get(String(r.rowNumber)) ?? r.start,
     minutes: r.minutes,
     km: r.km,
     notes: r.notes,
     strava_comment: r.stravaComment,
     done: r.done,
+    workout_steps: r.workoutSteps,
   }));
 
   let inserted = 0;

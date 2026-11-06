@@ -4054,3 +4054,94 @@ lo ideal es que se ponga una vez se crea el entrenamiento."
   events instead of all-day ones in Apple Calendar, and that clicking
   "Download week" on a week with at least one structured-steps workout
   actually creates/schedules it on a connected Garmin device.
+
+## Weekly Plan Excel: Structured Steps sheet, Strava Description guide, gray option legends (Nov 2026)
+
+Direct, verbatim instruction after the user attached a real downloaded
+copy of the plan Excel and a screenshot of `WorkoutDialog`'s structured-
+steps editor: "correcciones de este excel. quiero que en gris en la
+primera hoja pongas todas las opciones que pueden haber de sport. de
+alguna manera tenemos que añadir al excel el structured steps. porque
+la idea es que eso siempre vaya. para que se cargue al reloj el
+entrnemaiento. pon strava descriptions. y quiero que en la segunda hoja
+en vez de notes sea mas prompt. como poner bien un strava description
+(el resumen de la session corto). todas las opciones que hay por cada
+field, si hay." All of this lives in `lib/excelPlan.ts`
+(`buildPlanTemplate()`/`parsePlanWorkbook()`), shared by
+`GET /api/plan/template` and `POST /api/plan/import`.
+
+- **Why structured steps needed a whole new sheet, not extra Plan
+  columns**: a workout can have anywhere from 0 to several steps, which
+  doesn't fit the Plan sheet's one-row-per-workout shape the way every
+  other field does. **"Structured Steps" / "Pasos Estructurados"** (new
+  sheet) has one row PER STEP: Athlete, Date, Workout Title, Step order,
+  Step type, Duration type, Duration, Target type, Target low, Target
+  high, Repeat count — Athlete/Step type/Duration type/Target type all
+  get real Excel dropdown validation, same convention the Plan sheet's
+  own Athlete/Sport/Done columns already use. A step row finds its
+  parent workout by an **exact (case-insensitive) Athlete + Date +
+  Workout Title match** against the Plan sheet, computed in
+  `parsePlanWorkbook()` as a `athleteSlug|date|title` lookup key — zero
+  matches or more than one match (an ambiguous same-day same-title
+  duplicate) is reported as a real per-row import error, never guessed,
+  same discipline this file already applies to every other field.
+  Duration is entered in **minutes if Time, meters if Distance** (same
+  units `WorkoutDialog.tsx`'s own step editor displays, converted to/
+  from the internal seconds-for-time storage); Target low/high are
+  entered in the unit that matches the chosen Target type (sec/km for
+  Pace, bpm for HR, W for Power, rpm for Cadence) — all spelled out in
+  the guide sheet below.
+- **"porque la idea es que eso siempre vaya. para que se cargue al
+  reloj el entrenamiento"**: structured steps matter specifically
+  because `pushStructuredWorkoutToGarmin()` (see the "Download week now
+  also sends to a watch" section above) throws outright for a workout
+  with no steps — a plan loaded from Excel with no Structured Steps
+  rows simply can't be pushed to a connected watch later, which is
+  exactly the gap this closes.
+- **The Plan sheet's own example workout (row 2) changed from a plain
+  easy run to a real interval session** — "Interval session" / "Serie
+  de intervalos", matched by 4 real example rows on the new sheet: the
+  exact Warmup 15min / Work 5min×5 / Recover 3min×5 / Cooldown 10min
+  breakdown from the screenshot that prompted this feature. Downloading
+  the template and uploading it unmodified now demonstrates the whole
+  feature end to end, not just the plain columns — confirmed with an
+  actual round-trip test (build the template, parse it back, assert the
+  workout comes back with exactly those 4 steps and zero errors) before
+  shipping, same discipline the original Excel import's own row-
+  ordering bug catch already established for this file.
+- **"pon strava descriptions"**: the Plan sheet's "Strava comment" /
+  "Comentario para Strava" column header is now literally **"Strava
+  Description"** in BOTH locales, matching the app-wide rename already
+  documented in the "Auto-complete retried every sync" section above —
+  the field's real/actual name now, not a phrase to translate, same
+  treatment "Generate" already got. Only the column header text
+  changed; `parsePlanWorkbook()` still reads it from the same column.
+- **Gray Sport options legend on the Plan sheet itself** — "quiero que
+  en gris en la primera hoja pongas todas las opciones que pueden haber
+  de sport": a small gray-font reference list (not a second dropdown,
+  Sport's own column C dropdown is unchanged) sits a couple columns to
+  the right of the main table, listing all 6 Sport options by name.
+- **The "Notes"/"Notas" sheet is now "Guide"/"Guía"** — "en vez de
+  notes sea mas prompt. como poner bien un strava description": a real
+  writing guide, not just quick reminders. Explains what a Strava
+  Description actually is (the short recap posted verbatim onto the
+  matched Strava activity, read like a feed caption, not training
+  notes), the rule (1-2 sentences, past tense, structure not feelings),
+  two good worked examples and one too-vague one, and that leaving it
+  blank lets the app's own AI draft one at sync time instead (see the
+  "Strava comment is now always AI-filled" section above for that
+  fallback). Also explains the Structured Steps sheet's own matching
+  rule and the brick caveat (still one Plan row, never split in two).
+  **"todas las opciones que hay por cada field, si hay"**: a full
+  reference list closes the guide — every fixed option set in the whole
+  workbook (Sport, Done, Step type, Duration type with its unit,
+  Target type with its unit) in one place, not scattered across
+  multiple dropdown tooltips.
+- Not yet tested against a real Supabase project or a real Garmin
+  device from this sandbox (same standing limitation as every other
+  Supabase/Garmin-dependent feature here) — the round-trip test above
+  confirms the Excel build/parse logic itself is correct, but confirm
+  once deployed: that uploading a real filled-in Structured Steps sheet
+  actually attaches `workout_steps` onto the right `workouts` rows in
+  Supabase, and that one of those rows can then actually be pushed to a
+  connected Garmin device via the "Download week" button.
