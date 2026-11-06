@@ -23,6 +23,8 @@ import {
 import { addDays, fmt, hm, monday, parseYmd, today, ymd } from "@/lib/dates";
 import { buildWeekIcs, downloadIcs } from "@/lib/ics";
 import { mapStravaSportType } from "@/lib/sport";
+import { defaultStartTimeForNew } from "@/lib/scheduling";
+import { describeWeekGarminPushResult, pushWeekToGarmin } from "@/lib/deviceSync";
 import { cn } from "@/lib/utils";
 
 type EditingState = {
@@ -102,13 +104,25 @@ export default function CalendarPage() {
     const supabase = createClient();
     const athlete = athletes.find((a) => a.slug === value.athleteSlug);
     if (!athlete) return;
+    // Nov 2026, direct instruction: assign a real default start time the
+    // moment a workout is created, not only when it's later exported —
+    // see lib/scheduling.ts. Only applies to a brand-new workout with no
+    // start typed in; editing an existing one never overwrites an
+    // explicitly-cleared start with a guessed one.
+    const start =
+      value.start ||
+      (existingId
+        ? null
+        : defaultStartTimeForNew(
+            workouts.filter((w) => w.athlete_id === athlete.id && w.date === value.date).map((w) => ({ start: w.start }))
+          ));
     const payload = {
       athlete_id: athlete.id,
       date: value.date,
       sport: value.sport,
       title: value.title || t(value.sport),
       workout_type: value.workoutType,
-      start: value.start || null,
+      start,
       minutes: value.minutes,
       km: value.km,
       notes: value.notes,
@@ -312,9 +326,24 @@ function Toolbar({
     setAnchor(view === "week" ? addDays(anchor, 7 * n) : new Date(anchor.getFullYear(), anchor.getMonth() + n, 1));
   }
 
-  function downloadWeek() {
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+
+  // Nov 2026, direct instruction: "el boton de download week tiene que
+  // hacer dos cosas. UNO MANDAR LA semana al reloj o cuenta de garmin o
+  // coros. 2 descargar al calendario de apple los entrenos." The Apple
+  // Calendar download happens immediately (no network wait); the device
+  // push is best-effort and reports back a moment later — see
+  // lib/deviceSync.ts.
+  async function downloadWeek() {
     const ics = buildWeekIcs(items, athleteBySlug, isMultiple, t);
     downloadIcs(`cadencia-week-${ymd(start)}.ics`, ics);
+
+    setSyncing(true);
+    setSyncMessage(null);
+    const result = await pushWeekToGarmin(items);
+    setSyncMessage(describeWeekGarminPushResult(result, locale === "en"));
+    setSyncing(false);
   }
 
   return (
@@ -349,9 +378,12 @@ function Toolbar({
         </Button>
       </div>
       {view === "week" && items.length > 0 && (
-        <Button variant="steel" size="sm" onClick={downloadWeek}>
-          {t("download_week")}
-        </Button>
+        <div className="flex flex-col items-end gap-1">
+          <Button variant="steel" size="sm" onClick={downloadWeek} disabled={syncing}>
+            {syncing ? t("syncing_week") : t("download_week")}
+          </Button>
+          {syncMessage && <span className="max-w-[280px] text-right text-[11px] text-ink-3">{syncMessage}</span>}
+        </div>
       )}
       <Button size="sm" onClick={onAdd}>
         + {t("add")}

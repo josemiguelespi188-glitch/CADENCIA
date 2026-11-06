@@ -3963,3 +3963,94 @@ activity).
   dates are set instead of staying at 30 days, and that the CTL chart
   renders a real multi-line comparison once more than one member has
   WHOOP history synced.
+
+## Download week now also sends to a watch, every exported workout gets a real time (Nov 2026)
+
+Direct, verbatim instruction with a screenshot of the Calendar
+toolbar: "el boton de download week tiene que hacer dos cosas. uNO
+MANDAR LA semana al reloj o cuenta de garmin o coros. 2 descargar al
+calendario de apple los entrenos. todos los entrenos tiene que tener
+una hora para poner en el calendario. si no tiene poner 6 am. y si
+tiene dos intuir que son dos sesiones, 6am y 6pm. Si es brick obvio va
+bici y seguido el trote. Corregir este tema de horarios automaticos.
+lo ideal es que se ponga una vez se crea el entrenamiento."
+
+- **`lib/scheduling.ts`** (new) is the actual scheduling rule, as two
+  pure functions: `defaultStartTimeForNew(siblings)` (for a single
+  brand-new workout, checked against its already-persisted same-day
+  siblings) and `assignDefaultStartTimes(workouts)` (the batch version,
+  for exporting/scheduling a whole week that may still hold more than
+  one same-day row with no `start` at all — deterministic, array-order
+  assignment, so two still-unset same-day rows don't both collide onto
+  the morning slot the way independently checking each one against the
+  other's still-null `start` would). The rule itself: a workout's own
+  `start`, if it has one, is always kept as-is; a day's first
+  still-unset session defaults to **6:00**, a second to **18:00**; a
+  theoretical 3rd+ same-day session falls back to 6:00 rather than
+  being left unscheduled. **A brick workout is never split into two
+  slots** — it's one `workouts` row (bike immediately followed by a
+  run) like any other sport here, so it only ever claims one daily
+  slot; the "bike then run" sequencing is just what happens inside that
+  one session, not something this scheduler models as two separate
+  timed events.
+- **Applied at creation, not just export** — the literal "lo ideal es
+  que se ponga una vez se crea el entrenamiento" ask.
+  `calendar/page.tsx`'s `saveWorkout()` now computes a default `start`
+  via `defaultStartTimeForNew()` whenever a **new** workout is saved
+  with no time typed in (checked against that athlete's other
+  already-saved workouts the same day, from the page's own loaded
+  `workouts` state) — so a workout created through any path that flows
+  through this function (`WorkoutDialog`, `NewWorkoutLauncher`'s sport/
+  AI/template pickers) gets a real time immediately. Editing an
+  existing workout never overwrites an explicitly-cleared `start` with
+  a guessed one — the default only ever applies on insert.
+- **`lib/ics.ts`'s `buildWeekIcs()` no longer emits all-day events at
+  all** — the literal "todos los entrenos tiene que tener una hora
+  para poner en el calendario" ask. Every exported `VEVENT` is now
+  timed (`DTSTART`/`DTEND`), using `assignDefaultStartTimes()` as a
+  fallback for any workout that still has no `start` despite the
+  creation-time fix above (older rows from before this shipped, or
+  bulk-inserted paths that don't collect a time at all — Excel import,
+  Community's "Assign workout to everyone"). This is a safety net, not
+  the primary mechanism; the primary one is the creation-time
+  assignment just above.
+- **`lib/deviceSync.ts`** (new) is the "mandar la semana al reloj"
+  half: `pushWeekToGarmin(workouts)` loops the current week's workouts
+  and calls the existing single-workout `POST /api/garmin-dev/push`
+  for each one that has structured steps (`workout_steps.length > 0`)
+  — a workout with no structured steps is skipped outright, since
+  Garmin's Training API push has nothing to send for it (same
+  constraint `pushStructuredWorkoutToGarmin()` already enforces per
+  workout). Sequential, not batched — a week is at most ~7-14 rows, far
+  below the concurrency `/api/strava/sync` needs for up to 200.
+  `describeWeekGarminPushResult()` turns the tally into one honest
+  status line (bilingual): how many actually sent, how many had no
+  steps to send, or — if every attempt failed specifically because
+  that athlete has no Garmin connection — a clear "connect Garmin from
+  Settings" message.
+- **COROS is deliberately NOT attempted in this bulk push at all** —
+  `pushStructuredWorkoutToCorosMcp()` always throws the exact same "not
+  built yet" error regardless of connection state (see
+  `lib/integrations/corosMcp.ts`'s own header), so looping a real
+  network call against it per workout would just add noise for an
+  outcome already known ahead of time. The one message that mentions
+  COROS at all (`describeWeekGarminPushResult`'s "no Garmin connection"
+  case) says plainly that COROS push isn't available yet either,
+  rather than silently pretending the button tried it.
+- **`Toolbar`'s `downloadWeek()`** (`calendar/page.tsx`) now does both
+  things on one click, per the user's own framing ("el boton...
+  tiene que hacer dos cosas"): the `.ics` download fires immediately
+  (synchronous, no network wait), then the Garmin push runs
+  best-effort in the background and a short status line appears under
+  the button a moment later (new `syncing_week` i18n key for the
+  button's own "Sending…" busy state). No new button, no dropdown/menu
+  — same single "Download week" pill, just doing more when pressed.
+- Not yet tested against a real Supabase project or a real Garmin
+  device from this sandbox (same standing limitation as every other
+  Supabase/Garmin-dependent feature here) — confirm once deployed: a
+  brand-new workout created with no time actually lands on 6am (or
+  6pm if it's the second one that day), that re-downloading a week
+  whose older rows still have `start = null` now produces real timed
+  events instead of all-day ones in Apple Calendar, and that clicking
+  "Download week" on a week with at least one structured-steps workout
+  actually creates/schedules it on a connected Garmin device.

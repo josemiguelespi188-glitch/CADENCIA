@@ -1,6 +1,7 @@
 import type { WorkoutWithSlug } from "@/components/WorkoutDialog";
 import type { Athlete } from "@/lib/types";
-import { addDays, parseYmd, pad } from "@/lib/dates";
+import { parseYmd, pad } from "@/lib/dates";
+import { assignDefaultStartTimes } from "@/lib/scheduling";
 
 function icsEscape(s: string) {
   return String(s || "")
@@ -46,19 +47,23 @@ export function buildWeekIcs(
 
   const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Cadencia//ES", "CALSCALE:GREGORIAN", "METHOD:PUBLISH", "X-WR-CALNAME:Cadencia"];
 
+  // Nov 2026, direct instruction: "todos los entrenos tiene que tener
+  // una hora para poner en el calendario" — every exported workout is
+  // now a real timed event, never an all-day placeholder. A workout
+  // created after the scheduling fix above already carries a real
+  // `start`; this fallback only matters for older/bulk-inserted rows
+  // that still don't. See lib/scheduling.ts.
+  const startTimes = assignDefaultStartTimes(workouts);
+
   for (const w of workouts) {
     const d = parseYmd(w.date);
-    lines.push("BEGIN:VEVENT", `UID:${w.id}@cadencia`, `DTSTAMP:${dtstamp}`);
+    const effectiveStart = startTimes.get(w.id) ?? "06:00";
+    const [h, m] = effectiveStart.split(":").map(Number);
+    const startStamp = stamp(d, { h, m });
+    const endDate = new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m + (w.minutes || 60));
+    const endStamp = stamp(endDate, { h: endDate.getHours(), m: endDate.getMinutes() });
 
-    if (w.start) {
-      const [h, m] = w.start.split(":").map(Number);
-      const startStamp = stamp(d, { h, m });
-      const endDate = new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m + (w.minutes || 60));
-      const endStamp = stamp(endDate, { h: endDate.getHours(), m: endDate.getMinutes() });
-      lines.push(`DTSTART:${startStamp}`, `DTEND:${endStamp}`);
-    } else {
-      lines.push(`DTSTART;VALUE=DATE:${stamp(d)}`, `DTEND;VALUE=DATE:${stamp(addDays(d, 1))}`);
-    }
+    lines.push("BEGIN:VEVENT", `UID:${w.id}@cadencia`, `DTSTAMP:${dtstamp}`, `DTSTART:${startStamp}`, `DTEND:${endStamp}`);
 
     const prefix = isMultiple ? `[${athleteBySlug[w.athleteSlug]?.initials ?? "?"}] ` : "";
     lines.push(`SUMMARY:${icsEscape(`${prefix}${sportLabel(w.sport)}: ${w.title}`)}`);
